@@ -10,6 +10,7 @@ import { calculateFinishWeek, currentWeekNumber, MAX_MONEY_CENTS } from "@/lib/m
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma, serializableTransaction } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
+import { isReservedSettlementKey } from "@/lib/draw-settlement";
 import { computeStanding, pinnedMapFromEvents, planCommit } from "@/lib/standing";
 
 const PAYMENT_METHODS = ["ZELLE", "CASH", "OTHER"] as const;
@@ -149,6 +150,12 @@ export async function recordPayment(input: RecordPaymentInput) {
     const idempotencyKey = input.idempotencyKey?.trim();
     if (!idempotencyKey || idempotencyKey.length > 200) {
       return { ok: false as const, error: "A valid idempotency key is required." };
+    }
+    // The settlement engine owns this namespace (audit C6). A caller that
+    // could write into it would also collide with a real settlement key and
+    // block a legitimate draw.
+    if (isReservedSettlementKey(idempotencyKey)) {
+      return { ok: false as const, error: "That idempotency key is reserved by the system." };
     }
 
     const data = await serializableTransaction(async (tx) => {

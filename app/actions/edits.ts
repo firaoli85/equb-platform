@@ -10,11 +10,17 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
-import { settleWinnerWeeks, unsettleDraw, unsettlePayout } from "@/lib/draw-settlement";
+import {
+  SETTLEMENT_EVENT_WHERE,
+  settleWinnerWeeks,
+  unsettleDraw,
+  unsettlePayout,
+} from "@/lib/draw-settlement";
 import { formatMoney, parseDateInput } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { calculateFinishWeek, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
 import { computeTermsSettlement, nameConfirmed } from "@/lib/settlement";
+import { changeWinnerRefusal } from "@/lib/undo-draw";
 import {
   ensureWeeksThrough,
   validateCommitmentCap,
@@ -186,7 +192,7 @@ export async function updateParticipation(
         // What they actually got: payout nets as they stand PLUS the week
         // contributions that were settled out of them at draw time.
         const settlementEvents = await tx.paymentEvent.findMany({
-          where: { participationId: before.id, idempotencyKey: { startsWith: "draw-settle:" } },
+          where: { participationId: before.id, ...SETTLEMENT_EVENT_WHERE },
           select: { amount: true },
         });
         const alreadyReceived =
@@ -287,7 +293,7 @@ export async function updateParticipation(
       // this, the rebuild below would (rightly) refuse every save.
       if (payouts.length > 0 && before.weeklyAmount !== input.weeklyAmount) {
         const pinned = await tx.paymentEvent.findMany({
-          where: { participationId: before.id, idempotencyKey: { startsWith: "draw-settle:" } },
+          where: { participationId: before.id, ...SETTLEMENT_EVENT_WHERE },
         });
         for (const event of pinned) {
           const resized = Math.min(event.amount, input.weeklyAmount);
@@ -865,6 +871,20 @@ export async function changeDrawSlot(input: { drawId: string; slotId: string }) 
       if (targetSlot.cycleId !== before.week.cycleId) {
         throw new Error("The target slot belongs to a different cycle.");
       }
+
+      // SECURITY (audit C5): drawn-ness is derived from SLOT MEMBERSHIP, so
+      // repointing the draw would silently return the old slot's numbers to
+      // the wheel pool while their payouts stayed behind — the same member
+      // could then be drawn a second time and collect twice (2.27). Payout
+      // money is not something this action knows how to move, so it refuses
+      // and points at the pair that does it correctly.
+      const refusal = changeWinnerRefusal({
+        weekNumber: before.week.weekNumber,
+        payoutCount: await tx.payout.count({ where: { drawId: input.drawId } }),
+        currentNumbers: before.slot.members.map((m) => m.luckyNumber.number),
+      });
+      if (refusal) throw new Error(refusal);
+
       const after = await tx.draw.update({
         where: { id: input.drawId },
         data: { slotId: input.slotId },

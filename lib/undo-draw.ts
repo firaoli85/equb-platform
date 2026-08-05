@@ -55,6 +55,31 @@ export function undoDrawConsequences(input: {
   };
 }
 
+/**
+ * SECURITY (audit C5). Drawn-ness is derived from SLOT MEMBERSHIP
+ * (`eligibleNumbers` in lib/wheel.ts reads `draw.slot.members`), so
+ * repointing a Draw to a different slot returns the ORIGINAL slot's numbers
+ * to the wheel pool. If payouts already exist they stay attached to the old
+ * winner, and that member can be drawn a second time — receiving twice, in
+ * flat violation of 2.27.
+ *
+ * Returns the refusal reason, or null when the change is safe (no money has
+ * been recorded for this draw yet).
+ */
+export function changeWinnerRefusal(input: {
+  weekNumber: number;
+  payoutCount: number;
+  currentNumbers: readonly number[];
+}): string | null {
+  if (input.payoutCount === 0) return null;
+  const numbers = [...input.currentNumbers].sort((a, b) => a - b).map((n) => `#${n}`).join(", ");
+  return (
+    `Week ${input.weekNumber} already has ${input.payoutCount} payout record${input.payoutCount === 1 ? "" : "s"} for ${numbers}. ` +
+    `Changing the winner now would leave that money attached to the old winner while ${numbers} returned to the wheel. ` +
+    `Undo the draw for week ${input.weekNumber} instead — that reverses the payouts and the week settlement — then draw again.`
+  );
+}
+
 export type DeletePayoutConsequences = {
   number: number;
   netAmount: number;

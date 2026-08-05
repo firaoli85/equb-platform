@@ -112,7 +112,12 @@ export function DrawEditor({
         />
         <button
           type="button"
-          disabled={busy || targetSlotId === draw.slotId}
+          disabled={busy || targetSlotId === draw.slotId || undo.payoutCount > 0}
+          title={
+            undo.payoutCount > 0
+              ? `Week ${draw.weekNumber} already has payouts — undo the draw instead, then draw again`
+              : undefined
+          }
           onClick={() => {
             const target = slotOptions.find((s) => s.id === targetSlotId);
             ask(
@@ -136,6 +141,11 @@ export function DrawEditor({
         >
           Change winner
         </button>
+        {undo.payoutCount > 0 && (
+          <span className="text-xs text-gray-600 dark:text-gray-400">
+            Winner is locked once money is recorded — undo the draw to change it.
+          </span>
+        )}
 
         <button
           type="button"

@@ -34,6 +34,63 @@ export type PinAttemptOutcome =
     }
   | { outcome: "ok"; usedDefault?: boolean };
 
+/**
+ * SECURITY (audit C3). The attempt counter must be RESERVED with an atomic
+ * database increment BEFORE the PIN is compared, and the verdict decided
+ * from the value that increment returned. The previous shape — read the
+ * stored counter, compare, then write an absolute value — let concurrent
+ * requests all read the same snapshot and all write the same number, so N
+ * simultaneous guesses cost 1 and the lock never tripped.
+ *
+ * These two helpers are the decision half of that flow; the action layer
+ * owns the atomic `{ increment: 1 }` update that produces `attemptNumber`.
+ */
+
+/** Is the account locked right now? */
+export function isPinLocked(lockedUntil: Date | null, now: Date): boolean {
+  return lockedUntil !== null && lockedUntil.getTime() > now.getTime();
+}
+
+/**
+ * Given the reserved attempt number (1 for the first failure in a window),
+ * decide what to store after a WRONG pin: the lock trips on the configured
+ * attempt, and the counter resets so the next window starts clean.
+ */
+export function lockoutAfterFailure(input: {
+  attemptNumber: number;
+  maxAttempts: number;
+  lockMinutes: number;
+  now: Date;
+}): { failedAttempts: number; lockedUntil: Date | null } {
+  if (input.attemptNumber >= input.maxAttempts) {
+    return {
+      failedAttempts: 0, // fresh count once the lock expires
+      lockedUntil: new Date(input.now.getTime() + input.lockMinutes * 60_000),
+    };
+  }
+  return { failedAttempts: input.attemptNumber, lockedUntil: null };
+}
+
+/**
+ * Compare a PIN against stored state. No counter logic — the caller has
+ * already reserved the attempt. Returns "no-pin" when the member has neither
+ * a hash nor an available phone-digit default.
+ */
+export async function verifyPin(
+  state: Pick<PinAttemptState, "pinHash" | "phone">,
+  pin: string,
+  options?: { allowDefaultFromPhone?: boolean },
+): Promise<{ result: "match"; usedDefault: boolean } | { result: "wrong" } | { result: "no-pin" }> {
+  if (state.pinHash) {
+    return (await bcrypt.compare(pin, state.pinHash))
+      ? { result: "match", usedDefault: false }
+      : { result: "wrong" };
+  }
+  const fallback = options?.allowDefaultFromPhone ? defaultPinForPhone(state.phone) : null;
+  if (fallback === null) return { result: "no-pin" };
+  return pin === fallback ? { result: "match", usedDefault: true } : { result: "wrong" };
+}
+
 export async function hashPin(pin: string): Promise<string> {
   return bcrypt.hash(pin, BCRYPT_ROUNDS);
 }
@@ -53,9 +110,16 @@ export function defaultPinForPhone(phone: string | null | undefined): string | n
 }
 
 /**
- * Decide what a PIN attempt does, given the stored state. The caller
- * persists the returned counter/lock fields — always in the same place, so
- * lockout state is durable in the database, not process memory.
+ * Decide what a PIN attempt does, given the stored state.
+ *
+ * @deprecated NOT for the login path (audit C3). This returns an ABSOLUTE
+ * counter derived from a snapshot the caller read earlier, so persisting it
+ * is a read-modify-write: concurrent sign-in requests all read the same
+ * value and all write the same value, consuming N guesses for the price of
+ * one and never tripping the lock. `signInWithPin` now reserves the attempt
+ * with an atomic `{ increment: 1 }` and decides via isPinLocked / verifyPin
+ * / lockoutAfterFailure. Retained only for the offline verification script
+ * and the behavioural tests below.
  *
  * When no pinHash exists and `allowDefaultFromPhone` is on, the phone-digit
  * default is checked INSTEAD — with the same lockout rules. The moment a

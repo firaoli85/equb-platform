@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PresentationHidden } from "@/components/presentation-hidden";
-import { payoutIdFromKey } from "@/lib/draw-settlement";
+import { SETTLEMENT_EVENT_WHERE } from "@/lib/draw-settlement";
 import { prisma } from "@/lib/prisma";
 import { formatDateUTC } from "@/lib/format";
 import { getSetting } from "@/lib/settings";
@@ -46,14 +46,16 @@ export default async function DrawsPage() {
 
   // Week contributions settled from each payout, for computed consequences.
   const settlementEvents = await prisma.paymentEvent.findMany({
-    where: { idempotencyKey: { startsWith: "draw-settle:" } },
-    select: { idempotencyKey: true, amount: true },
+    where: SETTLEMENT_EVENT_WHERE,
+    select: { settlementPayoutId: true, amount: true },
   });
   const settlementByPayout = new Map<string, number>();
   for (const event of settlementEvents) {
-    const payoutId = payoutIdFromKey(event.idempotencyKey);
-    if (payoutId) {
-      settlementByPayout.set(payoutId, (settlementByPayout.get(payoutId) ?? 0) + event.amount);
+    if (event.settlementPayoutId) {
+      settlementByPayout.set(
+        event.settlementPayoutId,
+        (settlementByPayout.get(event.settlementPayoutId) ?? 0) + event.amount,
+      );
     }
   }
 

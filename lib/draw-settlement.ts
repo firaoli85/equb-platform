@@ -1,12 +1,18 @@
 // The winner's-week settlement as DATABASE facts (2.14): each deduction is
 // a PaymentEvent (a receipt — the member effectively paid that week from
 // their payout) allocated to the drawn week's row, plus a matching decrement
-// of the payout's net. The idempotency key `draw-settle:{drawId}:{payoutId}`
-// ties every deduction to its draw AND its payout, so undoing a draw (or
-// moving it) reverses EXACTLY what was written — even if the payout was
-// manually edited in between. The event is PINNED to the drawn week
-// (pinnedWeekId) so a later rebuild replays it onto that week only — it can
-// never waterfall oldest-first off the week it settled.
+// of the payout's net. The event is PINNED to the drawn week (pinnedWeekId)
+// so a later rebuild replays it onto that week only — it can never waterfall
+// oldest-first off the week it settled — and it points at the payout that
+// funded it (settlementPayoutId), so undoing a draw (or moving it) reverses
+// EXACTLY what was written, even if the payout was edited in between.
+//
+// SECURITY (audit C6): identification is by those two COLUMNS, never by the
+// idempotency key. The key is client-supplied on recordPayment, so a forged
+// "draw-settle:…" value could otherwise make an ordinary receipt look like
+// payout money — deletable by deletePayout, creditable onto a payout net by
+// moveDraw, and countable as "already received" by the terms settlement.
+// The key keeps its uniqueness role and nothing more.
 //
 // Runs inside the caller's serializable transaction — recordDraw, undoDraw,
 // and moveDraw call these so a draw and its settlement can never exist
@@ -17,22 +23,23 @@ import { Prisma } from "./generated/prisma/client";
 import { calculateFinishWeek } from "./money";
 import { planWinnerWeekSettlement } from "./settlement";
 
-const KEY_PREFIX = "draw-settle";
+/** Reserved: no client-supplied idempotency key may enter this namespace. */
+export const SETTLEMENT_KEY_PREFIX = "draw-settle";
 
 export function settlementKey(drawId: string, payoutId: string): string {
-  return `${KEY_PREFIX}:${drawId}:${payoutId}`;
+  return `${SETTLEMENT_KEY_PREFIX}:${drawId}:${payoutId}`;
 }
 
-/** The payout id a settlement event points at (keys are `prefix:draw:payout`). */
-export function payoutIdFromKey(idempotencyKey: string): string | null {
-  const parts = idempotencyKey.split(":");
-  return parts[0] === KEY_PREFIX && parts.length === 3 ? parts[2] : null;
+/** True when a caller is trying to write into the reserved namespace. */
+export function isReservedSettlementKey(idempotencyKey: string): boolean {
+  return new RegExp(`^${SETTLEMENT_KEY_PREFIX}:`, "i").test(idempotencyKey.trim());
 }
 
-/** Match any settlement event that funded a given payout, whichever draw wrote it. */
-export function isSettlementKeyForPayout(idempotencyKey: string, payoutId: string): boolean {
-  return payoutIdFromKey(idempotencyKey) === payoutId;
-}
+/**
+ * A settlement receipt is one the engine PINNED to a week. Ordinary receipts
+ * (whatever their key says) never satisfy this.
+ */
+export const SETTLEMENT_EVENT_WHERE = { pinnedWeekId: { not: null } } as const;
 
 export type WinnerWeekSummary = {
   participationId: string;
@@ -122,6 +129,7 @@ export async function settleWinnerWeeks(
           notes: `Week ${weekNumber} contribution settled from the payout — the winner does not pay the week they win`,
           idempotencyKey: settlementKey(drawId, deduction.payoutId),
           pinnedWeekId: draw.weekId,
+          settlementPayoutId: deduction.payoutId,
         },
       });
       if (paymentId) {
@@ -168,13 +176,15 @@ export async function unsettleDraw(
   tx: Prisma.TransactionClient,
   drawId: string,
 ): Promise<{ reversed: number; count: number }> {
+  // Every settlement funded by a payout of THIS draw — matched through the
+  // FK, so no client-chosen string can enter this set.
   const events = await tx.paymentEvent.findMany({
-    where: { idempotencyKey: { startsWith: `${KEY_PREFIX}:${drawId}:` } },
+    where: { ...SETTLEMENT_EVENT_WHERE, settlementPayout: { drawId } },
     include: { allocations: true },
   });
   let reversed = 0;
   for (const event of events) {
-    const payoutId = payoutIdFromKey(event.idempotencyKey);
+    const payoutId = event.settlementPayoutId;
     if (payoutId) {
       const payout = await tx.payout.findUnique({ where: { id: payoutId } });
       if (payout) {
@@ -205,13 +215,15 @@ export async function unsettlePayout(
   tx: Prisma.TransactionClient,
   payoutId: string,
 ): Promise<{ reversed: number }> {
+  // Scoped to THIS payout by foreign key — previously this scanned every
+  // "draw-settle:"-keyed event in the database and filtered in JS, which is
+  // what let a forged key delete an unrelated member's receipt (audit C6).
   const events = await tx.paymentEvent.findMany({
-    where: { idempotencyKey: { startsWith: `${KEY_PREFIX}:` } },
+    where: { ...SETTLEMENT_EVENT_WHERE, settlementPayoutId: payoutId },
     include: { allocations: true },
   });
   let reversed = 0;
   for (const event of events) {
-    if (!isSettlementKeyForPayout(event.idempotencyKey, payoutId)) continue;
     for (const allocation of event.allocations) {
       await tx.payment.update({
         where: { id: allocation.paymentId },

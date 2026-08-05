@@ -3,7 +3,10 @@ import {
   defaultPinForPhone,
   evaluatePinAttempt,
   hashPin,
+  isPinLocked,
   isValidPinFormat,
+  lockoutAfterFailure,
+  verifyPin,
   PIN_LOCKOUT_MINUTES,
   PIN_MAX_ATTEMPTS,
 } from "./pin";
@@ -247,5 +250,106 @@ describe("the phone-digit default (defaultPinFromPhone)", () => {
     expect(Object.keys(ok).sort()).toEqual(["outcome", "usedDefault"]);
     const wrong = await evaluatePinAttempt(noPin("+1 (240) 555-0187"), "1111", NOW, ALLOW);
     expect(Object.keys(wrong).sort()).toEqual(["failedAttempts", "lockedUntil", "outcome"]);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// SECURITY REGRESSION (audit C3): the lockout race.
+//
+// The old flow read pinFailedAttempts, compared the PIN, then wrote an
+// ABSOLUTE counter. Concurrent requests all read the same snapshot and all
+// wrote the same number, so N simultaneous guesses cost 1 and the lock never
+// tripped. signInWithPin now RESERVES each attempt with an atomic database
+// increment and decides from the number that increment returned — these are
+// the pure halves of that flow.
+// ————————————————————————————————————————————————————————————————
+
+describe("isPinLocked — the lock is read from the reserved row, not a snapshot", () => {
+  const now = new Date("2026-08-06T12:00:00.000Z");
+
+  it("is locked while the deadline is in the future", () => {
+    expect(isPinLocked(new Date(now.getTime() + 60_000), now)).toBe(true);
+  });
+
+  it("is not locked once it has passed, or when never set", () => {
+    expect(isPinLocked(new Date(now.getTime() - 1), now)).toBe(false);
+    expect(isPinLocked(null, now)).toBe(false);
+  });
+});
+
+describe("lockoutAfterFailure — every reserved attempt is consumed exactly once", () => {
+  const now = new Date("2026-08-06T12:00:00.000Z");
+  const opts = { maxAttempts: 5, lockMinutes: 30, now };
+
+  it("counts up without locking below the limit", () => {
+    for (let n = 1; n < 5; n++) {
+      expect(lockoutAfterFailure({ ...opts, attemptNumber: n })).toEqual({
+        failedAttempts: n,
+        lockedUntil: null,
+      });
+    }
+  });
+
+  it("trips the lock on the configured attempt and resets the counter", () => {
+    const result = lockoutAfterFailure({ ...opts, attemptNumber: 5 });
+    expect(result.failedAttempts).toBe(0);
+    expect(result.lockedUntil).toEqual(new Date(now.getTime() + 30 * 60_000));
+  });
+
+  it("CONCURRENCY: five racing attempts consume five distinct numbers and the fifth locks", () => {
+    // The atomic increment hands each concurrent caller its own number —
+    // this is what the old snapshot-based flow could not do.
+    const reserved = [1, 2, 3, 4, 5];
+    const verdicts = reserved.map((attemptNumber) =>
+      lockoutAfterFailure({ ...opts, attemptNumber }),
+    );
+    expect(verdicts.filter((v) => v.lockedUntil !== null)).toHaveLength(1);
+    expect(verdicts[4].lockedUntil).not.toBeNull();
+    // Under the OLD behaviour every racer computed 0 + 1 = 1 and none locked.
+    const oldRacyBehaviour = reserved.map(() => lockoutAfterFailure({ ...opts, attemptNumber: 1 }));
+    expect(oldRacyBehaviour.every((v) => v.lockedUntil === null)).toBe(true);
+  });
+
+  it("an attempt beyond the limit still locks — nothing slips past", () => {
+    expect(lockoutAfterFailure({ ...opts, attemptNumber: 9 }).lockedUntil).not.toBeNull();
+  });
+
+  it("honours configured limits rather than the defaults (2.6)", () => {
+    expect(
+      lockoutAfterFailure({ attemptNumber: 3, maxAttempts: 3, lockMinutes: 1, now }).lockedUntil,
+    ).toEqual(new Date(now.getTime() + 60_000));
+  });
+});
+
+describe("verifyPin — comparison only; the counter is the caller's business", () => {
+  it("matches a real hashed PIN and rejects a wrong one", async () => {
+    const pinHash = await hashPin("4321");
+    expect(await verifyPin({ pinHash, phone: "+12405550187" }, "4321")).toEqual({
+      result: "match",
+      usedDefault: false,
+    });
+    expect(await verifyPin({ pinHash, phone: "+12405550187" }, "1111")).toEqual({
+      result: "wrong",
+    });
+  });
+
+  it("uses the phone-digit default ONLY when there is no hash and it is enabled", async () => {
+    const state = { pinHash: null, phone: "+12405550187" };
+    expect(await verifyPin(state, "0187", { allowDefaultFromPhone: true })).toEqual({
+      result: "match",
+      usedDefault: true,
+    });
+    expect(await verifyPin(state, "0187", { allowDefaultFromPhone: false })).toEqual({
+      result: "no-pin",
+    });
+  });
+
+  it("a real hash beats the default permanently — the phone digits stop working", async () => {
+    const pinHash = await hashPin("4321");
+    expect(
+      await verifyPin({ pinHash, phone: "+12405550187" }, "0187", {
+        allowDefaultFromPhone: true,
+      }),
+    ).toEqual({ result: "wrong" });
   });
 });

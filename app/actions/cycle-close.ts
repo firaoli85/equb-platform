@@ -17,7 +17,6 @@ import {
   type ArchiveWeek,
   type MemberFinal,
 } from "@/lib/cycle-close";
-import { payoutIdFromKey } from "@/lib/draw-settlement";
 import { formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
@@ -37,7 +36,7 @@ async function loadCycleForClose(db: Prisma.TransactionClient | typeof prisma, c
         include: {
           person: true,
           payments: true,
-          paymentEvents: { select: { amount: true, idempotencyKey: true, pinnedWeekId: true } },
+          paymentEvents: { select: { amount: true, pinnedWeekId: true } },
           luckyNumbers: {
             include: {
               payouts: true,
@@ -90,9 +89,9 @@ function memberFinals(cycle: LoadedCycle, today: Date): MemberFinal[] {
     const draw = p.luckyNumbers
       .flatMap((n) => n.slotMembers.flatMap((sm) => sm.slot.draws))
       .sort((a, b) => a.week.weekNumber - b.week.weekNumber)[0];
-    const settledFromPayout = p.paymentEvents
-      .filter((e) => payoutIdFromKey(e.idempotencyKey) !== null)
-      .reduce((sum, e) => sum + e.amount, 0);
+    // A settlement is a PINNED receipt (audit C6) — never one whose
+    // client-supplied key merely looks like the engine's.
+    const settledFromPayout = pinnedEvents.reduce((sum, e) => sum + e.amount, 0);
 
     return {
       participationId: p.id,

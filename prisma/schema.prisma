@@ -192,10 +192,19 @@ model PaymentEvent {
   // The winner's week is settled FROM the payout, not paid separately: a
   // pinned event allocates to THIS week only, never oldest-first. Set only
   // by the draw settlement; ordinary receipts leave it null.
+  //
+  // pinnedWeekId != null IS the definition of "this is a settlement receipt",
+  // and settlementPayoutId records WHICH payout funded it. Both are written
+  // only by lib/draw-settlement.ts and are unreachable from any client input
+  // — identification must never be inferred from the idempotency key, which
+  // the caller controls.
   pinnedWeekId    String?
+  settlementPayoutId String?
   participation   Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
   pinnedWeek      Week?         @relation(fields: [pinnedWeekId], references: [id], onDelete: SetNull)
+  settlementPayout Payout?      @relation(fields: [settlementPayoutId], references: [id], onDelete: SetNull)
   allocations     PaymentAllocation[]
+  @@index([settlementPayoutId])
   @@map("payment_events")
 }
 
@@ -291,10 +300,10 @@ model Payout {
   notes         String?
   // netAmount is what actually crosses the table: the draw settlement
   // DECREMENTS it by the winner's own-week contribution. The settlement
-  // receipt is tied to this payout via idempotencyKey
-  // `draw-settle:{drawId}:{payoutId}` (lib/draw-settlement.ts).
+  // receipt points back here via PaymentEvent.settlementPayoutId.
   luckyNumber   LuckyNumber   @relation(fields: [luckyNumberId], references: [id], onDelete: Cascade)
   draw          Draw?         @relation(fields: [drawId], references: [id], onDelete: SetNull)
+  settlementEvents PaymentEvent[]
   @@map("payouts")
 }
 

@@ -36,3 +36,23 @@ export function allowLookup(key: string, now = Date.now()): boolean {
 
 export const LOOKUP_THROTTLE_MESSAGE =
   "Too many tries. Wait a few minutes and try again.";
+
+/**
+ * The caller's IP, chosen so an attacker cannot mint a fresh throttle bucket
+ * per request. `x-forwarded-for` is "client, proxy1, proxy2…" and the CLIENT
+ * writes the leftmost entry — reading `split(",")[0]` (the old behaviour)
+ * meant any attacker-supplied value became the key. Platform-set headers win;
+ * within XFF the RIGHTMOST hop is the one our own edge appended.
+ */
+export function callerIp(header: {
+  get(name: string): string | null;
+}): string {
+  const platform = header.get("x-real-ip") || header.get("x-vercel-forwarded-for");
+  if (platform) return platform.trim();
+  const forwarded = header.get("x-forwarded-for");
+  if (forwarded) {
+    const hops = forwarded.split(",").map((h) => h.trim()).filter(Boolean);
+    if (hops.length > 0) return hops[hops.length - 1];
+  }
+  return "unknown";
+}

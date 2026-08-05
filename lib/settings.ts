@@ -13,8 +13,17 @@ export const SETTING_DEFAULTS: {
    *  sends — across the whole admin. Default OFF. */
   presentationMode: boolean;
   /** When true, a member with NO PIN set may sign in with the last 4 digits
-   *  of their registered phone (never stored — checked at sign-in only).
-   *  Turned off when PIN login is retired at cycle 2. */
+   *  of their registered phone (never stored — checked at sign-in only),
+   *  AND a WhatsApp code, since the digits alone are not a secret.
+   *
+   *  SECURITY (audit C2): DEFAULT OFF. The "PIN" is a substring of the
+   *  identifier the caller just typed, so with it on and unaccompanied,
+   *  anyone holding a member's phone number could sign in as them. The
+   *  organizer may still enable it for onboarding — it is a real
+   *  convenience — but it is never the shipped default, the second factor
+   *  is mandatory while it is on, and the system never advertises who is
+   *  still relying on it. Turned off for good when PIN login is retired at
+   *  cycle 2. */
   defaultPinFromPhone: boolean;
   /** Wrong PIN attempts before the account locks (2.6 — read at check time). */
   pinMaxAttempts: number;
@@ -26,7 +35,7 @@ export const SETTING_DEFAULTS: {
 } = {
   pinLoginEnabled: true,
   presentationMode: false,
-  defaultPinFromPhone: true,
+  defaultPinFromPhone: false,
   pinMaxAttempts: 5,
   pinLockMinutes: 30,
   notifyOnLockout: true,

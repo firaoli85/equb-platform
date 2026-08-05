@@ -6,10 +6,16 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
-import { getCurrentUser, requireAdmin } from "@/lib/auth";
-import { allowLookup, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
+import { getCurrentUser, isAdminClaims, requireAdmin } from "@/lib/auth";
+import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
 import { maybeSendLockoutNotice } from "@/lib/messaging-engine";
-import { evaluatePinAttempt, hashPin, isValidPinFormat } from "@/lib/pin";
+import {
+  hashPin,
+  isPinLocked,
+  isValidPinFormat,
+  lockoutAfterFailure,
+  verifyPin,
+} from "@/lib/pin";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { phoneDigits, toE164 } from "@/lib/phone";
 import { prisma } from "@/lib/prisma";
@@ -79,6 +85,23 @@ async function mintBridgeSession(person: {
   // The auth user may predate the bridge (e.g. created by OTP) and lack an
   // email identity — give it the synthetic one; members never use email.
   const existing = await admin.auth.admin.getUserById(authUserId);
+
+  // SECURITY (audit C4): the member paths must never mint an ORGANIZER
+  // session. If a Person row ever points at the admin auth user — one phone
+  // claim on that account is enough (see linkCurrentUserToPerson) — passing
+  // that person's PIN would otherwise hand out `is_admin` and, worse, the
+  // password reset below would silently lock the organizer out of
+  // /admin/login. Refuse before touching anything.
+  if (existing.data.user?.app_metadata?.is_admin === true) {
+    console.error("mintBridgeSession refused: target auth user carries the admin claim", {
+      personId: person.id,
+    });
+    return {
+      ok: false as const,
+      error: "This number belongs to the organizer — use the organizer sign-in page.",
+    };
+  }
+
   let signInEmail = existing.data.user?.email || null;
   if (!signInEmail) {
     const withEmail = await admin.auth.admin.updateUserById(authUserId, {
@@ -92,18 +115,23 @@ async function mintBridgeSession(person: {
     signInEmail = bridgeEmail(person.id);
   }
 
-  const setPw = await admin.auth.admin.updateUserById(authUserId, {
-    password: bridgePassword(authUserId),
-  });
-  if (setPw.error) {
-    console.error("mintBridgeSession bridge password failed:", setPw.error);
-    return { ok: false as const, error: "Could not sign you in — contact the organizer." };
-  }
+  // SECURITY (audit C4): do NOT rewrite the password on every sign-in. It is
+  // set once — on the first bridge for this auth user — and only re-set if a
+  // sign-in actually fails (a drifted or never-set password). In steady state
+  // this path performs zero privileged writes against the account.
+  const password = bridgePassword(authUserId);
   const supabase = await createClient();
-  const signIn = await supabase.auth.signInWithPassword({
-    email: signInEmail,
-    password: bridgePassword(authUserId),
-  });
+  let signIn = await supabase.auth.signInWithPassword({ email: signInEmail, password });
+
+  if (signIn.error) {
+    const setPw = await admin.auth.admin.updateUserById(authUserId, { password });
+    if (setPw.error) {
+      console.error("mintBridgeSession bridge password failed:", setPw.error);
+      return { ok: false as const, error: "Could not sign you in — contact the organizer." };
+    }
+    signIn = await supabase.auth.signInWithPassword({ email: signInEmail, password });
+  }
+
   if (signIn.error) {
     console.error("mintBridgeSession bridge sign-in failed:", signIn.error);
     return { ok: false as const, error: "Could not sign you in — contact the organizer." };
@@ -123,6 +151,16 @@ export async function signInWithPin(input: { phone: string; pin: string }) {
     const phone = input.phone?.trim();
     const pin = input.pin?.trim();
     if (!phone || !pin) return { ok: false as const, error: GENERIC_PIN_ERROR };
+
+    // SECURITY (audit C3): this was the ONLY unauthenticated endpoint with no
+    // throttle at all — the per-person counter alone let an attacker sweep the
+    // whole directory for `members × maxAttempts` free guesses per window.
+    // Throttled before any database work, per caller and per tried number.
+    const header = await headers();
+    const ip = callerIp(header);
+    if (!allowLookup(`pin-ip:${ip}`) || !allowLookup(`pin-phone:${phoneDigits(phone)}`)) {
+      return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
+    }
 
     // Digit-based matching, same as the lookup step — a formatted or
     // autofilled number must never fail a member who exists.
@@ -146,31 +184,51 @@ export async function signInWithPin(input: { phone: string; pin: string }) {
     const usedDefaultFor = new Set<string>();
     let lockedUntil: Date | null = null;
     for (const person of allowed) {
-      const result = await evaluatePinAttempt(person, pin, now, {
-        allowDefaultFromPhone,
+      // SECURITY (audit C3): RESERVE the attempt with an atomic increment
+      // BEFORE comparing. Postgres serializes this row update, so concurrent
+      // requests each receive a distinct attemptNumber — N simultaneous
+      // guesses consume N, and the lock trips exactly on schedule. Reading
+      // the counter first and writing an absolute value afterwards (the old
+      // shape) let every racer read 0 and write 1.
+      const reserved = await prisma.person.update({
+        where: { id: person.id },
+        data: { pinFailedAttempts: { increment: 1 } },
+        select: { pinFailedAttempts: true, pinLockedUntil: true, pinHash: true, phone: true },
+      });
+
+      if (isPinLocked(reserved.pinLockedUntil, now)) {
+        // The attempt is still consumed — fail closed.
+        if (!lockedUntil || reserved.pinLockedUntil! > lockedUntil) {
+          lockedUntil = reserved.pinLockedUntil;
+        }
+        continue;
+      }
+
+      const verdict = await verifyPin(reserved, pin, { allowDefaultFromPhone });
+      if (verdict.result === "no-pin") continue;
+
+      if (verdict.result === "match") {
+        matches.push(person);
+        if (verdict.usedDefault) usedDefaultFor.add(person.id);
+        continue;
+      }
+
+      const after = lockoutAfterFailure({
+        attemptNumber: reserved.pinFailedAttempts,
         maxAttempts,
         lockMinutes,
+        now,
       });
-      if (result.outcome === "ok") {
-        matches.push(person);
-        if (result.usedDefault) usedDefaultFor.add(person.id);
-      } else if (result.outcome === "locked") {
-        if (!lockedUntil || result.until > lockedUntil) lockedUntil = result.until;
-      } else if (result.outcome === "wrong") {
-        await prisma.person.update({
-          where: { id: person.id },
-          data: {
-            pinFailedAttempts: result.failedAttempts,
-            pinLockedUntil: result.lockedUntil,
-          },
-        });
-        if (result.lockedUntil) {
-          if (!lockedUntil || result.lockedUntil > lockedUntil) lockedUntil = result.lockedUntil;
-          // This attempt TRIPPED the lock — tell them on WhatsApp (2.28),
-          // best-effort and behind the notifyOnLockout setting. The outcome
-          // lands in MessageLog either way.
-          await maybeSendLockoutNotice(person.id, lockMinutes);
-        }
+      await prisma.person.update({
+        where: { id: person.id },
+        data: { pinFailedAttempts: after.failedAttempts, pinLockedUntil: after.lockedUntil },
+      });
+      if (after.lockedUntil) {
+        if (!lockedUntil || after.lockedUntil > lockedUntil) lockedUntil = after.lockedUntil;
+        // This attempt TRIPPED the lock — tell them on WhatsApp (2.28),
+        // best-effort and behind the notifyOnLockout setting. The outcome
+        // lands in MessageLog either way.
+        await maybeSendLockoutNotice(person.id, lockMinutes);
       }
     }
 
@@ -204,14 +262,33 @@ export async function signInWithPin(input: { phone: string; pin: string }) {
       data: { pinFailedAttempts: 0, pinLockedUntil: null },
     });
 
+    // SECURITY (audit C2): the phone-digit default is NOT a second factor —
+    // it is the last 4 digits of the identifier the caller just typed, so on
+    // its own it authenticates nobody. When it is what matched, no session is
+    // minted here: the member must also pass the WhatsApp code, and then set
+    // a real PIN. An OWN PIN signs in normally.
+    if (usedDefaultFor.has(person.id)) {
+      return {
+        ok: true as const,
+        data: {
+          personId: null,
+          name: null,
+          usedDefaultPin: true,
+          // The client must complete the WhatsApp code before any session.
+          needsSecondFactor: true as const,
+        },
+      };
+    }
+
     const session = await mintBridgeSession(person);
     if (!session.ok) return session;
 
     return {
       ok: true as const,
       data: {
-        personId: person.id,
-        name: person.nameEnglishFirst,
+        needsSecondFactor: false as const,
+        personId: person.id as string | null,
+        name: person.nameEnglishFirst as string | null,
         // True when the phone-digit default got them in — the client shows
         // a skippable "set your own PIN" prompt (never a wall).
         usedDefaultPin: usedDefaultFor.has(person.id),
@@ -264,10 +341,7 @@ export async function requestWhatsAppCode(input: { phone: string }) {
     if (!phone) return { ok: false as const, error: "Enter your phone number." };
 
     const header = await headers();
-    const ip =
-      header.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      header.get("x-real-ip") ||
-      "unknown";
+    const ip = callerIp(header);
     if (!allowLookup(`wa-send-ip:${ip}`) || !allowLookup(`wa-send:${phoneDigits(phone)}`)) {
       return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
     }
@@ -312,10 +386,7 @@ export async function signInWithWhatsAppCode(input: { phone: string; code: strin
     }
 
     const header = await headers();
-    const ip =
-      header.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      header.get("x-real-ip") ||
-      "unknown";
+    const ip = callerIp(header);
     if (!allowLookup(`wa-check-ip:${ip}`) || !allowLookup(`wa-check:${phoneDigits(phone)}`)) {
       return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
     }
@@ -355,6 +426,17 @@ export async function linkCurrentUserToPerson() {
   try {
     const claims = await getCurrentUser();
     if (!claims) return { ok: false as const, error: "Not signed in." };
+
+    // SECURITY (audit C4): never bind the ORGANIZER's auth identity to a
+    // directory Person. That binding is the precondition for the member PIN
+    // path minting an admin session, and it is reachable the moment a phone
+    // is attached to the admin account. The organizer uses /admin/login.
+    if (isAdminClaims(claims)) {
+      return {
+        ok: false as const,
+        error: "The organizer account cannot be linked to a member record.",
+      };
+    }
 
     const existing = await prisma.person.findUnique({ where: { authUserId: claims.sub } });
     if (existing) return { ok: true as const, data: existing };

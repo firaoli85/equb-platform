@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { StatCard } from "@/components/ui/stat-card";
-import { payoutIdFromKey } from "@/lib/draw-settlement";
+import { SETTLEMENT_EVENT_WHERE } from "@/lib/draw-settlement";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
@@ -39,11 +39,13 @@ export default async function CollectionsPage() {
     orderBy: [{ id: "asc" }],
   });
 
-  // Week contributions settled from each payout (`draw-settle:{draw}:{payout}`).
+  // Week contributions settled from each payout. Identified by the PINNED
+  // column and attributed through the payout FK (audit C6) — never by
+  // parsing the client-supplied idempotency key.
   const settlementEvents = await prisma.paymentEvent.findMany({
-    where: { idempotencyKey: { startsWith: "draw-settle:" } },
+    where: SETTLEMENT_EVENT_WHERE,
     select: {
-      idempotencyKey: true,
+      settlementPayoutId: true,
       amount: true,
       participationId: true,
       pinnedWeek: { select: { weekNumber: true } },
@@ -52,9 +54,11 @@ export default async function CollectionsPage() {
   const settlementByPayout = new Map<string, number>();
   const pinnedByParticipation = new Map<string, { amount: number; weekNumber: number | null }[]>();
   for (const event of settlementEvents) {
-    const payoutId = payoutIdFromKey(event.idempotencyKey);
-    if (payoutId) {
-      settlementByPayout.set(payoutId, (settlementByPayout.get(payoutId) ?? 0) + event.amount);
+    if (event.settlementPayoutId) {
+      settlementByPayout.set(
+        event.settlementPayoutId,
+        (settlementByPayout.get(event.settlementPayoutId) ?? 0) + event.amount,
+      );
     }
     const list = pinnedByParticipation.get(event.participationId) ?? [];
     list.push({ amount: event.amount, weekNumber: event.pinnedWeek?.weekNumber ?? null });

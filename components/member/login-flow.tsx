@@ -24,7 +24,6 @@ type Lookup = {
   nameEnglishFirst: string;
   nameAmharic: string;
   pinAvailable: boolean;
-  hasOwnPin: boolean;
 };
 
 const PAD_ROWS = [
@@ -128,9 +127,11 @@ export function LoginFlow() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [verifying, startVerify] = useTransition();
 
-  // Post-login "set your own PIN" prompt (after a default-PIN sign-in) —
-  // clearly skippable, never a wall.
+  // Post-login "set your own PIN" prompt. Skippable after PIN RECOVERY;
+  // REQUIRED after a phone-digit default sign-in (audit C2) — that default
+  // is not a secret and must not survive the sign-in that used it.
   const [promptSetPin, setPromptSetPin] = useState(false);
+  const [usedDefault, setUsedDefault] = useState(false);
   const [newPin, setNewPin] = useState("");
   const [newPinError, setNewPinError] = useState<string | null>(null);
   const [savingPin, startSavePin] = useTransition();
@@ -213,9 +214,14 @@ export function LoginFlow() {
           setPin("");
           return;
         }
-        if (result.data.usedDefaultPin) {
-          // Signed in with the phone-digit default — offer their own PIN.
-          setPromptSetPin(true);
+        if (result.data.needsSecondFactor) {
+          // SECURITY (audit C2): the phone-digit default is not a secret —
+          // it is part of the number they just typed. It gets them no
+          // session on its own; the WhatsApp code must follow, and then a
+          // real PIN is required rather than offered.
+          setUsedDefault(true);
+          setChoice("otp");
+          void sendOtp();
           return;
         }
         goToPortal();
@@ -282,8 +288,10 @@ export function LoginFlow() {
         setOtpCode("");
         return;
       }
-      if (recovering) {
-        // They forgot their PIN — signed in now, offer a new one (skippable).
+      if (recovering || usedDefault) {
+        // Recovery: signed in now, offer a new PIN (skippable).
+        // After a phone-digit default: setting a real PIN is REQUIRED — the
+        // default must not survive the sign-in that used it (audit C2).
         setPromptSetPin(true);
         return;
       }
@@ -451,11 +459,10 @@ export function LoginFlow() {
           <div className="space-y-4">
             <div className="text-center space-y-2">
               <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Enter your PIN</p>
-              {!lookup.hasOwnPin && (
-                <p className="text-xs text-gray-500 dark:text-gray-500">
-                  No PIN yet? Use the <strong>last 4 digits of your phone number</strong>.
-                </p>
-              )}
+              {/* The hint that used to appear here was driven by hasOwnPin,
+                  which the UNAUTHENTICATED lookup had to disclose — a public
+                  list of who was still on the default (audit C2). Members who
+                  have no PIN are guided after the attempt instead. */}
               <PinDots length={pin.length} />
             </div>
 
@@ -514,9 +521,9 @@ export function LoginFlow() {
                 {recovering ? "You're in — set a new PIN" : "You're in — choose your own PIN"}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-500">
-                {recovering
+                {recovering && !usedDefault
                   ? "You signed in with the WhatsApp code. Choose a new PIN for next time — or skip and use a WhatsApp code again."
-                  : "You signed in with the last 4 digits of your phone. Pick a PIN only you know — or skip and keep using the digits for now."}
+                  : "Your phone's last 4 digits are not a secret — anyone who has your number knows them. Pick a PIN only you know to finish signing in."}
               </p>
               <div className="pt-2">
                 <PinDots length={newPin.length} />
@@ -545,16 +552,20 @@ export function LoginFlow() {
               {savingPin ? "Saving…" : "Save my PIN"}
             </button>
 
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={goToPortal}
-                disabled={savingPin}
-                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
-              >
-                Skip for now — take me to my account
-              </button>
-            </div>
+            {/* No skip after a phone-digit default (audit C2) — leaving it
+                on means the number alone still opens the account. */}
+            {!usedDefault && (
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={goToPortal}
+                  disabled={savingPin}
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+                >
+                  Skip for now — take me to my account
+                </button>
+              </div>
+            )}
           </div>
         )}
 

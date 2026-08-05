@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { errorMessage } from "@/lib/action-result";
 import { linkCurrentUserToPerson } from "@/app/actions/auth";
-import { allowLookup, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
+import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { phoneDigits, toE164 } from "@/lib/phone";
@@ -354,10 +354,7 @@ export async function lookupMemberByPhone(input: { phone: string }) {
     if (!phone) return { ok: false as const, error: "Enter your phone number." };
 
     const header = await headers();
-    const ip =
-      header.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      header.get("x-real-ip") ||
-      "unknown";
+    const ip = callerIp(header);
     if (!allowLookup(`ip:${ip}`) || !allowLookup(`phone:${phoneDigits(phone)}`)) {
       return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
     }
@@ -389,9 +386,11 @@ export async function lookupMemberByPhone(input: { phone: string }) {
         nameEnglishFirst: person.nameEnglishFirst,
         nameAmharic: person.nameAmharic,
         pinAvailable: pinAllowed,
-        // Drives the pad's helper line — a member still on the default gets
-        // told what to type; one with their own PIN gets no hint.
-        hasOwnPin,
+        // SECURITY (audit C2): `hasOwnPin` used to be returned here. This
+        // endpoint is UNAUTHENTICATED, so that published a list of exactly
+        // which members were still signable-in with their own phone digits —
+        // a ready-made target list. The system never advertises who relies on
+        // the default; members who need the hint are told after the attempt.
       },
     };
   } catch (e) {

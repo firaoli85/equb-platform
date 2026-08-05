@@ -8,7 +8,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { formatMoney } from "@/lib/format";
 import { currentWeekNumber } from "@/lib/money";
 import { prisma, serializableTransaction } from "@/lib/prisma";
-import { settleWinnerWeeks, unsettleDraw } from "@/lib/draw-settlement";
+import { SETTLEMENT_EVENT_WHERE, settleWinnerWeeks, unsettleDraw } from "@/lib/draw-settlement";
 import { undoDrawConsequences } from "@/lib/undo-draw";
 import { validateArrangement } from "@/lib/arrangement";
 import { redactProposedSlots, redactWheelState } from "@/lib/presentation";
@@ -709,11 +709,15 @@ export async function undoDraw(input: { drawId: string }) {
       // then remove the money-out records, then the draw itself.
       const settlementByPayout = new Map<string, number>();
       const settlementEvents = await tx.paymentEvent.findMany({
-        where: { idempotencyKey: { startsWith: `draw-settle:${draw.id}:` } },
+        where: { ...SETTLEMENT_EVENT_WHERE, settlementPayout: { drawId: draw.id } },
+        select: { amount: true, settlementPayoutId: true },
       });
       for (const event of settlementEvents) {
-        const payoutId = event.idempotencyKey.split(":")[2];
-        settlementByPayout.set(payoutId, (settlementByPayout.get(payoutId) ?? 0) + event.amount);
+        if (!event.settlementPayoutId) continue;
+        settlementByPayout.set(
+          event.settlementPayoutId,
+          (settlementByPayout.get(event.settlementPayoutId) ?? 0) + event.amount,
+        );
       }
 
       const consequences = undoDrawConsequences({
