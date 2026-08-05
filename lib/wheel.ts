@@ -143,6 +143,32 @@ export function selectWinningSlot(input: {
   return { slotId: input.eligibleSlots[Math.min(index, input.eligibleSlots.length - 1)].id, reason: "random" };
 }
 
+// ————————————————— Draw-screen display order (2.4, audit H3c) —————————————————
+
+/**
+ * Deterministic shuffled order for the DRAW SCREEN. A planned winner's slot
+ * is created last, so raw position order would show it as the final wheel
+ * segment every single week — visible to the naked eye on Zoom. Seeding by
+ * the week keeps the wheel identical across reloads within one draw while
+ * decorrelating position from creation order.
+ */
+export function displayOrder<T>(slots: readonly T[], seed: string): T[] {
+  // String hash → mulberry32 PRNG: stable across runtimes, no Math.random.
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  let a = h >>> 0;
+  const random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+  return fisherYates(slots, random);
+}
+
 // ————————————————— Arrangement (2.3 frozen, over-unit flagged) —————————————————
 
 export type ProposedSlot = {

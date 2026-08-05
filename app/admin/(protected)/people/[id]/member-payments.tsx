@@ -3,9 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { previewAllocation, recordPayment } from "@/app/actions/payments";
-import { deletePaymentEvent, setWeekDeferral, setWeekNote } from "@/app/actions/edits";
-import { getCellDetail } from "@/app/actions/payments-view";
 import { recordLedgerPayment } from "@/app/actions/ledger";
+import { WeekActionPanel } from "@/components/admin/week-action-panel";
 import { AllocationEntry } from "@/components/allocation-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, Select } from "@/components/ui/controls";
@@ -212,49 +211,8 @@ export function MemberPayments({
     });
   }
 
-  function deferWeek(w: WeekRow, defer: boolean) {
-    askConfirm(
-      {
-        title: defer ? `Defer week ${w.weekNumber} for ${memberName}?` : `Remove the deferral on week ${w.weekNumber}?`,
-        body: defer ? (
-          <>
-            <p>
-              A deferred week is excused: it is never owed and never counts as behind. Their
-              receipts re-allocate immediately and the standing above recalculates.
-            </p>
-            <p>An audit entry records the decision.</p>
-          </>
-        ) : (
-          <>
-            <p>
-              Week {w.weekNumber} ({formatMoney(w.amountDue)}) is owed again. Their receipts
-              re-allocate immediately and the standing above recalculates.
-            </p>
-            <p>An audit entry records the decision.</p>
-          </>
-        ),
-        confirmLabel: defer ? `Defer week ${w.weekNumber}` : "Make it owed again",
-        destructive: false,
-      },
-      async () => {
-        const result = await setWeekDeferral({
-          participationId,
-          weekNumber: w.weekNumber,
-          deferred: defer,
-        });
-        if (!result.ok) setError(result.error);
-        else {
-          setSaved(
-            defer
-              ? `✓ Week ${w.weekNumber} deferred — excused, never owed.`
-              : `✓ Deferral removed — week ${w.weekNumber} is owed again.`,
-          );
-          setExpandedWeek(null); // the panel's snapshot is stale — close it
-          router.refresh();
-        }
-      },
-    );
-  }
+  // Per-week deferral now lives in the shared WeekActionPanel (2.19:
+  // one way to do each thing) — it is opened from the strip below.
 
   const [ledgerDollars, setLedgerDollars] = useState("");
 
@@ -435,19 +393,27 @@ export function MemberPayments({
                   </button>
                 </div>
                 {expanded && (
-                  <WeekActions
-                    participationId={participationId}
-                    memberName={memberName}
-                    week={w}
-                    onDefer={(defer) => deferWeek(w, defer)}
-                    onError={setError}
-                    onSaved={(msg) => {
-                      setSaved(msg);
-                      setExpandedWeek(null); // panel data is stale after any action
-                      router.refresh();
-                    }}
-                    askConfirm={askConfirm}
-                  />
+                  <div className="px-3 pb-3">
+                    {/* The SAME per-week panel the payments Members list and
+                        the Grid open — one way to do each thing (2.19). */}
+                    <WeekActionPanel
+                      key={`${participationId}-${w.weekNumber}`}
+                      target={{
+                        participationId,
+                        memberName,
+                        weekNumber: w.weekNumber,
+                        amountDue: w.amountDue,
+                        amountAlreadyPaid: w.amountAlreadyPaid,
+                        isDeferred: w.isDeferred,
+                      }}
+                      onSaved={(msg) => {
+                        setSaved(msg);
+                        setExpandedWeek(null); // the panel's snapshot is stale now
+                        router.refresh();
+                      }}
+                      onClose={() => setExpandedWeek(null)}
+                    />
+                  </div>
                 )}
               </li>
             );
@@ -528,169 +494,6 @@ export function MemberPayments({
           setOnConfirm(null);
         }}
       />
-    </div>
-  );
-}
-
-// Per-week actions: defer, receipts (undo), note — the SAME actions the
-// grid's cell menu offers, from the member page.
-function WeekActions({
-  participationId,
-  memberName,
-  week,
-  onDefer,
-  onError,
-  onSaved,
-  askConfirm,
-}: {
-  participationId: string;
-  memberName: string;
-  week: WeekRow;
-  onDefer: (defer: boolean) => void;
-  onError: (msg: string) => void;
-  onSaved: (msg: string) => void;
-  askConfirm: (spec: ConfirmSpec, action: () => Promise<void>) => void;
-}) {
-  const [detail, setDetail] = useState<{
-    isDeferred: boolean;
-    weekIsSkipped: boolean;
-    note: string;
-    receipts: { eventId: string; appliedHere: number; eventAmount: number; method: string | null; receivedAt: string }[];
-  } | null>(null);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getCellDetail({ participationId, weekNumber: week.weekNumber }).then((result) => {
-      if (cancelled) return;
-      if (result.ok) {
-        setDetail(result.data);
-        setNote(result.data.note);
-      } else onError(result.error);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [participationId, week.weekNumber, onError]);
-
-  if (!detail)
-    return <p className="px-3 pb-3 text-xs text-gray-500 dark:text-gray-500">Loading week…</p>;
-
-  return (
-    <div className="space-y-3 border-t border-gray-100 dark:border-gray-800/60 bg-gray-50/60 dark:bg-white/[0.02] px-3 py-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={detail.weekIsSkipped}
-          title={
-            detail.weekIsSkipped
-              ? "The whole week is skipped for everyone — edit it on the Weeks page"
-              : undefined
-          }
-          onClick={() => onDefer(!detail.isDeferred)}
-          className={buttonCls.secondary + " !px-3 !py-1.5 !text-xs"}
-        >
-          {detail.isDeferred ? "Remove deferral" : "Mark deferred"}
-        </button>
-        <span className="text-xs text-gray-600 dark:text-gray-400">
-          {detail.receipts.length} receipt{detail.receipts.length === 1 ? "" : "s"} on this week
-        </span>
-      </div>
-
-      {detail.receipts.length > 0 && (
-        <ul className="space-y-1">
-          {detail.receipts.map((r) => (
-            <li key={r.eventId} className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
-                {formatMoney(r.appliedHere)}
-                {r.appliedHere < r.eventAmount && (
-                  <span className="font-normal text-gray-600 dark:text-gray-400">
-                    {" "}
-                    (of a {formatMoney(r.eventAmount)} receipt)
-                  </span>
-                )}
-              </span>
-              <span className="text-gray-600 dark:text-gray-400">{r.method ?? "—"}</span>
-              <span className="tabular-nums text-gray-600 dark:text-gray-400">
-                {formatDateUTC(new Date(r.receivedAt))}
-              </span>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  const spans = r.appliedHere < r.eventAmount;
-                  askConfirm(
-                    {
-                      title: `Undo this ${formatMoney(r.eventAmount)} receipt from ${memberName}?`,
-                      body: (
-                        <>
-                          {spans ? (
-                            <p>
-                              Only {formatMoney(r.appliedHere)} of it sits on week {week.weekNumber} —
-                              the WHOLE receipt is deleted and every week recalculates.
-                            </p>
-                          ) : (
-                            <p>The receipt is deleted and week {week.weekNumber} recalculates.</p>
-                          )}
-                          <p>The standing above and the cash position recalculate immediately. An audit entry records what was removed.</p>
-                        </>
-                      ),
-                      confirmLabel: "Undo receipt",
-                    },
-                    async () => {
-                      setBusy(true);
-                      const result = await deletePaymentEvent({ eventId: r.eventId });
-                      setBusy(false);
-                      if (!result.ok) onError(result.error);
-                      else
-                        onSaved(
-                          `✓ Undone — ${formatMoney(r.eventAmount)} receipt deleted and weeks recalculated.`,
-                        );
-                    },
-                  );
-                }}
-                className={buttonCls.danger + " !px-2 !py-0.5 !text-xs"}
-              >
-                Undo
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="flex items-end gap-2">
-        <label className="grow">
-          <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-            Note on week {week.weekNumber}
-          </span>
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-2.5 py-1.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={busy || note === detail.note}
-          onClick={() => {
-            void (async () => {
-              setBusy(true);
-              const result = await setWeekNote({
-                participationId,
-                weekNumber: week.weekNumber,
-                note,
-              });
-              setBusy(false);
-              if (!result.ok) onError(result.error);
-              else onSaved("✓ Note saved.");
-            })();
-          }}
-          className={buttonCls.secondary + " !px-3 !py-1.5 !text-xs"}
-        >
-          Save note
-        </button>
-      </div>
     </div>
   );
 }

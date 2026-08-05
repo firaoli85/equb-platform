@@ -2,73 +2,52 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { deletePaymentEvent, setWeekDeferral, setWeekNote } from "@/app/actions/edits";
-import { getCellDetail } from "@/app/actions/payments-view";
-import { AllocationEntry } from "@/components/allocation-entry";
-import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
-import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
-import { useViewMode, ViewToggle } from "@/components/ui/view-toggle";
+import { useState } from "react";
+import { WeekActionPanel, type WeekTarget } from "@/components/admin/week-action-panel";
+import { Alert } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney } from "@/lib/format";
+import { matchesFilter, buildMemberRows, type MemberFilter } from "@/lib/members-view";
 import { type PaymentGrid } from "@/lib/payments-view";
 
-// The grid is for SEEING (2.15: the map). Money changes ONLY by recording or
-// undoing receipts — paid/unpaid/partial/late are derived (2.14) and have no
-// direct setter here or anywhere. The one stored decision a cell offers is
-// deferral: a real organizer choice to excuse a week.
+// THE GRID — the map (2.15): everyone at once, to spot patterns. It does not
+// record money by itself; clicking a cell opens the SAME per-week panel the
+// Members view uses, so there is one way to do each thing. Paid/unpaid/
+// partial/late are DERIVED (2.14) and have no direct setter anywhere.
 
+// Same MEASURED palette as the Members view — one visual language for a
+// status wherever it appears, every pair over 4.5:1 in both themes.
 const MARKERS: Record<string, { label: string; className: string; meaning: string }> = {
   PAID: {
     label: "✓",
-    className: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-300",
+    className: "bg-emerald-700 text-white",
     meaning: "paid in full",
   },
   PARTIAL: {
     label: "◐",
-    className: "bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-300",
+    className: "bg-amber-400 text-amber-950",
     meaning: "partially paid",
   },
   UNPAID: {
     label: "·",
-    className: "text-gray-600 dark:text-gray-400",
+    className: "bg-gray-100 text-gray-700 dark:bg-[#2f2f2f] dark:text-gray-100",
     meaning: "unpaid, window open",
   },
   LATE: {
     label: "✗",
-    className: "bg-red-100 text-red-900 dark:bg-red-900/50 dark:text-red-300",
+    className: "bg-red-600 text-white",
     meaning: "unpaid, window closed",
   },
   DEFERRED: {
     label: "—",
-    className: "text-gray-500 dark:text-gray-500",
+    className: "bg-gray-300 text-gray-800 dark:bg-gray-600 dark:text-gray-100",
     meaning: "deferred (excused)",
   },
 };
 
-type SelectedCell = {
-  participationId: string;
-  name: string;
-  weekNumber: number;
-  remaining: number;
-};
-
-type CellDetail = {
-  memberName: string;
-  weekNumber: number;
-  isDeferred: boolean;
-  weekIsSkipped: boolean;
-  note: string;
-  receipts: {
-    eventId: string;
-    appliedHere: number;
-    eventAmount: number;
-    method: string | null;
-    receivedAt: string;
-  }[];
-};
-
 export function PaymentsGrid({
   data,
+  filter,
+  onFilterChange,
 }: {
   data: {
     presentation?: boolean;
@@ -77,158 +56,166 @@ export function PaymentsGrid({
     grid: PaymentGrid;
     memberWeekly: Record<string, number>;
   };
+  filter: MemberFilter;
+  onFilterChange: (f: MemberFilter) => void;
 }) {
   const { grid } = data;
+  const router = useRouter();
   // Presentation mode (2.4): the server sent numbers instead of names and no
   // amounts — the grid is a pure map: statuses visible, nothing clickable.
   const presentation = data.presentation === true;
-  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
-  // The MEMBERS LIST is the default: one row per member, readable at 27
-  // members. The grid is the map you open deliberately (2.15).
-  const [view, setView] = useViewMode("admin-payments-view", "list");
-  const [filter, setFilter] = useState<"all" | "behind" | "unpaid-week">("all");
+  const [open, setOpen] = useState<{ participationId: string; weekNumber: number } | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
 
-  // Grid filter: which member columns matter right now.
-  const currentRow = grid.rows.find((r) => r.weekNumber === data.currentCycleWeek) ?? null;
+  // The same filter predicate the Members view uses, so switching views keeps
+  // the same people on screen.
+  const rows = buildMemberRows(grid);
   const visibleIdx = grid.columns
-    .map((c, i) => i)
-    .filter((i) => {
-      if (presentation || filter === "all") return true;
-      const c = grid.columns[i];
-      if (filter === "behind") return c.outstanding > 0;
-      const cell = currentRow?.cells[i];
-      return (
-        cell !== undefined &&
-        cell.kind === "week" &&
-        cell.status !== "PAID" &&
-        cell.status !== "DEFERRED"
-      );
-    });
+    .map((_, i) => i)
+    .filter((i) =>
+      presentation ? true : matchesFilter(rows[i], filter, data.currentCycleWeek),
+    );
   const hiddenCount = grid.columns.length - visibleIdx.length;
 
+  const FILTERS: { key: MemberFilter; label: string }[] = [
+    { key: "all", label: `Everyone (${grid.columns.length})` },
+    { key: "behind", label: "Behind" },
+    { key: "unpaid-week", label: `Unpaid week ${data.currentCycleWeek}` },
+    { key: "partial", label: "Partial" },
+  ];
+
+  function targetFor(colIdx: number, weekNumber: number): WeekTarget | null {
+    const row = grid.rows.find((r) => r.weekNumber === weekNumber);
+    const cell = row?.cells[colIdx];
+    if (!cell || cell.kind !== "week") return null;
+    const column = grid.columns[colIdx];
+    return {
+      participationId: column.participationId,
+      memberName: column.name.split("—")[1]?.trim() || column.name,
+      weekNumber,
+      amountDue: cell.amountDue,
+      amountAlreadyPaid: cell.storedPaid,
+      isDeferred: cell.status === "DEFERRED",
+    };
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 animate-fade-in-up">
-        <h1 className="text-xl font-black text-gray-900 dark:text-white">
-          Payments — {data.cycleName}
-        </h1>
-        <ViewToggle mode={view} onChange={setView} labels={{ list: "Members", grid: "Grid" }} />
-      </div>
+    <div className="space-y-3">
+      {saved && <Alert kind="ok">{saved}</Alert>}
+
+      {!presentation && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => onFilterChange(f.key)}
+              aria-pressed={filter === f.key}
+              className={`rounded-lg border px-2.5 py-1.5 font-semibold transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] ${
+                filter === f.key
+                  ? "border-indigo-400 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300"
+                  : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+          {hiddenCount > 0 && (
+            <span className="text-gray-600 dark:text-gray-400">
+              showing {visibleIdx.length} of {grid.columns.length} members
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-700 dark:text-gray-300 animate-fade-in-up-1">
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-700 dark:text-gray-300">
         {Object.entries(MARKERS).map(([key, m]) => (
           <span key={key} className="flex items-center gap-1.5">
-            <span className={`inline-block w-5 rounded text-center font-bold ${m.className}`}>
+            <span
+              className={`inline-flex h-5 w-5 items-center justify-center rounded font-bold ${m.className}`}
+            >
               {m.label}
             </span>
             {m.meaning}
           </span>
         ))}
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-5 rounded text-center text-gray-400 dark:text-gray-600">○</span>
+          <span className="inline-block h-5 w-5 rounded text-center text-gray-400 dark:text-gray-600">
+            ○
+          </span>
           not yet joined
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-5 rounded border border-dashed border-gray-300 dark:border-gray-700 text-center">
-            &nbsp;
-          </span>
+          <span className="inline-block h-5 w-5 rounded border border-dashed border-gray-300 dark:border-gray-700" />
           finished
         </span>
       </div>
 
-      {view === "grid" ? (
-        <>
-        {!presentation && (
-          <div className="flex flex-wrap items-center gap-1.5 text-xs animate-fade-in-up-1">
-            {(
-              [
-                { key: "all", label: `Everyone (${grid.columns.length})` },
-                { key: "behind", label: "Behind" },
-                { key: "unpaid-week", label: "Unpaid this week" },
-              ] as const
-            ).map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilter(f.key)}
-                aria-pressed={filter === f.key}
-                className={`rounded-lg border px-2.5 py-1.5 font-semibold transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] ${
-                  filter === f.key
-                    ? "border-indigo-400 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300"
-                    : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-            {filter !== "all" && (
-              <span className="text-gray-600 dark:text-gray-400">
-                showing {visibleIdx.length} of {grid.columns.length} members ({hiddenCount} hidden by
-                this filter)
-              </span>
-            )}
-          </div>
-        )}
-        <div className="max-h-[70vh] overflow-auto rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] shadow-sm animate-fade-in-up-2">
-          <table className="border-collapse text-xs">
-            <thead>
-              <tr>
-                <th className="sticky left-0 top-0 z-20 border-b border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1a1a1a] px-2.5 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                  Week
-                </th>
-                {visibleIdx.map((idx) => grid.columns[idx]).map((c) => (
+      {/* The matrix. Both the week column and the header row are frozen, so
+          scrolling in either direction stays oriented at 27 x 20. */}
+      <div className="max-h-[70vh] overflow-auto rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] shadow-sm">
+        <table className="border-collapse text-xs">
+          <thead>
+            <tr>
+              <th className="sticky left-0 top-0 z-30 border-b border-r-2 border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                Week
+              </th>
+              {visibleIdx.map((idx) => {
+                const c = grid.columns[idx];
+                return (
                   <th
                     key={c.participationId}
-                    className="sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1a1a1a] px-1 py-2 text-center align-bottom"
+                    className="sticky top-0 z-20 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1a1a1a] px-1.5 py-2 text-center align-bottom"
                     title={`${c.name} — ${c.numbersLabel}${c.startWeek > 1 ? ` — joined week ${c.startWeek}` : ""}`}
                   >
                     {presentation ? (
-                      <span className="block max-w-16 truncate font-bold text-gray-800 dark:text-gray-200">
+                      <span className="block w-20 truncate text-[11px] font-bold text-gray-800 dark:text-gray-200">
                         {c.numbersLabel}
                       </span>
                     ) : (
-                      <>
-                        <Link
-                          href={`/admin/participations/${c.participationId}`}
-                          className="block max-w-16 truncate font-bold text-gray-800 dark:text-gray-200 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
-                        >
-                          {c.name.split("—")[1]?.trim() ?? c.name}
-                        </Link>
-                        <span className="block font-medium text-gray-500 dark:text-gray-500">
-                          {c.numbersLabel}
-                        </span>
-                      </>
+                      <Link
+                        href={`/admin/participations/${c.participationId}`}
+                        className="block w-20 truncate text-[11px] font-bold text-gray-800 dark:text-gray-200 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
+                      >
+                        {c.name.split("—")[1]?.trim() ?? c.name}
+                      </Link>
                     )}
+                    <span className="block text-[10px] font-medium text-gray-500 dark:text-gray-500">
+                      {c.numbersLabel}
+                    </span>
                     {c.startWeek > 1 && (
-                      <span className="block font-medium text-gray-500 dark:text-gray-500">
+                      <span className="block text-[10px] font-medium text-gray-500 dark:text-gray-500">
                         joined wk {c.startWeek}
                       </span>
                     )}
                   </th>
-                ))}
-                {!presentation && (
-                  <th className="sticky top-0 z-10 border-b border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1a1a1a] px-2.5 py-2 text-right text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                    Received / expected
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {grid.rows.map((row) => (
+                );
+              })}
+              {!presentation && (
+                <th className="sticky top-0 z-20 whitespace-nowrap border-b border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                  Received / expected
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {grid.rows.map((row) => {
+              const isNow = row.weekNumber === data.currentCycleWeek;
+              return (
                 <tr key={row.weekNumber}>
                   <th
-                    className={`sticky left-0 z-10 border-r border-gray-200 dark:border-gray-800 px-2.5 py-1 text-left font-semibold text-gray-800 dark:text-gray-200 ${
-                      row.weekNumber === data.currentCycleWeek
+                    className={`sticky left-0 z-10 whitespace-nowrap border-r-2 border-gray-200 dark:border-gray-800 px-3 py-1.5 text-left font-semibold text-gray-800 dark:text-gray-200 ${
+                      isNow
                         ? "border-l-4 border-l-indigo-500 dark:border-l-indigo-400 bg-indigo-50 dark:bg-indigo-950/50"
                         : "bg-white dark:bg-[#141414]"
                     }`}
                   >
                     <span className="tabular-nums">{row.weekNumber}</span>
-                    <span className="ml-1.5 whitespace-nowrap font-normal text-gray-500 dark:text-gray-500 tabular-nums">
+                    <span className="ml-1.5 font-normal tabular-nums text-gray-500 dark:text-gray-500">
                       {formatDateUTC(row.date)}
                     </span>
-                    {row.weekNumber === data.currentCycleWeek && (
+                    {isNow && (
                       <span className="ml-1.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">
                         now
                       </span>
@@ -237,15 +224,17 @@ export function PaymentsGrid({
                       <span className="ml-1 text-gray-400 dark:text-gray-600">(skipped)</span>
                     )}
                   </th>
+
                   {visibleIdx.map((i) => {
                     const cell = row.cells[i];
                     const column = grid.columns[i];
+                    const nowBg = isNow ? "bg-indigo-50/60 dark:bg-indigo-950/30" : "";
+
                     if (cell.kind === "before-start") {
-                      // Explicit and calm — never blank, never an accusation.
                       return (
                         <td
                           key={column.participationId}
-                          className="border border-gray-100 dark:border-gray-800/60 text-center text-gray-300 dark:text-gray-700"
+                          className={`border border-gray-100 dark:border-gray-800/60 text-center text-gray-300 dark:text-gray-700 ${nowBg}`}
                           title={`${column.name} had not joined yet — they joined in week ${column.startWeek}`}
                         >
                           ○
@@ -256,26 +245,27 @@ export function PaymentsGrid({
                       return (
                         <td
                           key={column.participationId}
-                          className="border border-dashed border-gray-200 dark:border-gray-800"
+                          className={`border border-dashed border-gray-200 dark:border-gray-800 ${nowBg}`}
                           title={`${column.name} finished in week ${column.finishWeek}`}
                         />
                       );
                     }
+
                     const marker = MARKERS[cell.status];
-                    const remaining = Math.max(0, cell.amountDue - cell.storedPaid);
+                    const isOpen =
+                      open?.participationId === column.participationId &&
+                      open?.weekNumber === row.weekNumber;
+                    const label = `${column.name} — week ${row.weekNumber}: ${cell.status.toLowerCase()}, ${formatMoney(cell.storedPaid)} of ${formatMoney(cell.amountDue)}`;
+
                     if (presentation) {
                       return (
                         <td
                           key={column.participationId}
-                          className={`border border-gray-100 dark:border-gray-800/60 p-0 text-center ${
-                            row.weekNumber === data.currentCycleWeek
-                              ? "bg-indigo-50/60 dark:bg-indigo-950/30"
-                              : ""
-                          }`}
+                          className={`border border-gray-100 dark:border-gray-800/60 p-0.5 text-center ${nowBg}`}
                         >
                           <span
                             title={`${column.numbersLabel} — week ${row.weekNumber}: ${cell.status.toLowerCase()}`}
-                            className={`block h-6 w-full min-w-8 font-bold leading-6 ${marker.className}`}
+                            className={`flex h-8 w-full min-w-9 items-center justify-center rounded font-bold ${marker.className}`}
                           >
                             {marker.label}
                           </span>
@@ -285,46 +275,52 @@ export function PaymentsGrid({
                     return (
                       <td
                         key={column.participationId}
-                        className={`border border-gray-100 dark:border-gray-800/60 p-0 text-center ${
-                          row.weekNumber === data.currentCycleWeek
-                            ? "bg-indigo-50/60 dark:bg-indigo-950/30"
-                            : ""
-                        }`}
+                        className={`border border-gray-100 dark:border-gray-800/60 p-0.5 text-center ${nowBg}`}
                       >
                         <button
                           type="button"
                           onClick={() =>
-                            setSelectedCell({
-                              participationId: column.participationId,
-                              name: column.name,
-                              weekNumber: row.weekNumber,
-                              remaining,
-                            })
+                            setOpen(
+                              isOpen
+                                ? null
+                                : {
+                                    participationId: column.participationId,
+                                    weekNumber: row.weekNumber,
+                                  },
+                            )
                           }
-                          title={`${column.name} — week ${row.weekNumber}: ${cell.status.toLowerCase()}, ${formatMoney(cell.storedPaid)} of ${formatMoney(cell.amountDue)}`}
-                          className={`h-6 w-full min-w-8 font-bold transition-transform duration-100 ease-out hover:outline hover:outline-1 hover:outline-indigo-500 active:scale-95 ${marker.className}`}
+                          aria-label={label}
+                          title={label}
+                          className={`flex h-8 w-full min-w-9 items-center justify-center rounded font-bold transition-transform duration-100 ease-out hover:brightness-110 active:scale-95 ${marker.className} ${
+                            isOpen ? "outline outline-2 outline-indigo-600" : ""
+                          }`}
                         >
                           {marker.label}
                         </button>
                       </td>
                     );
                   })}
+
                   {!presentation && (
-                    <td className="whitespace-nowrap border-l border-gray-200 dark:border-gray-800 px-2.5 py-1 text-right tabular-nums text-gray-700 dark:text-gray-300">
+                    <td className="whitespace-nowrap border-l border-gray-200 dark:border-gray-800 px-3 py-1.5 text-right tabular-nums text-gray-700 dark:text-gray-300">
                       {formatMoney(row.received)} / {formatMoney(row.expected)}
                     </td>
                   )}
                 </tr>
-              ))}
-              {/* Column totals — each member's OWN window only */}
-              <tr>
-                <th className="sticky left-0 z-10 border-r border-t-2 border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-2.5 py-1.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                  Weeks paid · owed
-                </th>
-                {visibleIdx.map((idx) => grid.columns[idx]).map((c) => (
+              );
+            })}
+
+            {/* Column totals — each member's OWN window only */}
+            <tr>
+              <th className="sticky left-0 z-10 border-r-2 border-t-2 border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                Weeks paid · owed
+              </th>
+              {visibleIdx.map((idx) => {
+                const c = grid.columns[idx];
+                return (
                   <td
                     key={c.participationId}
-                    className="border-t-2 border-gray-300 dark:border-gray-700 px-1 py-1.5 text-center tabular-nums text-gray-700 dark:text-gray-300"
+                    className="border-t-2 border-gray-300 dark:border-gray-700 px-1.5 py-2 text-center tabular-nums text-gray-700 dark:text-gray-300"
                     title={
                       presentation
                         ? `${c.numbersLabel}: ${c.weeksCredited} of ${c.finishWeek - c.startWeek + 1} weeks paid`
@@ -340,399 +336,36 @@ export function PaymentsGrid({
                       </span>
                     )}
                   </td>
-                ))}
-                {!presentation && <td className="border-l border-t-2 border-gray-300 dark:border-gray-700" />}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        </>
-      ) : (
-        /* ————— LIST VIEW: one row per member + compact week strip ————— */
-        <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] shadow-sm animate-fade-in-up-2">
-          <ul className="divide-y divide-gray-100 dark:divide-gray-800/60">
-            {grid.columns.map((c, i) => {
-              const strip = grid.rows.map((row) => ({
-                weekNumber: row.weekNumber,
-                cell: row.cells[i],
-              }));
-              const windowWeeks = c.finishWeek - c.startWeek + 1;
-              const behindish = !presentation && c.outstanding > 0;
-              const inner = (
-                <>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
-                      {presentation ? c.numbersLabel : c.name}
-                    </p>
-                    <p className="mt-0.5 text-[11px] tabular-nums text-gray-600 dark:text-gray-400">
-                      {presentation ? "" : `${c.numbersLabel} · `}
-                      {c.weeksCredited} of {windowWeeks} weeks paid
-                      {c.startWeek > 1 ? ` · joined wk ${c.startWeek}` : ""}
-                    </p>
-                    {/* Compact week strip */}
-                    <div className="mt-1.5 flex gap-[3px]" aria-hidden="true">
-                      {strip.map(({ weekNumber, cell }) => {
-                        const base = "h-2.5 w-2.5 rounded-[3px]";
-                        if (cell.kind === "before-start")
-                          return <span key={weekNumber} className={`${base} bg-gray-100 dark:bg-white/5`} />;
-                        if (cell.kind === "after-finish")
-                          return (
-                            <span
-                              key={weekNumber}
-                              className={`${base} border border-dashed border-gray-200 dark:border-gray-800`}
-                            />
-                          );
-                        const statusCls =
-                          cell.status === "PAID"
-                            ? "bg-emerald-500 dark:bg-emerald-600"
-                            : cell.status === "PARTIAL"
-                              ? "bg-amber-400 dark:bg-amber-500"
-                              : cell.status === "LATE"
-                                ? "bg-red-500 dark:bg-red-600"
-                                : cell.status === "DEFERRED"
-                                  ? "bg-gray-300 dark:bg-gray-600"
-                                  : "bg-gray-200 dark:bg-white/10";
-                        // The current week is ALWAYS marked, whatever its status.
-                        const nowCls =
-                          weekNumber === data.currentCycleWeek
-                            ? " ring-2 ring-indigo-500 dark:ring-indigo-400 ring-offset-1 ring-offset-white dark:ring-offset-[#141414]"
-                            : "";
-                        return (
-                          <span
-                            key={weekNumber}
-                            className={`${base} ${statusCls}${nowCls}`}
-                            title={`week ${weekNumber}${weekNumber === data.currentCycleWeek ? " (now)" : ""}${cell.kind === "week" ? ` — ${cell.status.toLowerCase()}` : ""}`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                  {behindish ? (
-                    <Pill tone="attention">{formatMoney(c.outstanding)} owed</Pill>
-                  ) : (
-                    <Pill tone="good">
-                      <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
-                      </svg>
-                      Current
-                    </Pill>
-                  )}
-                </>
-              );
-              return (
-                <li key={c.participationId}>
-                  {presentation ? (
-                    <div className="flex items-center gap-3 px-4 py-3">{inner}</div>
-                  ) : (
-                    <Link
-                      href={`/admin/participations/${c.participationId}`}
-                      className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
-                    >
-                      {inner}
-                    </Link>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-
-      {selectedCell && (
-        <CellMenu
-          key={`${selectedCell.participationId}-${selectedCell.weekNumber}`}
-          cell={selectedCell}
-          onClose={() => setSelectedCell(null)}
-        />
-      )}
-    </div>
-  );
-}
-
-function CellMenu({ cell, onClose }: { cell: SelectedCell; onClose: () => void }) {
-  const router = useRouter();
-  const [tab, setTab] = useState<"record" | "receipts" | "note">("record");
-  const [detail, setDetail] = useState<CellDetail | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [note, setNote] = useState("");
-  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
-  const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
-
-  function ask(spec: ConfirmSpec, fn: () => Promise<{ ok: boolean; error?: string }>, okText: string) {
-    setConfirm(spec);
-    setOnConfirm(() => () => {
-      void run(fn, okText).finally(() => {
-        setConfirm(null);
-        setOnConfirm(null);
-      });
-    });
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    getCellDetail({ participationId: cell.participationId, weekNumber: cell.weekNumber }).then(
-      (result) => {
-        if (cancelled) return;
-        if (result.ok) {
-          setDetail(result.data);
-          setNote(result.data.note);
-        } else {
-          setMsg({ kind: "err", text: result.error });
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [cell.participationId, cell.weekNumber]);
-
-  async function run(fn: () => Promise<{ ok: boolean; error?: string }>, okText: string) {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const result = await fn();
-      if (!result.ok) setMsg({ kind: "err", text: result.error ?? "Failed." });
-      else {
-        setMsg({ kind: "ok", text: okText });
-        router.refresh();
-        // Re-pull the cell detail so the menu reflects the new truth.
-        const fresh = await getCellDetail({
-          participationId: cell.participationId,
-          weekNumber: cell.weekNumber,
-        });
-        if (fresh.ok) {
-          setDetail(fresh.data);
-          setNote(fresh.data.note);
-        }
-      }
-    } catch {
-      setMsg({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggleDeferral() {
-    if (!detail) return;
-    const next = !detail.isDeferred;
-    ask(
-      {
-        title: next
-          ? `Defer week ${cell.weekNumber} for ${cell.name}?`
-          : `Remove the deferral on week ${cell.weekNumber}?`,
-        destructive: false,
-        body: next ? (
-          <p>
-            A deferred week is excused: it is never owed and never counts as behind. Their
-            receipts re-allocate immediately and an audit entry records the decision.
-          </p>
-        ) : (
-          <p>
-            The week is owed again. Their receipts re-allocate immediately and an audit entry
-            records the decision.
-          </p>
-        ),
-        confirmLabel: next ? `Defer week ${cell.weekNumber}` : "Make it owed again",
-      },
-      () =>
-        setWeekDeferral({
-          participationId: cell.participationId,
-          weekNumber: cell.weekNumber,
-          deferred: next,
-        }),
-      next
-        ? `✓ Week ${cell.weekNumber} deferred — excused, never owed.`
-        : `✓ Deferral removed — week ${cell.weekNumber} is owed again.`,
-    );
-  }
-
-  return (
-    <section className="rounded-2xl border-2 border-indigo-300 dark:border-indigo-800 bg-white dark:bg-[#141414] p-4 shadow-sm">
-      <div className="mb-2 flex flex-wrap items-center gap-3 text-sm">
-        <h2 className="font-bold text-gray-900 dark:text-white">
-          {cell.name} — week {cell.weekNumber}
-        </h2>
-        <span className="text-gray-600 dark:text-gray-400 tabular-nums">
-          {detail
-            ? detail.isDeferred
-              ? "deferred (excused)"
-              : cell.remaining > 0
-                ? `${formatMoney(cell.remaining)} still due that week`
-                : "that week is settled"
-            : "loading…"}
-        </span>
-        <span className="ml-auto flex flex-wrap gap-2">
-          {(["record", "receipts", "note"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] ${
-                tab === t
-                  ? "border-indigo-400 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300"
-                  : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5"
-              }`}
-            >
-              {t === "record"
-                ? "Record payment"
-                : t === "receipts"
-                  ? `Receipts (${detail?.receipts.length ?? "…"})`
-                  : "Note"}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={toggleDeferral}
-            disabled={busy || !detail || detail.weekIsSkipped}
-            title={
-              detail?.weekIsSkipped
-                ? "The whole week is skipped for everyone — edit it on the Weeks page"
-                : undefined
-            }
-            className="rounded-lg border border-gray-300 dark:border-gray-700 px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.97] disabled:opacity-40"
-          >
-            {detail?.isDeferred ? "Remove deferral" : "Mark deferred"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-gray-300 dark:border-gray-700 px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.97]"
-          >
-            Close
-          </button>
-        </span>
+                );
+              })}
+              {!presentation && (
+                <td className="border-l border-t-2 border-gray-300 dark:border-gray-700" />
+              )}
+            </tr>
+          </tbody>
+        </table>
       </div>
 
-      {msg && (
-        <div className="mb-2">
-          <Alert kind={msg.kind}>{msg.text}</Alert>
-        </div>
-      )}
-
-      {tab === "record" && (
-        <>
-          <p className="mb-2 text-xs text-gray-600 dark:text-gray-400">
-            Oldest debt is paid first (2.15) — the preview shows exactly where this money
-            lands, which may be an earlier week than week {cell.weekNumber}. To make a week
-            unpaid, undo its receipt — paid/unpaid is derived from the money, never set by hand.
-          </p>
-          <AllocationEntry
-            participationId={cell.participationId}
-            memberName={cell.name}
-            defaultAmountCents={cell.remaining > 0 ? cell.remaining : undefined}
-            onSaved={() => router.refresh()}
-          />
-        </>
-      )}
-
-      {tab === "receipts" &&
-        (detail === null ? (
-          <p className="text-sm text-gray-600 dark:text-gray-400">Loading…</p>
-        ) : detail.receipts.length === 0 ? (
-          <p className="text-sm text-gray-600 dark:text-gray-400">No receipts on this week.</p>
-        ) : (
-          <ul className="space-y-1 text-sm">
-            {detail.receipts.map((r) => (
-              <li
-                key={r.eventId}
-                className="flex flex-wrap items-center gap-2 border-b border-gray-100 dark:border-gray-800/60 py-1.5"
-              >
-                <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
-                  {formatMoney(r.appliedHere)}
-                  {r.appliedHere < r.eventAmount && (
-                    <span className="font-normal text-gray-600 dark:text-gray-400">
-                      {" "}
-                      (of a {formatMoney(r.eventAmount)} receipt)
-                    </span>
-                  )}
-                </span>
-                <span className="text-gray-600 dark:text-gray-400">{r.method ?? "—"}</span>
-                <span className="text-gray-600 dark:text-gray-400 tabular-nums">
-                  {formatDateUTC(new Date(r.receivedAt))}
-                </span>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    const spans = r.appliedHere < r.eventAmount;
-                    ask(
-                      {
-                        title: `Undo this ${formatMoney(r.eventAmount)} receipt from ${cell.name}?`,
-                        body: (
-                          <>
-                            {spans ? (
-                              <p>
-                                Only {formatMoney(r.appliedHere)} of it sits on week{" "}
-                                {cell.weekNumber} — the WHOLE receipt is deleted and every week
-                                recalculates.
-                              </p>
-                            ) : (
-                              <p>The receipt is deleted and the week recalculates.</p>
-                            )}
-                            <p>
-                              The member&apos;s standing and the cash position recalculate
-                              immediately. An audit entry records what was removed.
-                            </p>
-                          </>
-                        ),
-                        confirmLabel: "Undo receipt",
-                      },
-                      () => deletePaymentEvent({ eventId: r.eventId }),
-                      `✓ Undone — ${formatMoney(r.eventAmount)} receipt deleted and weeks recalculated.`,
-                    );
-                  }}
-                  className={buttonCls.danger + " !px-2.5 !py-1 !text-xs"}
-                >
-                  Undo
-                </button>
-              </li>
-            ))}
-          </ul>
-        ))}
-
-      {tab === "note" && (
-        <div className="flex items-end gap-2 text-sm">
-          <label className="grow">
-            <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              Note on week {cell.weekNumber}
-            </span>
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3.5 py-2.5 text-sm text-gray-900 dark:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600"
+      {/* The SAME panel the Members view opens — one way to do each thing. */}
+      {open && !presentation && (
+        (() => {
+          const colIdx = grid.columns.findIndex((c) => c.participationId === open.participationId);
+          const target = colIdx >= 0 ? targetFor(colIdx, open.weekNumber) : null;
+          if (!target) return null;
+          return (
+            <WeekActionPanel
+              key={`${open.participationId}-${open.weekNumber}`}
+              target={target}
+              onSaved={(message) => {
+                setSaved(message);
+                setOpen(null);
+                router.refresh();
+              }}
+              onClose={() => setOpen(null)}
             />
-          </label>
-          <button
-            type="button"
-            disabled={busy || detail === null || note === (detail?.note ?? "")}
-            onClick={() =>
-              void run(
-                () =>
-                  setWeekNote({
-                    participationId: cell.participationId,
-                    weekNumber: cell.weekNumber,
-                    note,
-                  }),
-                "✓ Note saved.",
-              )
-            }
-            className={buttonCls.primary}
-          >
-            {busy ? "Saving…" : "Save note"}
-          </button>
-        </div>
+          );
+        })()
       )}
-
-      <ConfirmDialog
-        spec={confirm}
-        busy={busy}
-        onConfirm={() => onConfirm?.()}
-        onCancel={() => {
-          setConfirm(null);
-          setOnConfirm(null);
-        }}
-      />
-    </section>
+    </div>
   );
 }

@@ -127,6 +127,70 @@ export function computeTermsSettlement(input: {
   };
 }
 
+// ————————— Idempotency: prior settlements on the ledger (audit H4) —————————
+//
+// Recognition is keyed by a MACHINE TAG in LedgerEntry.notes, never by the
+// human description. The description is organizer-facing prose containing a
+// cycle NAME, and names are editable free text — matching on them would break
+// the moment a cycle is renamed (re-charging a settled gap), could collide
+// between names, and could be spoofed by a hand-typed entry. The tag carries
+// the cycle ID, which never changes.
+
+export type SettlementKind = "debt" | "credit" | "returned";
+
+/** The tag written into LedgerEntry.notes so a settlement can be recognised. */
+export function settlementLedgerTag(cycleId: string, kind: SettlementKind): string {
+  return `settlement:${cycleId}:${kind}`;
+}
+
+/** The human-facing opening of a settlement's description (2.18: the story). */
+export function settlementDescriptionPrefix(cycleName: string): string {
+  return `Settlement in ${cycleName}:`;
+}
+
+/**
+ * What earlier terms settlements for THIS cycle already recognised:
+ *   debt     → +amount  (an obligation was recognised)
+ *   credit   → −amount  (money owed back to them was recognised)
+ *   returned → 0        (cash PAYS a recognised debt; it does not un-recognise it)
+ * Untagged entries — ordinary carried balances, manual ledger payments — are
+ * ignored entirely. Feeding (total gap − recognised) into the settlement makes
+ * a repeated edit charge only the DIFFERENCE, and a reversal self-cancels.
+ */
+export function settledSoFarFromLedger(
+  entries: readonly { type: "DEBT" | "PAYMENT"; amount: number; notes: string | null }[],
+  cycleId: string,
+): number {
+  const debt = settlementLedgerTag(cycleId, "debt");
+  const credit = settlementLedgerTag(cycleId, "credit");
+  let recognised = 0;
+  for (const entry of entries) {
+    const tag = entry.notes?.trim();
+    if (!tag) continue;
+    // The TYPE must agree with the tag. `notes` is also a free-text field the
+    // organizer can write through recordLedgerPayment, so a tag alone is not
+    // proof — a hand-typed "settlement:…:debt" on a PAYMENT row would
+    // otherwise be counted as a recognised obligation.
+    if (tag === debt && entry.type === "DEBT") recognised += entry.amount;
+    else if (tag === credit && entry.type === "PAYMENT") recognised -= entry.amount;
+  }
+  return recognised;
+}
+
+/**
+ * Resizing a win-week settlement when the weekly changes: the settled week
+ * now costs `newWeeklyAmount`, and the DIFFERENCE must go back to the payout
+ * the settlement came from — without the credit, that cash simply vanishes
+ * from the books and every later gap is computed off a false total.
+ */
+export function resizeWinnerWeekSettlement(
+  eventAmount: number,
+  newWeeklyAmount: number,
+): { resized: number; credit: number } {
+  const resized = Math.min(eventAmount, newWeeklyAmount);
+  return { resized, credit: eventAmount - resized };
+}
+
 // ————————————————— Confirmation (type the member's name) —————————————————
 
 /**

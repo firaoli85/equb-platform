@@ -166,6 +166,34 @@ describe("redactWeekBoard", () => {
     expect(redacted.receiptsByParticipation).toEqual({});
     expect(redacted.membersPaid).toBe(20);
   });
+
+  it("audit H3d — row order is neutralised: the most-owed ranking does not survive", () => {
+    // Three members arriving RANKED by amount owed (most first). With the
+    // amounts zeroed, that order alone would still project who owes most.
+    const ranked = {
+      ...full,
+      owing: [
+        { ...member, participationId: "p17", amountOwed: 900_000 },
+        { ...member, participationId: "p3", amountOwed: 500_000 },
+        { ...member, participationId: "p9", amountOwed: 100_000 },
+      ],
+      paid: [
+        { ...member, participationId: "p20", amountOwed: 0 },
+        { ...member, participationId: "p2", amountOwed: 0 },
+      ],
+    };
+    const labels: Record<string, string> = {
+      p17: "#17",
+      p3: "#3",
+      p9: "#9",
+      p20: "#20",
+      p2: "#2",
+    };
+    const redacted = redactWeekBoard(ranked, (id) => labels[id]);
+    // Sorted by the neutral numbers label (numeric-aware) — not by debt.
+    expect(redacted.owing.map((m) => m.name)).toEqual(["#3", "#9", "#17"]);
+    expect(redacted.paid.map((m) => m.name)).toEqual(["#2", "#20"]);
+  });
 });
 
 describe("redactWheelState", () => {
@@ -290,6 +318,7 @@ describe("redactCycleDetail", () => {
   const full = {
     id: "c1",
     name: "Cycle 1",
+    startDate: new Date("2026-05-17"),
     unitAmount: 98700,
     feePercent: 2,
     plannedWeeks: 20,
@@ -314,27 +343,25 @@ describe("redactCycleDetail", () => {
           pinFailedAttempts: 3,
           pinLockedUntil: new Date("2026-08-05"),
           pinLoginAllowed: true,
+          noMessages: true,
         },
         luckyNumbers: [{ id: "n1", number: 5, amount: 271500 }],
       },
     ],
-  };
+  } as const;
 
-  it("identity becomes the numbers label; phones, auth and PIN state are blanked; money zeroed", () => {
+  it("identity becomes the numbers label; money zeroed; the roster still renders", () => {
     const redacted = redactCycleDetail(full);
     expect(leaks(redacted)).toEqual([]);
     const p = redacted.participations[0];
     expect(p.person.nameAmharic).toBe("#5");
     expect(p.person.nameEnglishFirst).toBe("");
-    expect(p.person.phone).toBeNull();
-    expect(p.person.pinHash).toBeNull();
-    expect(p.person.authUserId).toBeNull();
     expect(p.weeklyAmount).toBe(0);
     expect(p.luckyNumbers[0].amount).toBe(0);
     expect(p.luckyNumbers[0].number).toBe(5);
     expect(redacted.unitAmount).toBe(0);
     expect(redacted.feePercent).toBe(0);
-    // Week notes are free organizer text — blanked; the week itself survives.
+    // Week notes are free organizer text — never sent; the week survives.
     expect(redacted.weeks[0].notes).toBeNull();
     expect(redacted.weeks[0].weekNumber).toBe(3);
     // Structure (weeks, status, ids) survives so the page still works.
@@ -342,10 +369,81 @@ describe("redactCycleDetail", () => {
     expect(p.status).toBe("ACTIVE");
   });
 
+  it("audit H3e — an ALLOWLIST: sensitive Person fields are ABSENT, not blanked", () => {
+    const person = redactCycleDetail(full).participations[0].person;
+    // The old spread carried any new Person column through by default —
+    // noMessages was riding along. Now a field must be named to survive.
+    for (const field of [
+      "noMessages",
+      "phone",
+      "notes",
+      "authUserId",
+      "pinHash",
+      "pinFailedAttempts",
+      "pinLockedUntil",
+      "pinLoginAllowed",
+    ]) {
+      expect(field in person, `person.${field} must not be sent at all`).toBe(false);
+    }
+    expect(Object.keys(person).sort()).toEqual([
+      "nameAmharic",
+      "nameEnglishFirst",
+      "nameEnglishLast",
+    ]);
+  });
+
   it("OFF path is the action's default: data passes through only when the mode is on", () => {
     // The redactors are only APPLIED when presentationMode is true — the
     // actions branch on the setting. This pins the pure contract: applying
     // no redactor changes nothing.
     expect(leaks(full).length).toBeGreaterThan(0);
+  });
+});
+
+describe("redactWheelState — audit H3(c): setup-page slot order is neutral too", () => {
+  const slotNum = (id: string, number: number) => ({
+    id,
+    number,
+    amount: 271500 as number | null,
+    owner: NAME,
+    eligible: true,
+    lock: null as "frozen" | "anchored" | null,
+    lockReason: null as string | null,
+  });
+
+  // createWinnerPlan puts the planned numbers in a NEW slot at max(position)+1,
+  // and loadWheel orders slots by position — so the plan slot arrived LAST
+  // every week. Amounts and lock reasons were already hidden; the ORDER was
+  // still telling the room which slot was the planned winner.
+  const state = {
+    cycleName: "Cycle 1",
+    currentWeek: 7,
+    slots: [
+      { id: "s1", position: 1, drawn: false, members: [slotNum("n9", 9)] },
+      { id: "s2", position: 2, drawn: false, members: [slotNum("n3", 3)] },
+      { id: "planned", position: 99, drawn: false, members: [slotNum("n5", 5)] },
+    ],
+    unassigned: [],
+    weeks: [],
+    warnings: [],
+  };
+
+  it("re-orders by lucky number, so the planned slot is not last", () => {
+    const redacted = redactWheelState(state);
+    expect(redacted.slots.map((s) => s.id)).toEqual(["s2", "planned", "s1"]);
+    expect(redacted.slots[redacted.slots.length - 1].id).not.toBe("planned");
+  });
+
+  it("renumbers positions sequentially so creation order leaves no trace", () => {
+    const redacted = redactWheelState(state);
+    expect(redacted.slots.map((s) => s.position)).toEqual([1, 2, 3]);
+    expect(redacted.slots.some((s) => s.position === 99)).toBe(false);
+  });
+
+  it("keeps every slot exactly once and leaks nothing else", () => {
+    const redacted = redactWheelState(state);
+    expect(redacted.slots.map((s) => s.id).sort()).toEqual(["planned", "s1", "s2"]);
+    expect(leaks(redacted)).toEqual([]);
+    expect(redacted.plans).toEqual([]);
   });
 });

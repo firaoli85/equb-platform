@@ -8,6 +8,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { formatMoney } from "@/lib/format";
 import { currentWeekNumber } from "@/lib/money";
 import { prisma, serializableTransaction } from "@/lib/prisma";
+import { frozenCycleRefusal } from "@/lib/cycle-close";
 import { SETTLEMENT_EVENT_WHERE, settleWinnerWeeks, unsettleDraw } from "@/lib/draw-settlement";
 import { undoDrawConsequences } from "@/lib/undo-draw";
 import { validateArrangement } from "@/lib/arrangement";
@@ -16,6 +17,7 @@ import { getSetting } from "@/lib/settings";
 import {
   autoArrange,
   calculatePayout,
+  displayOrder,
   eligibleNumbers,
   reshuffle,
   selectWinningSlot,
@@ -25,6 +27,15 @@ import {
 } from "@/lib/wheel";
 
 const WARNING_WEEKS_AHEAD = 3;
+
+/**
+ * The one error the SHARED draw screen may show (2.4, audit H3a). Neutral by
+ * construction: no names, no money, no hint that a plan exists. The real
+ * reason is always in the server log, and the operational pages (setup,
+ * draws) explain it privately.
+ */
+const NEUTRAL_DRAW_SCREEN_ERROR =
+  "Something needs attention before this draw — leave this screen and check the wheel setup page.";
 
 function revalidateWheel() {
   revalidatePath("/admin/wheel");
@@ -226,7 +237,12 @@ export async function getDrawScreen() {
       data: {
         weekId: target.id,
         weekNumber: target.weekNumber,
-        slots: loaded.eligibleSlots.map((s) => ({
+        // 2.4 / audit H3c: NOT position order — a planned winner's slot is
+        // created last, so raw order would paint it as the final segment
+        // every week. Seeded by the week: stable across reloads, unrelated
+        // to creation order. The server picks winners by slot ID, so the
+        // display order carries no meaning.
+        slots: displayOrder(loaded.eligibleSlots, target.id).map((s) => ({
           id: s.id,
           numbers: s.members
             .map((m) => loaded.wheelNumbers.find((n) => n.id === m.luckyNumberId)?.number ?? 0)
@@ -235,8 +251,11 @@ export async function getDrawScreen() {
       },
     };
   } catch (e) {
+    // 2.4 / audit H3a: this screen is PROJECTED. The real reason (which can
+    // carry a name, a dollar figure, or the existence of a plan) stays in
+    // the server log — the screen gets a neutral sentence.
     console.error("getDrawScreen failed:", e);
-    return { ok: false as const, error: `Could not load the wheel. ${errorMessage(e)}` };
+    return { ok: false as const, error: NEUTRAL_DRAW_SCREEN_ERROR };
   }
 }
 
@@ -581,8 +600,10 @@ export async function spinWheel(input: { weekId: string }) {
 
     return { ok: true as const, data: { slotId: selection.slotId } };
   } catch (e) {
+    // 2.4 / audit H3a: a planned-winner mismatch throws with plan details —
+    // log it, never project it.
     console.error("spinWheel failed:", e);
-    return { ok: false as const, error: `Could not spin. ${errorMessage(e)}` };
+    return { ok: false as const, error: NEUTRAL_DRAW_SCREEN_ERROR };
   }
 }
 
@@ -608,6 +629,10 @@ export async function recordDraw(input: { weekId: string; slotId: string }) {
       });
       if (slot.cycleId !== week.cycleId) throw new Error("Slot and week belong to different cycles.");
       if (slot.members.length === 0) throw new Error("This slot is empty.");
+      // Audit H5: settleWinnerWeeks below CREATES a PaymentEvent on this
+      // week — money recorded into a closed cycle's frozen books.
+      const frozen = frozenCycleRefusal(week.cycle);
+      if (frozen) throw new Error(frozen);
 
       const draw = await tx.draw.create({ data: { weekId: week.id, slotId: slot.id } });
 
@@ -660,11 +685,14 @@ export async function recordDraw(input: { weekId: string; slotId: string }) {
         action: "create",
         summary: `Week ${week.weekNumber} drawn: ${numberLabels} — ${payouts.length} payout(s) pending${settlementNote}`,
       });
+      // 2.4 / audit H3b: this response feeds the PROJECTED screen — numbers
+      // only. Names and settled amounts live in the audit log and on the
+      // private draws/collections pages, never in this payload.
       return {
         drawId: draw.id,
         weekNumber: week.weekNumber,
         numbers: slot.members.map((m) => m.luckyNumber.number).sort((a, b) => a - b),
-        settlements: settlements.map((s) => ({ name: s.name, settled: s.settled })),
+        settlementCount: settlements.length,
       };
     });
 
@@ -679,8 +707,10 @@ export async function recordDraw(input: { weekId: string; slotId: string }) {
         error: "That draw conflicts with an existing one (one draw per week, one win per slot).",
       };
     }
+    // 2.4 / audit H3a: the settlement guard throws with a member's NAME and
+    // a dollar figure — log it, never project it.
     console.error("recordDraw failed:", e);
-    return { ok: false as const, error: `Could not record the draw. ${errorMessage(e)}` };
+    return { ok: false as const, error: NEUTRAL_DRAW_SCREEN_ERROR };
   }
 }
 
@@ -699,11 +729,16 @@ export async function undoDraw(input: { drawId: string }) {
       const draw = await tx.draw.findUniqueOrThrow({
         where: { id: input.drawId },
         include: {
-          week: true,
+          week: { include: { cycle: true } },
           payouts: { include: { luckyNumber: true } },
           slot: { include: { members: { include: { luckyNumber: true } } } },
         },
       });
+      // Audit H5: undoing a draw in a CLOSED cycle deletes payouts recording
+      // cash already collected and reverses settlements the archive and the
+      // carried ledgers were both built from.
+      const frozen = frozenCycleRefusal(draw.week.cycle);
+      if (frozen) throw new Error(frozen);
 
       // Reverse the settlements FIRST (they reference the payouts by key),
       // then remove the money-out records, then the draw itself.

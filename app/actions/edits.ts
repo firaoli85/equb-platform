@@ -16,10 +16,18 @@ import {
   unsettleDraw,
   unsettlePayout,
 } from "@/lib/draw-settlement";
+import { frozenCycleRefusal } from "@/lib/cycle-close";
 import { formatMoney, parseDateInput } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { calculateFinishWeek, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
-import { computeTermsSettlement, nameConfirmed } from "@/lib/settlement";
+import {
+  computeTermsSettlement,
+  nameConfirmed,
+  resizeWinnerWeekSettlement,
+  settledSoFarFromLedger,
+  settlementDescriptionPrefix,
+  settlementLedgerTag,
+} from "@/lib/settlement";
 import { changeWinnerRefusal } from "@/lib/undo-draw";
 import {
   ensureWeeksThrough,
@@ -176,8 +184,20 @@ export async function updateParticipation(
     const outcome = await serializableTransaction(async (tx) => {
       const before = await tx.participation.findUniqueOrThrow({
         where: { id: input.participationId },
-        include: { cycle: true, person: true, luckyNumbers: { include: { payouts: true } } },
+        include: {
+          cycle: true,
+          // The ledger is how a settlement REMEMBERS itself (audit H4): a
+          // second edit must charge only the difference, never the gap again.
+          person: { include: { ledgerEntries: true } },
+          luckyNumbers: { include: { payouts: true } },
+        },
       });
+      // Audit H5: a CLOSED cycle already wrote this member's shortfall onto
+      // their carried ledger. Re-shaping their terms here would rebuild the
+      // weeks AND stack a fresh settlement debt on top of that one — the same
+      // money owed twice.
+      const frozen = frozenCycleRefusal(before.cycle);
+      if (frozen) throw new Error(frozen);
       const capError = validateCommitmentCap(before.cycle, input);
       if (capError) throw new Error(capError);
 
@@ -207,7 +227,20 @@ export async function updateParticipation(
           alreadyReceived,
         });
 
-        if (terms.gap !== 0 && !input.settlement) {
+        // AUDIT H4 — settlement is IDEMPOTENT. terms.gap is the total
+        // position against the NEW terms; the ledger already recognises what
+        // earlier edits settled for this cycle. Only the DIFFERENCE is
+        // actionable, so a second edit can never charge the same money twice
+        // (and a reversal produces a self-cancelling credit).
+        // Keyed by cycle ID, not name — a rename must never un-recognise a
+        // settlement and re-charge it.
+        const priorSettled = settledSoFarFromLedger(
+          before.person.ledgerEntries,
+          before.cycle.id,
+        );
+        const gap = terms.gap - priorSettled;
+
+        if (gap !== 0 && !input.settlement) {
           // STOP — the UI must show the settlement step with these figures.
           return {
             needsSettlement: {
@@ -219,17 +252,22 @@ export async function updateParticipation(
               oldWeeklyAmount: before.weeklyAmount,
               oldWeeksCommitted: before.weeksCommitted,
               ...terms,
+              // `gap` is what is STILL to settle now; totalGap and
+              // priorSettled let the step explain why they differ.
+              gap,
+              totalGap: terms.gap,
+              priorSettled,
             },
           };
         }
 
-        if (terms.gap !== 0 && input.settlement) {
+        if (gap !== 0 && input.settlement) {
           if (!nameConfirmed(input.settlement.typedName, before.person)) {
             throw new Error(
               `Type ${before.person.nameEnglishFirst}'s name exactly to confirm the settlement — nothing was saved.`,
             );
           }
-          const gap = terms.gap;
+          const prefix = settlementDescriptionPrefix(before.cycle.name);
           const choice = input.settlement.choice;
           if (gap > 0) {
             if (choice === "returned") {
@@ -240,24 +278,39 @@ export async function updateParticipation(
                 );
               }
               const remainder = gap - returned;
-              if (remainder > 0) {
-                await tx.ledgerEntry.create({
-                  data: {
-                    personId: before.personId,
-                    type: "DEBT",
-                    amount: remainder,
-                    description: `Settlement in ${before.cycle.name}: terms cut after payout — returned ${formatMoney(returned)}, ${formatMoney(remainder)} still owed`,
-                  },
-                });
-              }
-              settlementSummary = `returned ${formatMoney(returned)}${remainder > 0 ? `, ${formatMoney(remainder)} to the carried ledger` : " — settled in full"}`;
+              // The WHOLE obligation is recognised as a DEBT and the cash is
+              // recorded as a PAYMENT against it (2.18: the ledger keeps the
+              // story, and the running total is still just the remainder).
+              // Writing only the remainder would under-recognise the
+              // settlement and let the next edit charge the returned cash
+              // all over again.
+              await tx.ledgerEntry.create({
+                data: {
+                  personId: before.personId,
+                  type: "DEBT",
+                  amount: gap,
+                  description: `${prefix} terms cut after payout — ${formatMoney(gap)} held beyond the new entitlement`,
+                  notes: settlementLedgerTag(before.cycle.id, "debt"),
+                },
+              });
+              await tx.ledgerEntry.create({
+                data: {
+                  personId: before.personId,
+                  type: "PAYMENT",
+                  amount: returned,
+                  description: `${prefix} returned ${formatMoney(returned)} in cash`,
+                  notes: settlementLedgerTag(before.cycle.id, "returned"),
+                },
+              });
+              settlementSummary = `returned ${formatMoney(returned)}${remainder > 0 ? `, ${formatMoney(remainder)} left on the carried ledger` : " — settled in full"}`;
             } else if (choice === "ledger") {
               await tx.ledgerEntry.create({
                 data: {
                   personId: before.personId,
                   type: "DEBT",
                   amount: gap,
-                  description: `Settlement in ${before.cycle.name}: terms cut after payout — nothing returned, ${formatMoney(gap)} owed`,
+                  description: `${prefix} terms cut after payout — nothing returned, ${formatMoney(gap)} owed`,
+                  notes: settlementLedgerTag(before.cycle.id, "debt"),
                 },
               });
               settlementSummary = `nothing returned — ${formatMoney(gap)} to the carried ledger (2.18)`;
@@ -265,14 +318,17 @@ export async function updateParticipation(
               throw new Error("They hold too much — choose how the excess is settled.");
             }
           } else {
-            // gap < 0: the new terms entitle them to MORE than they received.
+            // gap < 0: the new terms entitle them to MORE than the books
+            // currently recognise — including the case where an earlier
+            // settlement is now (partly) undone by editing back.
             if (choice === "credit") {
               await tx.ledgerEntry.create({
                 data: {
                   personId: before.personId,
                   type: "PAYMENT",
                   amount: -gap,
-                  description: `Settlement in ${before.cycle.name}: terms increased after payout — ${formatMoney(-gap)} owed TO them (offsets carried debt)`,
+                  description: `${prefix} terms increased after payout — ${formatMoney(-gap)} owed TO them (offsets carried debt)`,
+                  notes: settlementLedgerTag(before.cycle.id, "credit"),
                 },
               });
               settlementSummary = `${formatMoney(-gap)} recorded as owed TO them (ledger credit)`;
@@ -283,24 +339,45 @@ export async function updateParticipation(
             }
           }
           settlementSummary =
-            ` TERMS SETTLEMENT: received ${formatMoney(alreadyReceived)}, new entitlement ${formatMoney(terms.newEntitlementNet)}, gap ${formatMoney(Math.abs(gap))} — ${settlementSummary}.`;
+            ` TERMS SETTLEMENT: received ${formatMoney(alreadyReceived)}, new entitlement ${formatMoney(terms.newEntitlementNet)}` +
+            `, total gap ${formatMoney(Math.abs(terms.gap))}` +
+            (priorSettled !== 0
+              ? `, ${formatMoney(Math.abs(priorSettled))} already settled earlier, ${formatMoney(Math.abs(gap))} settled now`
+              : `, gap ${formatMoney(Math.abs(gap))}`) +
+            ` — ${settlementSummary}.`;
         }
       }
 
       // A settled win-week's receipt was sized at the OLD weekly. A cheaper
-      // week can no longer absorb it, so resize the settlement to the new
-      // cost — the cash difference is inside the gap settled above. Without
-      // this, the rebuild below would (rightly) refuse every save.
+      // week can no longer absorb it, so the settlement is resized to the new
+      // cost — and the DIFFERENCE GOES BACK ONTO THE PAYOUT it came out of
+      // (audit H4). Without that credit the cash simply disappeared from the
+      // books: "already received" then read low, and every later gap was
+      // computed against a false total. Money always lands somewhere the
+      // system remembers (2.14).
       if (payouts.length > 0 && before.weeklyAmount !== input.weeklyAmount) {
         const pinned = await tx.paymentEvent.findMany({
           where: { participationId: before.id, ...SETTLEMENT_EVENT_WHERE },
         });
         for (const event of pinned) {
-          const resized = Math.min(event.amount, input.weeklyAmount);
-          if (resized === event.amount) continue;
+          const { resized, credit } = resizeWinnerWeekSettlement(event.amount, input.weeklyAmount);
+          if (credit === 0) continue;
           if (resized === 0) await tx.paymentEvent.delete({ where: { id: event.id } });
           else await tx.paymentEvent.update({ where: { id: event.id }, data: { amount: resized } });
-          settlementSummary += ` Win-week settlement resized ${formatMoney(event.amount)} → ${formatMoney(resized)} to fit the new weekly.`;
+          if (event.settlementPayoutId) {
+            const payout = await tx.payout.findUnique({
+              where: { id: event.settlementPayoutId },
+            });
+            if (payout) {
+              await tx.payout.update({
+                where: { id: payout.id },
+                data: { netAmount: { increment: credit } },
+              });
+            }
+          }
+          settlementSummary +=
+            ` Win-week settlement resized ${formatMoney(event.amount)} → ${formatMoney(resized)} to fit the new weekly` +
+            `; ${formatMoney(credit)} credited back to the payout.`;
         }
       }
 
@@ -528,7 +605,15 @@ export async function updatePaymentEvent(input: {
     if (!receivedAt) return { ok: false as const, error: "Received-at must be a valid date." };
 
     const data = await serializableTransaction(async (tx) => {
-      const before = await tx.paymentEvent.findUniqueOrThrow({ where: { id: input.eventId } });
+      const before = await tx.paymentEvent.findUniqueOrThrow({
+        where: { id: input.eventId },
+        include: { participation: { include: { cycle: true } } },
+      });
+      // Audit H5: rewriting a receipt replays every week of the member's
+      // window — on a CLOSED cycle that moves money the frozen ledger has
+      // already accounted for.
+      const frozen = frozenCycleRefusal(before.participation.cycle);
+      if (frozen) throw new Error(frozen);
       const after = await tx.paymentEvent.update({
         where: { id: input.eventId },
         data: {
@@ -562,7 +647,14 @@ export async function deletePaymentEvent(input: { eventId: string }) {
   if (!gate.ok) return gate;
   try {
     const data = await serializableTransaction(async (tx) => {
-      const target = await tx.paymentEvent.findUniqueOrThrow({ where: { id: input.eventId } });
+      const target = await tx.paymentEvent.findUniqueOrThrow({
+        where: { id: input.eventId },
+        include: { participation: { include: { cycle: true } } },
+      });
+      // Audit H5: deleting a receipt removes money from a CLOSED cycle whose
+      // carried-ledger balances were computed with it.
+      const frozen = frozenCycleRefusal(target.participation.cycle);
+      if (frozen) throw new Error(frozen);
       await tx.paymentEvent.delete({ where: { id: input.eventId } });
       await rebuildParticipationPayments(tx, target.participationId);
       await logAudit(tx, {
@@ -604,8 +696,12 @@ export async function updatePaymentRow(input: {
     const data = await serializableTransaction(async (tx) => {
       const before = await tx.payment.findUniqueOrThrow({
         where: { id: input.paymentId },
-        include: { week: true },
+        include: { week: { include: { cycle: true } } },
       });
+      // Audit H5: this flips isDeferred — the same money-affecting change
+      // setWeekDeferral is guarded for, reachable from a second action.
+      const frozen = frozenCycleRefusal(before.week.cycle);
+      if (frozen) throw new Error(frozen);
       const after = await tx.payment.update({
         where: { id: input.paymentId },
         data: {
@@ -658,8 +754,14 @@ export async function setWeekDeferral(input: {
     const data = await serializableTransaction(async (tx) => {
       const participation = await tx.participation.findUniqueOrThrow({
         where: { id: input.participationId },
-        include: { person: true },
+        include: { person: true, cycle: true },
       });
+      // Audit H5, same class as recording: a deferral changes what a week
+      // OWES, and a closed cycle's shortfalls are already fixed on the
+      // carried ledger — flipping one here would leave two different debts
+      // for the same money. (Week NOTES stay editable: they touch no money.)
+      const frozen = frozenCycleRefusal(participation.cycle);
+      if (frozen) throw new Error(frozen);
       const week = await tx.week.findUnique({
         where: {
           cycleId_weekNumber: { cycleId: participation.cycleId, weekNumber: input.weekNumber },
@@ -765,7 +867,15 @@ export async function updateWeek(input: {
     if (!date) return { ok: false as const, error: "Date must be valid." };
 
     const data = await serializableTransaction(async (tx) => {
-      const before = await tx.week.findUniqueOrThrow({ where: { id: input.weekId } });
+      const before = await tx.week.findUniqueOrThrow({
+        where: { id: input.weekId },
+        include: { cycle: true },
+      });
+      // Audit H5: toggling isSkipped rebuilds EVERY participation in the
+      // cycle — on a CLOSED cycle that desyncs every frozen ledger entry the
+      // close wrote, in one call.
+      const frozen = frozenCycleRefusal(before.cycle);
+      if (frozen) throw new Error(frozen);
       const after = await tx.week.update({
         where: { id: input.weekId },
         data: { date, isSkipped: input.isSkipped, notes: input.notes?.trim() || null },
@@ -809,12 +919,17 @@ export async function moveDraw(input: { drawId: string; weekId: string }) {
     const data = await serializableTransaction(async (tx) => {
       const before = await tx.draw.findUniqueOrThrow({
         where: { id: input.drawId },
-        include: { week: true },
+        include: { week: { include: { cycle: true } } },
       });
       const targetWeek = await tx.week.findUniqueOrThrow({ where: { id: input.weekId } });
       if (targetWeek.cycleId !== before.week.cycleId) {
         throw new Error("The target week belongs to a different cycle.");
       }
+      // Audit H5: moving a draw re-runs settleWinnerWeeks, which CREATES a
+      // PaymentEvent on the target week — recording money onto a closed
+      // cycle, the exact act the refusal forbids.
+      const frozen = frozenCycleRefusal(before.week.cycle);
+      if (frozen) throw new Error(frozen);
       // Un-settle the OLD week before moving (the winner's contribution
       // belongs to the week they actually won), then settle the new one.
       const undone = await unsettleDraw(tx, input.drawId);

@@ -168,6 +168,10 @@ export type RedactedBoard = ReturnType<typeof redactWeekBoard>;
  * The week list keeps WHO (as numbers) and paid/owing/deferred state — no
  * amounts, no receipts, no owed totals. `nameByParticipation` supplies the
  * numbers label per member (the board rows carry names otherwise).
+ *
+ * Audit H3d: the incoming rows are RANKED (most owed first), so even with
+ * amounts zeroed the ORDER itself is a live ranking of who owes most —
+ * re-sorted here by the neutral numbers label before anything is sent.
  */
 export function redactWeekBoard<T extends BoardInput>(
   data: T,
@@ -182,6 +186,8 @@ export function redactWeekBoard<T extends BoardInput>(
     weeksBehind: m.weeksBehind,
     amountOwed: 0,
   });
+  const neutralOrder = (a: { name: string }, b: { name: string }) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true });
   return {
     presentation: true as const,
     cycleName: data.cycleName,
@@ -195,8 +201,8 @@ export function redactWeekBoard<T extends BoardInput>(
     membersPaid: data.membersPaid,
     membersExpected: data.membersExpected,
     windowDaysLeft: data.windowDaysLeft,
-    owing: data.owing.map(member),
-    paid: data.paid.map(member),
+    owing: data.owing.map(member).sort(neutralOrder),
+    paid: data.paid.map(member).sort(neutralOrder),
     receiptsByParticipation: {} as Record<
       string,
       { eventId: string; appliedHere: number; eventAmount: number; method: string | null }[]
@@ -256,14 +262,25 @@ export function redactWheelState<T extends WheelStateInput>(data: T) {
     lock: n.lock === null ? null : ("frozen" as const),
     lockReason: null,
   });
+  // Audit H3(c), second half: a planned winner's slot is CREATED last
+  // (createWinnerPlan puts it at max(position) + 1), and slots arrive in
+  // position order — so on a shared screen the plan slot sat at the bottom
+  // of the setup page every week, however well the lock reasons were hidden.
+  // Re-order by the lowest lucky number in each slot and renumber, so the
+  // sequence carries no creation history. Positions are display-only; saving
+  // an arrangement matches slots by id (saveSlots), never by position.
+  const lowestNumber = (s: { members: WheelNumberShape[] }) =>
+    s.members.length === 0 ? Number.MAX_SAFE_INTEGER : Math.min(...s.members.map((m) => m.number));
+  const neutralSlots = [...data.slots].sort((a, b) => lowestNumber(a) - lowestNumber(b));
+
   return {
     presentation: true as const,
     cycleName: data.cycleName,
     unitAmount: null,
     currentWeek: data.currentWeek,
-    slots: data.slots.map((s) => ({
+    slots: neutralSlots.map((s, index) => ({
       id: s.id,
-      position: s.position,
+      position: index + 1,
       drawn: false,
       members: s.members.map(num),
       total: null,
@@ -302,66 +319,63 @@ export function redactProposedSlots(slots: { luckyNumberIds: string[] }[]) {
 
 // ————————————————— Cycle roster —————————————————
 
-type PersonShape = {
-  nameAmharic: string;
-  nameEnglishFirst: string;
-  nameEnglishLast: string | null;
-  phone: string | null;
-  notes: string | null;
-  authUserId: string | null;
-  pinHash: string | null;
-  pinFailedAttempts: number;
-  pinLockedUntil: Date | null;
-  pinLoginAllowed: boolean | null;
-};
-
 type CycleDetailInput = {
-  unitAmount: number;
-  feePercent: number;
-  weeks: { notes: string | null }[];
-  participations: {
-    weeklyAmount: number;
-    person: PersonShape;
-    luckyNumbers: { number: number; amount: number }[];
+  id: string;
+  name: string;
+  startDate: Date;
+  plannedWeeks: number;
+  weeks: readonly { id: string; weekNumber: number; isSkipped: boolean; date?: Date }[];
+  participations: readonly {
+    id: string;
+    status: "ACTIVE" | "CLOSED";
+    startWeek: number;
+    weeksCommitted: number;
+    luckyNumbers: readonly { id: string; number: number }[];
   }[];
 };
 
+export type RedactedCycleDetail = ReturnType<typeof redactCycleDetail>;
+
 /**
- * The cycle roster keeps its SHAPE (same prisma types) so the page renders
- * unchanged, but every identity field carries the numbers label and every
- * sensitive Person field (phone, auth identity, PIN state) is explicitly
- * blanked — spreading a prisma row must never carry a hidden field through.
- * Money is zeroed; the page hides its money columns via the mode flag so no
- * misleading $0 renders.
+ * The cycle roster in presentation mode, rebuilt as an ALLOWLIST like every
+ * other redactor (audit H3e — the old spread carried any newly added Person
+ * field through by default; it was leaking noMessages). Exactly the fields
+ * the page renders survive: identity is the numbers label, money fields are
+ * hard zeros, and every Person field beyond the three display names simply
+ * does not exist in the payload.
  */
-export function redactCycleDetail<T extends CycleDetailInput>(detail: T): T {
+export function redactCycleDetail(detail: CycleDetailInput) {
   return {
-    ...detail,
+    presentation: true as const,
+    id: detail.id,
+    name: detail.name,
+    startDate: detail.startDate,
+    plannedWeeks: detail.plannedWeeks,
     unitAmount: 0,
     feePercent: 0,
     // Week notes are uncontrolled organizer free text — they can name members
-    // or amounts ("skipped — X's payout delayed").
-    weeks: detail.weeks.map((w) => ({ ...w, notes: null })),
+    // or amounts ("skipped — X's payout delayed"). Not sent at all.
+    weeks: detail.weeks.map((w) => ({
+      id: w.id,
+      weekNumber: w.weekNumber,
+      isSkipped: w.isSkipped,
+      ...(w.date !== undefined ? { date: w.date } : {}),
+      notes: null,
+    })),
     participations: detail.participations.map((p) => {
       const label = numbersLabel(p.luckyNumbers.map((n) => n.number));
-      const blanked: PersonShape = {
-        ...p.person,
-        nameAmharic: label,
-        nameEnglishFirst: "",
-        nameEnglishLast: null,
-        phone: null,
-        notes: null,
-        authUserId: null,
-        pinHash: null,
-        pinFailedAttempts: 0,
-        pinLockedUntil: null,
-        pinLoginAllowed: null,
-      };
       return {
-        ...p,
+        id: p.id,
+        status: p.status,
+        startWeek: p.startWeek,
+        weeksCommitted: p.weeksCommitted,
         weeklyAmount: 0,
-        person: blanked,
-        luckyNumbers: p.luckyNumbers.map((n) => ({ ...n, amount: 0 })),
+        person: {
+          nameAmharic: label,
+          nameEnglishFirst: "",
+          nameEnglishLast: null as string | null,
+        },
+        luckyNumbers: p.luckyNumbers.map((n) => ({ id: n.id, number: n.number, amount: 0 })),
       };
     }),
   };

@@ -1,9 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { hardenSessionCookie } from "./cookie-policy";
 
 /**
  * Server client for Server Components, Server Actions, and Route Handlers.
- * Follows the official @supabase/ssr getAll/setAll cookie contract.
+ * Follows the official @supabase/ssr getAll/setAll cookie contract. Every
+ * cookie written here passes through hardenSessionCookie (audit H2).
  */
 export async function createClient() {
   const cookieStore = await cookies();
@@ -19,7 +21,7 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
+              cookieStore.set(name, value, hardenSessionCookie(options)),
             );
           } catch {
             // Called from a Server Component, where cookies cannot be

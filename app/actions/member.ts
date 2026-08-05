@@ -6,7 +6,7 @@ import { linkCurrentUserToPerson } from "@/app/actions/auth";
 import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { findPeopleByPhone } from "@/lib/people-lookup";
-import { phoneDigits, toE164 } from "@/lib/phone";
+import { toE164 } from "@/lib/phone";
 import { defaultPinForPhone } from "@/lib/pin";
 import { computeStanding, pinnedMapFromEvents } from "@/lib/standing";
 import { calculatePayout } from "@/lib/wheel";
@@ -355,7 +355,7 @@ export async function lookupMemberByPhone(input: { phone: string }) {
 
     const header = await headers();
     const ip = callerIp(header);
-    if (!allowLookup(`ip:${ip}`) || !allowLookup(`phone:${phoneDigits(phone)}`)) {
+    if (!allowLookup(`ip:${ip}`) || !allowLookup(`phone:${toE164(phone)}`)) {
       return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
     }
 

@@ -42,7 +42,12 @@ type NeedsSettlement = {
   newFee: number;
   newEntitlementNet: number;
   alreadyReceived: number;
+  /** What is STILL to settle now (total gap minus what earlier edits settled). */
   gap: number;
+  /** The whole position against the new terms, before prior settlements. */
+  totalGap: number;
+  /** Already recognised on the ledger for this cycle (audit H4). */
+  priorSettled: number;
   balancingWeeksExact: number;
   balancingWeeksWhole: number;
 };
@@ -69,8 +74,26 @@ export function ParticipationEditor(props: {
     paidAt: string | null;
     notes: string | null;
   }[];
+  /**
+   * Which sections to render. The member page splits this editor across its
+   * tabs — participation + lucky numbers live in SETTINGS, the receipt list
+   * in RECEIPTS — so each capability appears in exactly one place. Omitted =
+   * everything, which is how any other caller gets the whole editor.
+   */
+  show?: {
+    participation?: boolean;
+    luckyNumbers?: boolean;
+    receipts?: boolean;
+    weeks?: boolean;
+  };
 }) {
   const { participation } = props;
+  const show = {
+    participation: props.show?.participation ?? true,
+    luckyNumbers: props.show?.luckyNumbers ?? true,
+    receipts: props.show?.receipts ?? true,
+    weeks: props.show?.weeks ?? true,
+  };
   const router = useRouter();
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -241,7 +264,7 @@ export function ParticipationEditor(props: {
     <div className="max-w-2xl space-y-8">
       {banner && <Alert kind={banner.kind}>{banner.text}</Alert>}
 
-      <section className="space-y-3">
+      <section className={`space-y-3 ${show.participation ? "" : "hidden"}`}>
         <h2 className="text-base font-bold text-gray-900 dark:text-white">Participation</h2>
         <div className="flex flex-wrap gap-3">
           <Field label="Weekly amount">
@@ -284,18 +307,38 @@ export function ParticipationEditor(props: {
               <strong className="tabular-nums">{formatMoney(settlement.newEntitlementNet)}</strong>{" "}
               ({formatMoney(settlement.newEntitlementGross)} − {formatMoney(settlement.newFee)}{" "}
               fee).{" "}
-              {settlement.gap > 0 ? (
+              {settlement.totalGap > 0 ? (
                 <>
                   They hold{" "}
-                  <strong className="tabular-nums">{formatMoney(settlement.gap)}</strong> too much.
+                  <strong className="tabular-nums">{formatMoney(settlement.totalGap)}</strong> too
+                  much.
                 </>
-              ) : (
+              ) : settlement.totalGap < 0 ? (
                 <>
                   They are owed{" "}
-                  <strong className="tabular-nums">{formatMoney(-settlement.gap)}</strong> more.
+                  <strong className="tabular-nums">{formatMoney(-settlement.totalGap)}</strong> more.
                 </>
+              ) : (
+                <>That matches what they took.</>
               )}
             </p>
+
+            {settlement.priorSettled !== 0 && (
+              <p className="rounded-xl bg-white/70 dark:bg-black/20 px-3 py-2">
+                An earlier edit already settled{" "}
+                <strong className="tabular-nums">
+                  {formatMoney(Math.abs(settlement.priorSettled))}
+                </strong>{" "}
+                of this in {settlement.cycleName} (it is on their carried ledger). Only the{" "}
+                difference is settled now:{" "}
+                <strong className="tabular-nums">
+                  {settlement.gap > 0
+                    ? `${formatMoney(settlement.gap)} still to settle`
+                    : `${formatMoney(-settlement.gap)} to give back to them`}
+                </strong>
+                .
+              </p>
+            )}
 
             {settlement.gap > 0 ? (
               <div className="space-y-2">
@@ -410,7 +453,7 @@ export function ParticipationEditor(props: {
         )}
       </section>
 
-      <section className="space-y-3">
+      <section className={`space-y-3 ${show.luckyNumbers ? "" : "hidden"}`}>
         <h2 className="text-base font-bold text-gray-900 dark:text-white">Lucky numbers</h2>
         <table className="w-full border-collapse text-sm">
           <tbody>
@@ -447,7 +490,7 @@ export function ParticipationEditor(props: {
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className={`space-y-3 ${show.receipts ? "" : "hidden"}`}>
         <h2 className="text-base font-bold text-gray-900 dark:text-white">Receipts (payment events)</h2>
         <p className="text-xs text-gray-600 dark:text-gray-400">
           Week amounts are derived from receipts — edit or delete a receipt and every week
@@ -466,7 +509,7 @@ export function ParticipationEditor(props: {
         )}
       </section>
 
-      <section className="space-y-3">
+      <section className={`space-y-3 ${show.weeks ? "" : "hidden"}`}>
         <h2 className="text-base font-bold text-gray-900 dark:text-white">Weeks</h2>
         <table className="w-full border-collapse text-sm">
           <thead>

@@ -2,7 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { signInAdmin } from "@/app/actions/auth";
+
+// Sign-in happens in a SERVER ACTION (audit H2), not in the browser: a
+// session cookie written by JavaScript can never be httpOnly, and this is
+// the organizer's session. The server action routes the write through the
+// hardened cookie policy, exactly like the member sign-in paths.
 
 export function AdminLoginForm() {
   const router = useRouter();
@@ -16,20 +21,13 @@ export function AdminLoginForm() {
     setError(null);
     setPending(true);
     try {
-      const supabase = createClient();
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (signInError) {
-        setError("Email or password is incorrect.");
+      const result = await signInAdmin({ email, password });
+      if (!result.ok) {
+        setError(result.error);
         return;
       }
-      if (data.user?.app_metadata?.is_admin !== true) {
-        await supabase.auth.signOut();
-        setError("This account is not the organizer.");
-        return;
-      }
+      // The server action already set the session cookie on its response, so
+      // this navigation and the refresh both carry it.
       router.push("/admin/cycle");
       router.refresh();
     } catch {

@@ -5,6 +5,7 @@ import {
   closingStatementText,
   cycleDeletePlan,
   finalBalanceEntries,
+  frozenCycleRefusal,
   type MemberFinal,
 } from "./cycle-close";
 
@@ -172,5 +173,21 @@ describe("cycleDeletePlan — 2.9: what goes, what stays, stated plainly", () =>
     expect(plan.kept.some((l) => l.includes("PERSON"))).toBe(true);
     expect(plan.kept.some((l) => l.includes("ledger"))).toBe(true);
     expect(plan.kept.some((l) => l.includes("archive"))).toBe(true);
+  });
+});
+
+describe("frozenCycleRefusal — audit H5: no money onto a closed cycle's weeks", () => {
+  it("refuses a CLOSED cycle and names the correct path instead (2.19)", () => {
+    const refusal = frozenCycleRefusal({ name: "Cycle 1", status: "CLOSED" });
+    expect(refusal).not.toBeNull();
+    expect(refusal).toContain("Cycle 1");
+    expect(refusal).toContain("closed");
+    // It must TELL the organizer where the money does belong, not just say no.
+    expect(refusal).toContain("ledger");
+  });
+
+  it("lets an ACTIVE or DRAFT cycle through untouched", () => {
+    expect(frozenCycleRefusal({ name: "Cycle 1", status: "ACTIVE" })).toBeNull();
+    expect(frozenCycleRefusal({ name: "Cycle 2", status: "DRAFT" })).toBeNull();
   });
 });

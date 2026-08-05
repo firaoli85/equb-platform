@@ -30,6 +30,30 @@ export type MemberFinal = {
   totalPaid: number;
 };
 
+// ————————————————— Frozen cycles (audit H5) —————————————————
+
+/**
+ * A CLOSED cycle's weeks are FINAL: closing already wrote every member's
+ * shortfall onto their carried ledger (2.18), so new money landing on a week
+ * afterwards would silently change their standing while the ledger debt
+ * stayed as it was — two numbers for the same debt.
+ *
+ * 2.19 defines the correct path instead: "after the cycle closes, money
+ * recorded on the profile reduces the LEDGER BALANCE." Returns the refusal
+ * to show, or null when the cycle still accepts week-level money.
+ */
+export function frozenCycleRefusal(cycle: {
+  name: string;
+  status: "DRAFT" | "ACTIVE" | "CLOSED";
+}): string | null {
+  if (cycle.status !== "CLOSED") return null;
+  return (
+    `${cycle.name} is closed — its weeks are final and every remaining balance is already ` +
+    `on the members' carried ledgers (2.18). Record this money against their ledger balance ` +
+    `on the member's page instead (2.19); it cannot be added to a closed week.`
+  );
+}
+
 // ————————————————— Blockers (2.27) —————————————————
 
 export type UndrawnMember = { name: string; numbers: number[] };

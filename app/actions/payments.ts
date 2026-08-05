@@ -10,6 +10,7 @@ import { calculateFinishWeek, currentWeekNumber, MAX_MONEY_CENTS } from "@/lib/m
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma, serializableTransaction } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
+import { frozenCycleRefusal } from "@/lib/cycle-close";
 import { isReservedSettlementKey } from "@/lib/draw-settlement";
 import { computeStanding, pinnedMapFromEvents, planCommit } from "@/lib/standing";
 
@@ -60,6 +61,20 @@ function validAmount(amount: number): boolean {
 }
 
 /**
+ * AUDIT H5 — money may never land on a CLOSED cycle's week. loadMemberWindow
+ * happily loaded a frozen cycle, so a receipt could be recorded against an
+ * archived cycle whose ledger balances were already written at close. The
+ * READ paths (standing, the archive, the member's own history) stay open —
+ * 2.9 keeps past cycles viewable; only the writes are refused.
+ */
+function frozenRefusal(loaded: { participation: { cycle: { name: string; status: string } } }) {
+  return frozenCycleRefusal({
+    name: loaded.participation.cycle.name,
+    status: loaded.participation.cycle.status as "DRAFT" | "ACTIVE" | "CLOSED",
+  });
+}
+
+/**
  * What WOULD happen if this amount were recorded — never writes (2.15:
  * the allocation is shown before it is committed).
  */
@@ -78,6 +93,10 @@ export async function previewAllocation(input: { participationId: string; amount
     }
     const loaded = await loadMemberWindow(prisma, input.participationId);
     if (!loaded) return { ok: false as const, error: "Participation not found." };
+    // Refuse HERE too, not only at commit — a preview that promises an
+    // allocation the commit will reject is a lie (2.10).
+    const frozen = frozenRefusal(loaded);
+    if (frozen) return { ok: false as const, error: frozen };
 
     const result = allocatePayment(
       input.amount,
@@ -177,6 +196,11 @@ export async function recordPayment(input: RecordPaymentInput) {
 
       const loaded = await loadMemberWindow(tx, input.participationId);
       if (!loaded) throw new Error("Participation not found.");
+      // The authoritative refusal (audit H5) — INSIDE the serializable
+      // transaction, so a cycle closing concurrently cannot slip a receipt
+      // in behind the check.
+      const frozen = frozenRefusal(loaded);
+      if (frozen) throw new Error(frozen);
       if (loaded.windowWeeks.length < loaded.participation.weeksCommitted) {
         throw new Error(
           "This member's commitment runs past the cycle's existing weeks (data from " +

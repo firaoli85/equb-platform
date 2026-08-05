@@ -4,7 +4,6 @@ import { getCatchUpWeeks } from "@/app/actions/payments-view";
 import { getMemberStanding } from "@/app/actions/payments";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
-import { StatCard } from "@/components/ui/stat-card";
 import { formatDateUTC, formatMoney } from "@/lib/format";
 import { ledgerBalance } from "@/lib/ledger";
 import { calculateFinishWeek, dateOfWeek } from "@/lib/money";
@@ -13,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { calculatePayout } from "@/lib/wheel";
 import { MemberPayments } from "./member-payments";
+import { MemberTabBar, parseTab } from "./member-tabs";
 import { MessagesOptOut } from "./messages-opt-out";
 import { ParticipationEditor } from "./participation-editor";
 import { PersonEditForm } from "./person-edit-form";
@@ -20,14 +20,27 @@ import { PinControls } from "./pin-controls";
 
 export const dynamic = "force-dynamic";
 
-// THE member page: the whole person in one place. Section 1 is the person
-// (2.5: permanent, carries to every cycle); section 2 is this cycle's
-// participation and standing (per-cycle, resets); section 3 is history.
+// THE member page: a header that never scrolls away, then ONE thing at a
+// time behind five tabs. Every capability the old stacked page had still
+// exists — each now in exactly one place:
+//   PAYMENTS  their weeks + per-week panel + allocation entry + bulk catch-up
+//   PAYOUT    lucky numbers, gross/fee/net, draw status, carried ledger
+//   RECEIPTS  the payment-event audit trail, editable and undoable
+//   SETTINGS  participation (the ONLY editor), lucky numbers, person, PIN, hardship
+//   HISTORY   every cycle this person has been in
 // Standing is derived by getMemberStanding — nothing recomputed here (2.14).
-export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PersonPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string | string[] }>;
+}) {
   // A member's identity and money (2.4).
   if (await getSetting("presentationMode")) return <PresentationHidden what="Member" />;
   const { id } = await params;
+  const tab = parseTab((await searchParams).tab);
+
   const person = await prisma.person.findUnique({
     where: { id },
     include: {
@@ -63,8 +76,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   if (!person) notFound();
 
   const active =
-    person.participations.find((p) => p.status === "ACTIVE" && p.cycle.status === "ACTIVE") ??
-    null;
+    person.participations.find((p) => p.status === "ACTIVE" && p.cycle.status === "ACTIVE") ?? null;
 
   const [standing, catchUp] = active
     ? await Promise.all([getMemberStanding(active.id), getCatchUpWeeks(active.id)])
@@ -88,188 +100,236 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         ? "default"
         : "none";
 
+  const stats =
+    standing?.ok && active
+      ? [
+          {
+            label: "Cycle week",
+            value: `${standing.data.currentCycleWeek}`,
+            sub: `of ${active.cycle.plannedWeeks}`,
+          },
+          {
+            label: "Weeks paid",
+            value: `${Math.min(standing.data.weeksCredited, standing.data.weeksCommitted)} of ${standing.data.weeksCommitted}`,
+            sub: `wk ${active.startWeek}–${standing.data.finishWeek}`,
+          },
+          {
+            label: "Weeks behind",
+            value: `${standing.data.weeksBehind}`,
+            sub: standing.data.weeksBehind === 0 ? "current" : "needs catching up",
+          },
+          {
+            label: "Outstanding",
+            value: formatMoney(standing.data.amountOutstanding),
+            sub:
+              standing.data.surplus > 0
+                ? `${formatMoney(standing.data.surplus)} ahead`
+                : "at the current rate",
+          },
+          {
+            label: "Last payment",
+            value:
+              standing.data.lastPaymentWeek === null ? "—" : `wk ${standing.data.lastPaymentWeek}`,
+            sub:
+              standing.data.lastPaymentWeek === null
+                ? "nothing yet"
+                : formatDateUTC(
+                    standing.data.weeks.find(
+                      (w) => w.weekNumber === standing.data.lastPaymentWeek,
+                    )!.date,
+                  ),
+          },
+        ]
+      : [];
+
   return (
-    <main className="space-y-6">
-      {/* ————— Identity header ————— */}
-      <header className="flex items-start gap-4 animate-fade-in-up">
-        <span
-          className="flex h-14 w-14 shrink-0 select-none items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-xl font-black text-indigo-700 dark:text-indigo-300"
-          aria-hidden="true"
-        >
-          {[...person.nameEnglishFirst][0] ?? [...person.nameAmharic][0] ?? "?"}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="mb-1 text-sm">
-            <Link href="/admin/people" className="text-gray-500 dark:text-gray-400 hover:underline">
-              ← Directory
-            </Link>
-          </p>
-          <h1 className="text-2xl font-black leading-tight text-gray-900 dark:text-white text-balance">
-            {person.nameAmharic}
-          </h1>
-          <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
-            <span>
-              {person.nameEnglishFirst} {person.nameEnglishLast ?? ""}
+    <main className="space-y-4">
+      {/* ————— HEADER — always visible, never scrolls away ————— */}
+      <header className="sticky top-0 z-20 -mx-4 border-b border-gray-200 dark:border-gray-800 bg-[var(--page-bg)]/95 px-4 pb-2 pt-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--page-bg)]/80 sm:-mx-6 sm:px-6">
+        <p className="mb-1 text-sm">
+          <Link href="/admin/people" className="text-gray-500 dark:text-gray-400 hover:underline">
+            ← Directory
+          </Link>
+        </p>
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+          <span
+            className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-lg font-black text-indigo-700 dark:text-indigo-300"
+            aria-hidden="true"
+          >
+            {[...person.nameEnglishFirst][0] ?? [...person.nameAmharic][0] ?? "?"}
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-xl font-black leading-tight text-gray-900 dark:text-white text-balance">
+              {person.nameAmharic}
+            </h1>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
+              <span>
+                {person.nameEnglishFirst} {person.nameEnglishLast ?? ""}
+              </span>
+              <span className="tabular-nums">{person.phone ?? "no phone"}</span>
+              {pinState === "own" ? (
+                <Pill tone="good">Own PIN</Pill>
+              ) : pinState === "default" ? (
+                <Pill tone="attention">Default PIN (last 4)</Pill>
+              ) : (
+                <Pill tone="neutral">OTP only</Pill>
+              )}
+              <Pill tone={person.authUserId ? "accent" : "neutral"}>
+                {person.authUserId ? "Sign-in linked" : "Never signed in"}
+              </Pill>
+            </p>
+          </div>
+
+          {/* Lucky numbers with amounts — the canonical place they are shown. */}
+          {active && (
+            <span className="flex flex-wrap gap-1.5">
+              {active.luckyNumbers.map((n) => (
+                <span
+                  key={n.id}
+                  className="inline-flex select-none items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-black tabular-nums"
+                  style={{
+                    background: "var(--gold-badge-bg)",
+                    borderColor: "var(--gold-badge-border)",
+                    color: "var(--gold-badge-text)",
+                  }}
+                >
+                  #{n.number}
+                  <span className="font-semibold opacity-75">{formatMoney(n.amount)}/wk</span>
+                </span>
+              ))}
             </span>
-            <span className="tabular-nums">{person.phone ?? "no phone"}</span>
-            {pinState === "own" ? (
-              <Pill tone="good">Own PIN</Pill>
-            ) : pinState === "default" ? (
-              <Pill tone="attention">Default PIN (last 4)</Pill>
-            ) : (
-              <Pill tone="neutral">OTP only</Pill>
-            )}
-            <Pill tone={person.authUserId ? "accent" : "neutral"}>
-              {person.authUserId ? "Sign-in linked" : "Never signed in"}
-            </Pill>
-          </p>
+          )}
+
+          {/* The primary action, always reachable. */}
+          {active && standing?.ok && (
+            <Link
+              href={`/admin/people/${person.id}?tab=payments`}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-700 active:scale-[0.97]"
+            >
+              {standing.data.amountOutstanding > 0
+                ? `${formatMoney(standing.data.amountOutstanding)} outstanding — Record payment`
+                : "Record payment"}
+            </Link>
+          )}
+        </div>
+
+        {/* The five key figures, compact. */}
+        {stats.length > 0 && (
+          <dl className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1 sm:grid-cols-5">
+            {stats.map((s) => (
+              <div key={s.label}>
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-500">
+                  {s.label}
+                </dt>
+                <dd className="text-sm font-black tabular-nums text-gray-900 dark:text-white">
+                  {s.value}{" "}
+                  <span className="font-normal text-[11px] text-gray-500 dark:text-gray-500">
+                    {s.sub}
+                  </span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        <div className="mt-2">
+          <MemberTabBar
+            personId={person.id}
+            active={tab}
+            counts={{
+              receipts: active?.paymentEvents.length ?? 0,
+              numbers: active?.luckyNumbers.length ?? 0,
+              cycles: person.participations.length,
+            }}
+          />
         </div>
       </header>
 
-      {/* ————— SECTION 2 first in reading order: This cycle ————— */}
-      {active === null ? (
-        <Card className="animate-fade-in-up-1 px-5 py-4">
-          <h2 className="text-sm font-bold text-gray-900 dark:text-white">This cycle</h2>
+      {active === null && tab !== "settings" && tab !== "history" && (
+        <Card className="px-5 py-4">
+          <h2 className="text-sm font-bold text-gray-900 dark:text-white">Not in the current cycle</h2>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Not in the current cycle.{" "}
-            <Link href="/admin/cycle/add" className="font-semibold text-indigo-700 dark:text-indigo-300 underline">
+            <Link
+              href="/admin/cycle/add"
+              className="font-semibold text-indigo-700 dark:text-indigo-300 underline"
+            >
               Add them
             </Link>{" "}
-            to include them.
+            to include them, or use Settings and History.
           </p>
         </Card>
-      ) : (
-        <section className="space-y-4 animate-fade-in-up-1" aria-label={`This cycle — ${active.cycle.name}`}>
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-base font-black text-gray-900 dark:text-white">
-              This cycle — {active.cycle.name}
-            </h2>
-            <span className="text-xs text-gray-500 dark:text-gray-500">resets next cycle (2.5)</span>
+      )}
+
+      {/* ————— TAB 1: PAYMENTS — everything about money IN ————— */}
+      {tab === "payments" && active && catchUp?.ok && standing?.ok && (
+        <Card>
+          <CardHeader
+            title={`Payments — ${active.cycle.name}`}
+            sub="Their weeks and every action on them. Recording flows through the one engine (2.19)."
+          />
+          <div className="px-5 pb-4">
+            <MemberPayments
+              participationId={active.id}
+              memberName={person.nameEnglishFirst}
+              outstanding={standing.data.amountOutstanding}
+              carriedBalance={carried}
+              personId={person.id}
+              weeks={catchUp.data.weeks.map((w) => ({
+                weekNumber: w.weekNumber,
+                date: w.date.toISOString(),
+                amountDue: w.amountDue,
+                amountAlreadyPaid: w.amountAlreadyPaid,
+                isDeferred: w.isDeferred,
+                status:
+                  standing.data.weeks.find((sw) => sw.weekNumber === w.weekNumber)?.status ??
+                  (w.isDeferred ? "DEFERRED" : "UNPAID"),
+              }))}
+            />
           </div>
+        </Card>
+      )}
 
-          {/* Standing as stat cards — derived by getMemberStanding (2.14) */}
-          {standing?.ok && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-              <StatCard label="Cycle week" figure={`${standing.data.currentCycleWeek}`} sub={`of ${active.cycle.plannedWeeks} planned`} />
-              <StatCard
-                label="Weeks paid"
-                figure={`${Math.min(standing.data.weeksCredited, standing.data.weeksCommitted)} of ${standing.data.weeksCommitted}`}
-                sub={`their window: wk ${active.startWeek}–${standing.data.finishWeek}`}
-                delayClass="animate-fade-in-up-1"
-              />
-              <StatCard
-                label="Weeks behind"
-                figure={`${standing.data.weeksBehind}`}
-                sub={standing.data.weeksBehind === 0 ? "current" : "needs catching up"}
-                delayClass="animate-fade-in-up-1"
-              />
-              <StatCard
-                label="Outstanding"
-                cents={standing.data.amountOutstanding}
-                sub={standing.data.surplus > 0 ? `${formatMoney(standing.data.surplus)} paid ahead` : "at the current rate"}
-                delayClass="animate-fade-in-up-2"
-              />
-              <StatCard
-                label="Last payment"
-                figure={standing.data.lastPaymentWeek === null ? "—" : `wk ${standing.data.lastPaymentWeek}`}
-                sub={
-                  standing.data.lastPaymentWeek === null
-                    ? "nothing yet"
-                    : formatDateUTC(
-                        standing.data.weeks.find(
-                          (w) => w.weekNumber === standing.data.lastPaymentWeek,
-                        )!.date,
-                      )
-                }
-                delayClass="animate-fade-in-up-2"
-              />
-            </div>
-          )}
-
-          {/* Carried balance (2.18) — shown only when the person owes. */}
+      {/* ————— TAB 2: PAYOUT ————— */}
+      {tab === "payout" && (
+        <div className="space-y-4">
           {carried > 0 && (
             <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-300">
-              Carried balance from earlier: <strong className="tabular-nums">{formatMoney(carried)}</strong>{" "}
-              still owed (2.18 — remembered, never enforced).
+              Carried balance from earlier cycles:{" "}
+              <strong className="tabular-nums">{formatMoney(carried)}</strong> still owed (2.18 —
+              remembered, never enforced). Record against it on the Payments tab.
             </div>
           )}
-
-          {/* THE payment hub: record, catch up, defer, undo, note — every
-              money action from HERE (2.19: same one engine underneath). */}
-          {catchUp?.ok && standing?.ok && (
-            <Card tone="hero">
-              <CardHeader
-                title="Payments"
-                sub="Their weeks, and every action on them — recording flows through the one engine (2.19)."
-              />
-              <div className="px-5 pb-4">
-                <MemberPayments
-                  participationId={active.id}
-                  memberName={person.nameEnglishFirst}
-                  outstanding={standing.data.amountOutstanding}
-                  carriedBalance={carried}
-                  personId={person.id}
-                  weeks={catchUp.data.weeks.map((w) => ({
-                    weekNumber: w.weekNumber,
-                    date: w.date.toISOString(),
-                    amountDue: w.amountDue,
-                    amountAlreadyPaid: w.amountAlreadyPaid,
-                    isDeferred: w.isDeferred,
-                    status:
-                      standing.data.weeks.find((sw) => sw.weekNumber === w.weekNumber)?.status ??
-                      (w.isDeferred ? "DEFERRED" : "UNPAID"),
-                  }))}
-                />
-              </div>
+          {active === null ? (
+            <Card className="px-5 py-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                No payout — they are not in the current cycle.
+              </p>
             </Card>
-          )}
-
-          {/* Participation facts */}
-          <Card>
-            <CardHeader
-              title="Participation"
-              sub={
-                <>
-                  {formatMoney(active.weeklyAmount)}/week · weeks {active.startWeek}–
-                  {calculateFinishWeek(active.startWeek, active.weeksCommitted)} · finishes{" "}
-                  {formatDateUTC(
-                    dateOfWeek(
-                      active.cycle.startDate,
-                      calculateFinishWeek(active.startWeek, active.weeksCommitted),
-                    ),
-                  )}
-                </>
-              }
-              right={
-                <span className="flex flex-wrap justify-end gap-1.5">
-                  {active.luckyNumbers.map((n) => (
-                    <span
-                      key={n.id}
-                      className="inline-flex select-none items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-black tabular-nums"
-                      style={{
-                        background: "var(--gold-badge-bg)",
-                        borderColor: "var(--gold-badge-border)",
-                        color: "var(--gold-badge-text)",
-                      }}
-                    >
-                      #{n.number}
-                      <span className="font-semibold opacity-75">{formatMoney(n.amount)}/wk</span>
-                    </span>
-                  ))}
-                </span>
-              }
-            />
-
-            {/* Payout per lucky number */}
-            {standing?.ok && (
+          ) : (
+            <Card>
+              <CardHeader
+                title="Payout"
+                sub={
+                  <>
+                    {formatMoney(active.weeklyAmount)}/week · weeks {active.startWeek}–
+                    {calculateFinishWeek(active.startWeek, active.weeksCommitted)} · finishes{" "}
+                    {formatDateUTC(
+                      dateOfWeek(
+                        active.cycle.startDate,
+                        calculateFinishWeek(active.startWeek, active.weeksCommitted),
+                      ),
+                    )}
+                  </>
+                }
+              />
               <div className="px-5 pb-4">
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr>
-                      {["Number", "Gross", "Fee", "Net", "Draw status"].map((h, i) => (
+                      {["Number", "Gross", "Fee", "Net", "Draw status"].map((h) => (
                         <th
                           key={h}
-                          className={`border-b border-gray-200 dark:border-gray-800 py-2 pr-3 text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 ${i === 4 ? "" : ""} text-left`}
+                          className="border-b border-gray-200 dark:border-gray-800 py-2 pr-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400"
                         >
                           {h}
                         </th>
@@ -317,14 +377,40 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                     })}
                   </tbody>
                 </table>
+                {active.luckyNumbers.some((n) => n.payouts.length > 0) && (
+                  <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+                    Net is what actually crosses the table — a win-week contribution settled from
+                    the payout is already deducted. Manage the payout rows on{" "}
+                    <Link
+                      href="/admin/collections"
+                      className="font-semibold text-indigo-700 dark:text-indigo-300 hover:underline"
+                    >
+                      Collections
+                    </Link>
+                    .
+                  </p>
+                )}
               </div>
-            )}
-          </Card>
+            </Card>
+          )}
+        </div>
+      )}
 
-          {/* Edit participation — live recalculation preview before saving. */}
-          <Card>
-            <div className="px-5 py-4">
+      {/* ————— TAB 3: RECEIPTS — the audit trail ————— */}
+      {tab === "receipts" && (
+        <Card>
+          <CardHeader
+            title="Receipts"
+            sub="Every payment event, newest facts first in the money's own order. Week amounts derive from these — edit or delete one and every week recalculates (D-32)."
+          />
+          <div className="px-5 pb-4">
+            {active === null ? (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                No receipts — they are not in the current cycle.
+              </p>
+            ) : (
               <ParticipationEditor
+                show={{ participation: false, luckyNumbers: false, receipts: true, weeks: false }}
                 participation={{
                   id: active.id,
                   weeklyAmount: active.weeklyAmount,
@@ -357,113 +443,169 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                   notes: p.notes,
                 }))}
               />
-            </div>
-          </Card>
-        </section>
+            )}
+          </div>
+        </Card>
       )}
 
-      {/* ————— SECTION 1 — Person (permanent) ————— */}
-      <Card className="animate-fade-in-up-2">
-        <CardHeader title="Person" sub="Carries to every cycle (2.5)." />
-        <div className="grid gap-6 px-5 pb-5 md:grid-cols-2">
-          <div>
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-              Edit person (D-32)
-            </h3>
-            <PersonEditForm
-              person={{
-                id: person.id,
-                nameAmharic: person.nameAmharic,
-                nameEnglishFirst: person.nameEnglishFirst,
-                nameEnglishLast: person.nameEnglishLast,
-                phone: person.phone,
-                participationCount: person.participations.length,
-              }}
-            />
-          </div>
-          <div>
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-              PIN sign-in
-            </h3>
-            <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">
-              {pinState === "own" ? (
-                <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                  They set their own PIN.
-                </span>
-              ) : pinState === "default" ? (
-                <span className="rounded bg-amber-100 dark:bg-amber-950/50 px-1.5 py-0.5 text-amber-900 dark:text-amber-300">
-                  Still on the default — the last 4 digits of their phone sign them in.
-                </span>
-              ) : (
-                <span className="text-gray-600 dark:text-gray-400">
-                  No PIN and no usable phone for the default — they need OTP, or set a PIN below.
-                </span>
-              )}
-            </p>
-            <PinControls
-              personId={person.id}
-              personName={person.nameEnglishFirst}
-              pinSet={person.pinHash !== null}
-              pinLoginAllowed={person.pinLoginAllowed}
-              pinFailedAttempts={person.pinFailedAttempts}
-              lockedMinutesLeft={lockedMinutesLeft}
-              lockedUntilLabel={lockedUntilLabel}
-            />
-            <div className="mt-5 border-t border-gray-200 dark:border-gray-800 pt-4">
-              <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                Messaging
-              </h3>
-              <MessagesOptOut personId={person.id} noMessages={person.noMessages} />
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* ————— SECTION 3 — History ————— */}
-      <Card className="animate-fade-in-up-3">
-        <CardHeader title="History" sub="Every cycle this person has been part of." />
-        <div className="px-5 pb-4">
-          {person.participations.length === 0 ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400">Never been in a cycle.</p>
-          ) : (
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  {["Cycle", "Contribution", "Weeks", "Status"].map((h) => (
-                    <th
-                      key={h}
-                      className="border-b border-gray-200 dark:border-gray-800 py-2 pr-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {person.participations.map((p) => (
-                  <tr key={p.id}>
-                    <td className="border-b border-gray-100 dark:border-gray-800/60 py-2 pr-3 font-semibold text-gray-900 dark:text-white">
-                      {p.cycle.name}
-                      {p.cycle.status === "ACTIVE" ? " (current)" : ""}
-                    </td>
-                    <td className="border-b border-gray-100 dark:border-gray-800/60 py-2 pr-3 tabular-nums text-gray-700 dark:text-gray-300">
-                      {formatMoney(p.weeklyAmount)}/week
-                    </td>
-                    <td className="border-b border-gray-100 dark:border-gray-800/60 py-2 pr-3 tabular-nums text-gray-700 dark:text-gray-300">
-                      {p.startWeek}–{calculateFinishWeek(p.startWeek, p.weeksCommitted)}
-                    </td>
-                    <td className="border-b border-gray-100 dark:border-gray-800/60 py-2">
-                      <Pill tone={p.status === "ACTIVE" ? "good" : "neutral"}>
-                        {p.status === "ACTIVE" ? "Active" : "Closed"}
-                      </Pill>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* ————— TAB 4: SETTINGS — participation lives HERE and nowhere else ————— */}
+      {tab === "settings" && (
+        <div className="space-y-4">
+          {active !== null && (
+            <Card>
+              <CardHeader
+                title="Participation and lucky numbers"
+                sub="The one place these are edited. Saving replays their receipts against the new shape, with a live settlement step if they have already been drawn (2.18)."
+              />
+              <div className="px-5 pb-4">
+                <ParticipationEditor
+                  show={{
+                    participation: true,
+                    luckyNumbers: true,
+                    receipts: false,
+                    weeks: false,
+                  }}
+                  participation={{
+                    id: active.id,
+                    weeklyAmount: active.weeklyAmount,
+                    startWeek: active.startWeek,
+                    weeksCommitted: active.weeksCommitted,
+                    plannedWeeks: active.cycle.plannedWeeks,
+                    personName: person.nameEnglishFirst,
+                    cycleName: active.cycle.name,
+                  }}
+                  luckyNumbers={active.luckyNumbers.map((n) => ({
+                    id: n.id,
+                    number: n.number,
+                    amount: n.amount,
+                  }))}
+                  events={active.paymentEvents.map((e) => ({
+                    id: e.id,
+                    amount: e.amount,
+                    method: e.method,
+                    receivedAt: e.receivedAt.toISOString(),
+                    notes: e.notes,
+                  }))}
+                  weeks={active.payments.map((p) => ({
+                    paymentId: p.id,
+                    weekNumber: p.week.weekNumber,
+                    date: formatDateUTC(p.week.date),
+                    amountPaid: p.amountPaid,
+                    isDeferred: p.isDeferred,
+                    method: p.method,
+                    paidAt: p.paidAt?.toISOString() ?? null,
+                    notes: p.notes,
+                  }))}
+                />
+              </div>
+            </Card>
           )}
+
+          <Card>
+            <CardHeader title="Person" sub="Carries to every cycle (2.5)." />
+            <div className="grid gap-6 px-5 pb-5 md:grid-cols-2">
+              <div>
+                <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                  Names and phone
+                </h3>
+                <PersonEditForm
+                  person={{
+                    id: person.id,
+                    nameAmharic: person.nameAmharic,
+                    nameEnglishFirst: person.nameEnglishFirst,
+                    nameEnglishLast: person.nameEnglishLast,
+                    phone: person.phone,
+                    participationCount: person.participations.length,
+                  }}
+                />
+              </div>
+              <div>
+                <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                  PIN sign-in
+                </h3>
+                <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">
+                  {pinState === "own" ? (
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                      They set their own PIN.
+                    </span>
+                  ) : pinState === "default" ? (
+                    <span className="rounded bg-amber-100 dark:bg-amber-950/50 px-1.5 py-0.5 text-amber-900 dark:text-amber-300">
+                      Still on the default — the last 4 digits of their phone, plus a WhatsApp code.
+                    </span>
+                  ) : (
+                    <span className="text-gray-600 dark:text-gray-400">
+                      No PIN — they sign in with a WhatsApp code, or set a PIN below.
+                    </span>
+                  )}
+                </p>
+                <PinControls
+                  personId={person.id}
+                  personName={person.nameEnglishFirst}
+                  pinSet={person.pinHash !== null}
+                  pinLoginAllowed={person.pinLoginAllowed}
+                  pinFailedAttempts={person.pinFailedAttempts}
+                  lockedMinutesLeft={lockedMinutesLeft}
+                  lockedUntilLabel={lockedUntilLabel}
+                />
+                <div className="mt-5 border-t border-gray-200 dark:border-gray-800 pt-4">
+                  <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+                    Messaging
+                  </h3>
+                  <MessagesOptOut personId={person.id} noMessages={person.noMessages} />
+                </div>
+              </div>
+            </div>
+          </Card>
         </div>
-      </Card>
+      )}
+
+      {/* ————— TAB 5: HISTORY ————— */}
+      {tab === "history" && (
+        <Card>
+          <CardHeader title="History" sub="Every cycle this person has been part of." />
+          <div className="px-5 pb-4">
+            {person.participations.length === 0 ? (
+              <p className="text-sm text-gray-600 dark:text-gray-400">Never been in a cycle.</p>
+            ) : (
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    {["Cycle", "Contribution", "Weeks", "Status"].map((h) => (
+                      <th
+                        key={h}
+                        className="border-b border-gray-200 dark:border-gray-800 py-2 pr-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {person.participations.map((p) => (
+                    <tr key={p.id}>
+                      <td className="border-b border-gray-100 dark:border-gray-800/60 py-2 pr-3 font-semibold text-gray-900 dark:text-white">
+                        {p.cycle.name}
+                        {p.cycle.status === "ACTIVE" ? " (current)" : ""}
+                      </td>
+                      <td className="border-b border-gray-100 dark:border-gray-800/60 py-2 pr-3 tabular-nums text-gray-700 dark:text-gray-300">
+                        {formatMoney(p.weeklyAmount)}/week
+                      </td>
+                      <td className="border-b border-gray-100 dark:border-gray-800/60 py-2 pr-3 tabular-nums text-gray-700 dark:text-gray-300">
+                        {p.startWeek}–{calculateFinishWeek(p.startWeek, p.weeksCommitted)}
+                      </td>
+                      <td className="border-b border-gray-100 dark:border-gray-800/60 py-2">
+                        <Pill tone={p.status === "ACTIVE" ? "good" : "neutral"}>
+                          {p.status === "ACTIVE" ? "Active" : "Closed"}
+                        </Pill>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </Card>
+      )}
     </main>
   );
 }

@@ -17,7 +17,7 @@ import {
   verifyPin,
 } from "@/lib/pin";
 import { findPeopleByPhone } from "@/lib/people-lookup";
-import { phoneDigits, toE164 } from "@/lib/phone";
+import { samePhone, toE164 } from "@/lib/phone";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -158,7 +158,7 @@ export async function signInWithPin(input: { phone: string; pin: string }) {
     // Throttled before any database work, per caller and per tried number.
     const header = await headers();
     const ip = callerIp(header);
-    if (!allowLookup(`pin-ip:${ip}`) || !allowLookup(`pin-phone:${phoneDigits(phone)}`)) {
+    if (!allowLookup(`pin-ip:${ip}`) || !allowLookup(`pin-phone:${toE164(phone)}`)) {
       return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
     }
 
@@ -330,6 +330,47 @@ export async function setMyPin(input: { pin: string }) {
 }
 
 /**
+ * ORGANIZER sign-in, performed SERVER-side (audit H2).
+ *
+ * This used to run in the browser via createBrowserClient, which stores the
+ * session with document.cookie — and a cookie written by JavaScript can
+ * never be httpOnly. That left the most privileged session in the platform
+ * readable by any script on the page, no matter what the server-side cookie
+ * policy said. Signing in here routes the cookie write through the server
+ * client, so hardenSessionCookie applies (httpOnly, secure in production,
+ * sameSite lax, 30-day cap) exactly as it does for members.
+ *
+ * The is_admin claim lives in app_metadata, which only the service role can
+ * write — a member can never grant it to themselves (lib/auth.ts).
+ */
+export async function signInAdmin(input: { email: string; password: string }) {
+  try {
+    const email = input.email?.trim();
+    const password = input.password;
+    if (!email || !password) {
+      return { ok: false as const, error: "Email and password are required." };
+    }
+
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) {
+      // One message for both causes — never reveal which accounts exist.
+      return { ok: false as const, error: "Email or password is incorrect." };
+    }
+    if (data.user.app_metadata?.is_admin !== true) {
+      // A real member's credentials must not leave an admin-shaped session
+      // behind on a failed admin sign-in.
+      await supabase.auth.signOut();
+      return { ok: false as const, error: "This account is not the organizer." };
+    }
+    return { ok: true as const, data: { signedIn: true } };
+  } catch (e) {
+    console.error("signInAdmin failed:", e);
+    return { ok: false as const, error: `Could not sign you in. ${errorMessage(e)}` };
+  }
+}
+
+/**
  * Step 1 of WhatsApp sign-in (2.28: the only OTP channel that actually
  * works): send a 6-digit code to the member's WhatsApp via Twilio Verify —
  * the Meta-approved integration ported from the previous build. Throttled
@@ -342,7 +383,7 @@ export async function requestWhatsAppCode(input: { phone: string }) {
 
     const header = await headers();
     const ip = callerIp(header);
-    if (!allowLookup(`wa-send-ip:${ip}`) || !allowLookup(`wa-send:${phoneDigits(phone)}`)) {
+    if (!allowLookup(`wa-send-ip:${ip}`) || !allowLookup(`wa-send:${toE164(phone)}`)) {
       return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
     }
 
@@ -387,7 +428,7 @@ export async function signInWithWhatsAppCode(input: { phone: string; code: strin
 
     const header = await headers();
     const ip = callerIp(header);
-    if (!allowLookup(`wa-check-ip:${ip}`) || !allowLookup(`wa-check:${phoneDigits(phone)}`)) {
+    if (!allowLookup(`wa-check-ip:${ip}`) || !allowLookup(`wa-check:${toE164(phone)}`)) {
       return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
     }
 
@@ -444,13 +485,16 @@ export async function linkCurrentUserToPerson() {
     const phone = typeof claims.phone === "string" ? claims.phone : null;
     if (!phone) return { ok: false as const, error: "No member record is linked to this sign-in." };
 
-    // Supabase stores phones without "+"; the directory may have either form.
-    const unlinked = await prisma.person.findMany({
-      where: {
-        authUserId: null,
-        OR: [{ phone }, { phone: `+${phone}` }],
-      },
+    // Audit H1: this is a BINDING — it attaches an auth identity to a
+    // directory person — so it must use the SAME canonical comparison as
+    // lookup and sending, not its own string matching. The old
+    // `OR: [{ phone }, { phone: "+" + phone }]` was a second normalisation:
+    // it missed every directory entry stored in a formatted shape and
+    // matched on raw text rather than the canonical number.
+    const candidates = await prisma.person.findMany({
+      where: { authUserId: null, phone: { not: null } },
     });
+    const unlinked = candidates.filter((p) => p.phone !== null && samePhone(p.phone, phone));
     if (unlinked.length !== 1) {
       return {
         ok: false as const,

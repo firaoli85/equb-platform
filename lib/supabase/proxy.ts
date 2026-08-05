@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { hardenSessionCookie } from "./cookie-policy";
 
 function claimsSayAdmin(claims: unknown): boolean {
   return (
@@ -26,8 +27,9 @@ export async function updateSession(request: NextRequest) {
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
+          // Every refresh rewrite passes through the same policy (audit H2).
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
+            supabaseResponse.cookies.set(name, value, hardenSessionCookie(options)),
           );
         },
       },

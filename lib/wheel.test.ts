@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   autoArrange,
   calculatePayout,
+  displayOrder,
   eligibleNumbers,
   reshuffle,
   selectWinningSlot,
@@ -301,5 +302,32 @@ describe("calculatePayout — one payout per number, each pays their own fee", (
         cycle,
       }),
     ).toEqual({ luckyNumberId: "n", gross: 1_500_000, fee: 30_000, net: 1_470_000 });
+  });
+});
+
+describe("displayOrder — audit H3c: creation order never shows on the wheel", () => {
+  const slots = Array.from({ length: 8 }, (_, i) => ({ id: `s${i + 1}` }));
+
+  it("is deterministic for the same seed (reloads mid-draw keep the wheel identical)", () => {
+    expect(displayOrder(slots, "week-abc")).toEqual(displayOrder(slots, "week-abc"));
+  });
+
+  it("keeps every slot exactly once and never mutates the input", () => {
+    const before = slots.map((s) => s.id);
+    const out = displayOrder(slots, "week-abc");
+    expect(out.map((s) => s.id).sort()).toEqual([...before].sort());
+    expect(slots.map((s) => s.id)).toEqual(before);
+  });
+
+  it("the last-CREATED slot (the planned winner's) is not the last segment week after week", () => {
+    // Raw position order put the planned slot last every single week —
+    // visible to the naked eye on Zoom. Across 20 different week seeds the
+    // final segment must vary.
+    const lastSegment = Array.from({ length: 20 }, (_, w) => {
+      const order = displayOrder(slots, `week-${w + 1}`);
+      return order[order.length - 1].id;
+    });
+    expect(new Set(lastSegment).size).toBeGreaterThan(1);
+    expect(lastSegment.every((id) => id === "s8")).toBe(false);
   });
 });
