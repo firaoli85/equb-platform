@@ -1,0 +1,248 @@
+@import "tailwindcss";
+
+/* Class-based dark mode — toggle .dark on <html> (ported member design system) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-inter: var(--font-inter), system-ui, sans-serif;
+
+  /* Gold — lucky number badge only (not the emerald semantic accent) */
+  --color-gold-50: #fffbe7;
+  --color-gold-100: #fef3a3;
+  --color-gold-300: #fde068;
+  --color-gold-400: #f5c518;
+  --color-gold-500: #d4a017;
+  --color-gold-600: #9a7206;
+  --color-gold-900: #3d2d00;
+}
+
+/* ── Base ────────────────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  background: #ffffff;
+  color: #0a0a0b;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+.dark body {
+  background: #0a0a0b;
+  color: #f7f8fa;
+}
+
+/* ── Focus ring ──────────────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #374151;
+}
+
+/* ── Member design tokens (light/dark, class-based) ─────────────────
+   Brand accent: indigo. Green is semantic-only (paid/success states). */
+:root {
+  --accent: #6366f1;
+  --accent-2: #818cf8;
+  --accent-ink: #1e1b4b;
+  --hero-bg:
+    radial-gradient(
+      130% 150% at 0% 0%,
+      rgba(96, 165, 250, 0.4) 0%,
+      rgba(37, 99, 235, 0.25) 45%,
+      transparent 78%
+    ),
+    linear-gradient(155deg, #dbe8ff 0%, #cdddff 50%, #e6eeff 100%);
+  --hero-shadow:
+    0 4px 20px rgba(37, 99, 235, 0.18),
+    0 1px 4px rgba(0, 0, 0, 0.06);
+  --hero-amount-accent: #2563eb;
+  --page-bg: #eef3fa;
+  --gold-badge-bg: linear-gradient(160deg, #fcdf8f, #f5c451);
+  --gold-badge-border: rgba(245, 196, 81, 0.5);
+  --gold-badge-text: #3a2a05;
+  /* Week fill colors — used by WeekStampList */
+  --fill-green: rgba(16, 185, 129, 0.22);
+  --fill-red: rgba(239, 68, 68, 0.16);
+}
+.dark {
+  --accent: #6366f1;
+  --accent-2: #818cf8;
+  --accent-ink: #ffffff;
+  --hero-bg:
+    radial-gradient(
+      120% 140% at 0% 0%,
+      rgba(99, 102, 241, 0.2) 0%,
+      rgba(99, 102, 241, 0.05) 38%,
+      transparent 72%
+    ),
+    linear-gradient(155deg, #1e1b4b 0%, #171633 48%, #0f0f1f 100%);
+  --hero-shadow:
+    0 0 40px rgba(99, 102, 241, 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.6);
+  --hero-amount-accent: #a5b4fc;
+  --page-bg: #0a0a0b;
+  --gold-badge-bg: linear-gradient(160deg, #fcdf8f, #f5c451);
+  --gold-badge-border: rgba(245, 196, 81, 0.5);
+  --gold-badge-text: #3a2a05;
+  /* Week fill colors — more opaque on dark backgrounds */
+  --fill-green: rgba(16, 185, 129, 0.3);
+  --fill-red: rgba(239, 68, 68, 0.24);
+}
+
+/* ── Animations (ported member motion system) ────────────────────── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes pulseGreen {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+@keyframes skeletonShimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+@keyframes paidFlash {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  }
+  35% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+  }
+  65% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+@keyframes checkBounce {
+  0% {
+    transform: scale(0) rotate(-15deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.25) rotate(5deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.28s ease-out both;
+}
+.animate-fade-in-up-1 {
+  animation: fadeInUp 0.28s ease-out 0.08s both;
+}
+.animate-fade-in-up-2 {
+  animation: fadeInUp 0.28s ease-out 0.16s both;
+}
+.animate-fade-in-up-3 {
+  animation: fadeInUp 0.28s ease-out 0.24s both;
+}
+.animate-fade-in-up-4 {
+  animation: fadeInUp 0.28s ease-out 0.32s both;
+}
+.animate-pulse-green {
+  animation: pulseGreen 2s ease-in-out infinite;
+}
+.animate-paid-flash {
+  animation: paidFlash 0.55s ease-out forwards;
+}
+.animate-check-bounce {
+  animation: checkBounce 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.animate-toast-in {
+  animation: toastIn 0.25s ease-out both;
+}
+.animate-toast-out {
+  animation: toastOut 0.2s ease-in forwards;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 400px 100%;
+  animation: skeletonShimmer 1.4s linear infinite;
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, #1a1a1a 25%, #242424 50%, #1a1a1a 75%);
+  background-size: 400px 100%;
+}
+
+/* ── Respect reduced-motion for all custom animation classes ─────── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-fade-in-up-1,
+  .animate-fade-in-up-2,
+  .animate-fade-in-up-3,
+  .animate-fade-in-up-4,
+  .animate-pulse-green,
+  .animate-paid-flash,
+  .animate-check-bounce,
+  .animate-toast-in,
+  .animate-toast-out {
+    animation: none !important;
+    transition: none !important;
+  }
+}

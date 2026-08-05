@@ -1,0 +1,292 @@
+// The wheel's pure logic. No DB, no I/O, injectable randomness.
+//
+// Laws implemented here:
+//   2.2  — organizer discretion: planned winners take precedence, silently.
+//   2.3  — the plan is LOCKED: drawn numbers and committed numbers are
+//          frozen; auto-arrange and reshuffle can never move or re-pair
+//          them. (This defect shipped twice in the old app — pinned by
+//          tests here.)
+//   2.27 — a number is drawable only while its owner's window is open; it
+//          leaves the pool when drawn or when the window ends, and members
+//          approaching an undrawn window-end produce a mandatory warning.
+
+import { calculateFee, calculateFinishWeek, calculateNet } from "./money";
+
+export type WheelNumber = {
+  id: string;
+  number: number;
+  /** Cents this number carries. */
+  amount: number;
+  participationId: string;
+};
+
+export type WheelParticipation = {
+  id: string;
+  name: string;
+  startWeek: number;
+  weeksCommitted: number;
+  status: "ACTIVE" | "CLOSED";
+};
+
+// ————————————————— Pool eligibility (2.27) —————————————————
+
+/**
+ * The numbers currently in the pool: owner ACTIVE, owner's window open at
+ * the current week, and not yet drawn.
+ */
+export function eligibleNumbers(input: {
+  luckyNumbers: readonly WheelNumber[];
+  participations: readonly WheelParticipation[];
+  drawnNumberIds: ReadonlySet<string>;
+  currentWeek: number;
+}): WheelNumber[] {
+  const byId = new Map(input.participations.map((p) => [p.id, p]));
+  return input.luckyNumbers.filter((n) => {
+    if (input.drawnNumberIds.has(n.id)) return false;
+    const owner = byId.get(n.participationId);
+    if (!owner || owner.status !== "ACTIVE") return false;
+    const finishWeek = calculateFinishWeek(owner.startWeek, owner.weeksCommitted);
+    return owner.startWeek <= input.currentWeek && input.currentWeek <= finishWeek;
+  });
+}
+
+export type UndrawnWarning = {
+  participationId: string;
+  name: string;
+  finishWeek: number;
+  /** Weeks until their window closes; 0 or negative = already closing/closed. */
+  weeksLeft: number;
+  numbers: number[];
+};
+
+/**
+ * The mandatory 2.27 safeguard: members whose window ends within
+ * `weeksAhead` weeks (or has already ended) and who have NOT been drawn.
+ * Everyone receives exactly once — nobody may be quietly missed.
+ */
+export function undrawnWindowWarnings(input: {
+  luckyNumbers: readonly WheelNumber[];
+  participations: readonly WheelParticipation[];
+  drawnNumberIds: ReadonlySet<string>;
+  currentWeek: number;
+  weeksAhead: number;
+}): UndrawnWarning[] {
+  const numbersByOwner = new Map<string, WheelNumber[]>();
+  for (const n of input.luckyNumbers) {
+    (numbersByOwner.get(n.participationId) ?? numbersByOwner.set(n.participationId, []).get(n.participationId)!).push(n);
+  }
+  const warnings: UndrawnWarning[] = [];
+  for (const p of input.participations) {
+    if (p.status !== "ACTIVE") continue;
+    if (p.startWeek > input.currentWeek) continue; // not started yet
+    const numbers = numbersByOwner.get(p.id) ?? [];
+    if (numbers.length === 0) continue;
+    if (numbers.some((n) => input.drawnNumberIds.has(n.id))) continue; // drawn
+    const finishWeek = calculateFinishWeek(p.startWeek, p.weeksCommitted);
+    const weeksLeft = finishWeek - input.currentWeek;
+    if (weeksLeft > input.weeksAhead) continue;
+    warnings.push({
+      participationId: p.id,
+      name: p.name,
+      finishWeek,
+      weeksLeft,
+      numbers: numbers.map((n) => n.number).sort((a, b) => a - b),
+    });
+  }
+  return warnings.sort((a, b) => a.weeksLeft - b.weeksLeft);
+}
+
+// ————————————————— Winner selection (2.2 / 2.3) —————————————————
+
+export type EligibleSlot = { id: string; luckyNumberIds: readonly string[] };
+export type ActivePlan = {
+  id: string;
+  weekId: string | null;
+  luckyNumberIds: readonly string[];
+};
+
+export type WinnerSelection = {
+  slotId: string;
+  /** For the AUDIT LOG only — the reason never reaches any UI (2.4). */
+  reason: "planned" | "random";
+  planId?: string;
+};
+
+/**
+ * The server-side decision: a plan committed to this week decides the
+ * winner; otherwise a uniformly random eligible slot. The reason is
+ * recorded for the audit trail and never surfaced to a screen.
+ */
+export function selectWinningSlot(input: {
+  eligibleSlots: readonly EligibleSlot[];
+  winnerPlans: readonly ActivePlan[];
+  weekId: string;
+  random?: () => number;
+}): WinnerSelection {
+  if (input.eligibleSlots.length === 0) {
+    throw new Error("No eligible slots to draw from.");
+  }
+  const plan = input.winnerPlans.find((p) => p.weekId === input.weekId);
+  if (plan) {
+    const slot = input.eligibleSlots.find((s) =>
+      plan.luckyNumberIds.every((id) => s.luckyNumberIds.includes(id)),
+    );
+    if (!slot) {
+      throw new Error(
+        "The winner planned for this week is not sitting together in an eligible slot — fix the arrangement on the setup page first.",
+      );
+    }
+    return { slotId: slot.id, reason: "planned", planId: plan.id };
+  }
+  const random = input.random ?? Math.random;
+  const index = Math.floor(random() * input.eligibleSlots.length);
+  return { slotId: input.eligibleSlots[Math.min(index, input.eligibleSlots.length - 1)].id, reason: "random" };
+}
+
+// ————————————————— Arrangement (2.3 frozen, over-unit flagged) —————————————————
+
+export type ProposedSlot = {
+  luckyNumberIds: string[];
+  numbers: number[];
+  total: number;
+  /** Over the unit amount: allowed but flagged — guidance, not obstruction. */
+  overUnit: boolean;
+  /** Seeded by an OPEN_PARTNER commitment; the anchor stays, partners vary. */
+  anchored?: boolean;
+};
+
+function fisherYates<T>(items: readonly T[], random: () => number): T[] {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function packIntoSlots(
+  pool: readonly WheelNumber[],
+  unitAmount: number,
+  seeds: { anchor: WheelNumber }[],
+  random: () => number,
+): ProposedSlot[] {
+  const shuffled = fisherYates(pool, random);
+  const slots: { members: WheelNumber[]; total: number; anchored: boolean; open: boolean }[] =
+    seeds.map((s) => ({ members: [s.anchor], total: s.anchor.amount, anchored: true, open: true }));
+  let current: (typeof slots)[number] | null = null;
+
+  for (const n of shuffled) {
+    // Top up an open anchored slot first (OPEN_PARTNER: one random partner).
+    const anchored = slots.find((s) => s.anchored && s.open && s.total < unitAmount);
+    if (anchored) {
+      anchored.members.push(n);
+      anchored.total += n.amount;
+      anchored.open = false; // "may attach ONE random partner"
+      continue;
+    }
+    if (current === null || current.total >= unitAmount) {
+      current = { members: [], total: 0, anchored: false, open: true };
+      slots.push(current);
+    }
+    current.members.push(n);
+    current.total += n.amount;
+  }
+
+  return slots
+    .filter((s) => s.members.length > 0)
+    .map((s) => ({
+      luckyNumberIds: s.members.map((m) => m.id),
+      numbers: s.members.map((m) => m.number).sort((a, b) => a - b),
+      total: s.total,
+      overUnit: s.total > unitAmount,
+      ...(s.anchored ? { anchored: true } : {}),
+    }));
+}
+
+/** Group unassigned numbers into slots targeting the unit amount. */
+export function autoArrange(input: {
+  unassignedNumbers: readonly WheelNumber[];
+  unitAmount: number;
+  /** Drawn or committed ids — excluded outright as defense in depth (2.3). */
+  lockedNumberIds?: ReadonlySet<string>;
+  random?: () => number;
+}): ProposedSlot[] {
+  const locked = input.lockedNumberIds ?? new Set<string>();
+  const pool = input.unassignedNumbers.filter((n) => !locked.has(n.id));
+  return packIntoSlots(pool, input.unitAmount, [], input.random ?? Math.random);
+}
+
+export type ReshuffleResult = {
+  /** Slots containing drawn or committed numbers — returned EXACTLY as they
+   *  were, never touched (2.3). */
+  frozenSlotIds: string[];
+  proposedSlots: ProposedSlot[];
+};
+
+/**
+ * Reshuffle everything that is free. A slot containing ANY drawn or
+ * ALONE/TOGETHER-committed number is frozen whole — its composition is the
+ * organizer's locked intent (or history) and must survive intact.
+ * OPEN_PARTNER numbers are anchors: they stay, and the shuffle may attach
+ * one random partner.
+ */
+export function reshuffle(input: {
+  slots: readonly { id: string; members: readonly WheelNumber[] }[];
+  drawnNumberIds: ReadonlySet<string>;
+  committedNumberIds: ReadonlySet<string>;
+  anchoredNumberIds?: ReadonlySet<string>;
+  unitAmount: number;
+  random?: () => number;
+}): ReshuffleResult {
+  const anchoredIds = input.anchoredNumberIds ?? new Set<string>();
+  const frozenSlotIds: string[] = [];
+  const pool: WheelNumber[] = [];
+  const seeds: { anchor: WheelNumber }[] = [];
+
+  for (const slot of input.slots) {
+    const isFrozen = slot.members.some(
+      (m) => input.drawnNumberIds.has(m.id) || input.committedNumberIds.has(m.id),
+    );
+    if (isFrozen) {
+      frozenSlotIds.push(slot.id);
+      continue;
+    }
+    for (const member of slot.members) {
+      if (anchoredIds.has(member.id)) seeds.push({ anchor: member });
+      else pool.push(member);
+    }
+  }
+
+  return {
+    frozenSlotIds,
+    proposedSlots: packIntoSlots(pool, input.unitAmount, seeds, input.random ?? Math.random),
+  };
+}
+
+// ————————————————— Payouts (per lucky number) —————————————————
+
+export type NumberPayout = {
+  luckyNumberId: string;
+  gross: number;
+  fee: number;
+  net: number;
+};
+
+/**
+ * One payout PER LUCKY NUMBER: each number's share is its own amount over
+ * its owner's committed weeks, and each person pays their own fee on their
+ * own share. (Matches the imported Cycle 1 books exactly: a $1,000 number
+ * over 20 weeks grosses $20,000, fee 2% = $400, net $19,600.)
+ */
+export function calculatePayout(input: {
+  luckyNumber: { id: string; amount: number };
+  participation: { weeksCommitted: number };
+  cycle: { feePercent: number };
+}): NumberPayout {
+  const gross = input.luckyNumber.amount * input.participation.weeksCommitted;
+  if (!Number.isSafeInteger(gross)) {
+    throw new RangeError(`payout gross overflows: ${input.luckyNumber.amount} * ${input.participation.weeksCommitted}`);
+  }
+  const fee = calculateFee(gross, input.cycle.feePercent);
+  return { luckyNumberId: input.luckyNumber.id, gross, fee, net: calculateNet(gross, fee) };
+}

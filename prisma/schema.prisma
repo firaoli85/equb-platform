@@ -1,0 +1,407 @@
+// EQUB platform schema — see EQUB_GROUND_TRUTH.md before changing anything.
+// Money is ALWAYS stored in cents as Int. Derived values (weeks credited,
+// behind-count, late, balances) are never stored — see ground truth 2.14.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Person {
+  id               String   @id @default(cuid())
+  nameAmharic      String
+  nameEnglishFirst String
+  nameEnglishLast  String?
+  phone            String?
+  notes            String?
+  // Supabase Auth identity (auth.users.id). Null until the person is
+  // provisioned or first signs in — a directory entry alone cannot log in,
+  // and that is expected (2.5: the organizer adds people before they sign in).
+  authUserId       String?  @unique @db.Uuid
+  // Transition-period PIN login (retired at cycle 2): bcrypt hash only —
+  // never plaintext — with durable server-side lockout state.
+  pinHash           String?
+  pinFailedAttempts Int       @default(0)
+  pinLockedUntil    DateTime?
+  // Per-person override of the pinLoginEnabled setting: null follows the
+  // global toggle, true allows PIN even when globally off, false forces OTP
+  // even when globally on. Enforced SERVER-side, never by UI hiding.
+  pinLoginAllowed   Boolean?
+  // Hardship flag (2.20): when true, NO message of any kind goes to this
+  // person — automatic or manual. Enforced server-side at send time, never
+  // by the UI merely unchecking them.
+  noMessages       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  participations   Participation[]
+  ledgerEntries    LedgerEntry[]
+  messageLogs      MessageLog[]
+  @@map("people")
+}
+
+// Organizer-editable message wording (2.20/D-27): one row per message type,
+// filled from DERIVED state at send time (2.21) — the body carries
+// {placeholders}, never numbers. metaTemplateSid records the Meta-approved
+// WhatsApp template name/SID (2.28) once Meta approval lands, so each type
+// can be mapped to its approved template for sends outside the 24-hour window.
+model MessageTemplate {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  name            String
+  body            String
+  metaTemplateSid String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  logs            MessageLog[]
+  @@map("message_templates")
+}
+
+// Every message that actually left (or failed leaving): who, which template,
+// the EXACT rendered body, over which channel, and what the provider said.
+// templateKey is copied at send time so the record survives template edits;
+// the row is append-only — the log is the organizer's proof of what was said.
+model MessageLog {
+  id          String            @id @default(cuid())
+  personId    String
+  templateId  String?
+  templateKey String
+  body        String
+  channel     String            @default("WHATSAPP")
+  toPhone     String
+  trigger     MessageTrigger
+  status      MessageSendStatus
+  providerSid String?
+  error       String?
+  createdAt   DateTime          @default(now())
+  person      Person            @relation(fields: [personId], references: [id])
+  template    MessageTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  @@index([personId])
+  @@index([createdAt])
+  @@map("message_logs")
+}
+
+model Cycle {
+  id            String      @id @default(cuid())
+  name          String
+  startDate     DateTime
+  plannedWeeks  Int
+  unitAmount    Int         @default(100000)
+  feePercent    Float       @default(2.0)
+  status        CycleStatus @default(DRAFT)
+  createdAt     DateTime    @default(now())
+  closedAt      DateTime?
+  weeks         Week[]
+  participations Participation[]
+  slots         Slot[]
+  winnerPlans   WinnerPlan[]
+  luckyNumbers  LuckyNumber[]
+  // NOTE: the database also carries a partial unique index "one_active_cycle"
+  // (see migration lucky_number_per_cycle_and_one_active_cycle) enforcing at
+  // most ONE row with status = 'ACTIVE'. Prisma cannot express partial
+  // indexes, so it lives in raw SQL — NEVER let a generated migration drop it.
+  @@map("cycles")
+}
+
+model Week {
+  id         String   @id @default(cuid())
+  cycleId    String
+  weekNumber Int
+  date       DateTime
+  isSkipped  Boolean  @default(false)
+  notes      String?
+  cycle      Cycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  payments   Payment[]
+  draws      Draw[]
+  winnerPlans WinnerPlan[]
+  pinnedEvents PaymentEvent[]
+  @@unique([cycleId, weekNumber])
+  @@map("weeks")
+}
+
+model Participation {
+  id             String   @id @default(cuid())
+  cycleId        String
+  personId       String
+  weeklyAmount   Int
+  startWeek      Int      @default(1)
+  weeksCommitted Int
+  status         ParticipationStatus @default(ACTIVE)
+  closedAtWeek   Int?
+  createdAt      DateTime @default(now())
+  cycle          Cycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  person         Person   @relation(fields: [personId], references: [id])
+  luckyNumbers   LuckyNumber[]
+  payments       Payment[]
+  paymentEvents  PaymentEvent[]
+  @@unique([cycleId, personId])
+  @@map("participations")
+}
+
+// cycleId is denormalized from participation.cycleId — it exists so the
+// database itself can enforce that a lucky number is unique within a cycle.
+// Every code path that creates lucky numbers must set it to the
+// participation's cycle.
+model LuckyNumber {
+  id              String @id @default(cuid())
+  participationId String
+  cycleId         String
+  number          Int
+  amount          Int
+  participation   Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+  cycle           Cycle         @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  slotMembers     SlotMember[]
+  payouts         Payout[]
+  planNumbers     WinnerPlanNumber[]
+  @@unique([cycleId, number])
+  @@map("lucky_numbers")
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  weekId          String
+  participationId String
+  amountPaid      Int      @default(0)
+  isDeferred      Boolean  @default(false)
+  method          PaymentMethod?
+  paidAt          DateTime?
+  notes           String?
+  week            Week          @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  participation   Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+  allocations     PaymentAllocation[]
+  @@unique([weekId, participationId])
+  @@map("payments")
+}
+
+// One RECEIPT of money from one person (2.14: the stored fact). A week is
+// often paid across several receipts; the allocations join records which
+// receipt filled which week. idempotencyKey is unique so a duplicate
+// submission is rejected by the DATABASE, not by process memory.
+model PaymentEvent {
+  id              String   @id @default(cuid())
+  participationId String
+  amount          Int
+  method          PaymentMethod?
+  receivedAt      DateTime @default(now())
+  notes           String?
+  idempotencyKey  String   @unique
+  createdAt      DateTime @default(now())
+  // The winner's week is settled FROM the payout, not paid separately: a
+  // pinned event allocates to THIS week only, never oldest-first. Set only
+  // by the draw settlement; ordinary receipts leave it null.
+  pinnedWeekId    String?
+  participation   Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+  pinnedWeek      Week?         @relation(fields: [pinnedWeekId], references: [id], onDelete: SetNull)
+  allocations     PaymentAllocation[]
+  @@map("payment_events")
+}
+
+// How much of one receipt landed on one week's payment row — the audit trail
+// from event to weeks (2.18 spirit: the ledger keeps the story).
+model PaymentAllocation {
+  id        String @id @default(cuid())
+  eventId   String
+  paymentId String
+  amount    Int
+  event     PaymentEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  payment   Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  @@unique([eventId, paymentId])
+  @@map("payment_allocations")
+}
+
+model Slot {
+  id       String @id @default(cuid())
+  cycleId  String
+  position Int
+  cycle    Cycle  @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  members  SlotMember[]
+  draws    Draw[]
+  @@unique([cycleId, position])
+  @@map("slots")
+}
+
+model SlotMember {
+  id            String @id @default(cuid())
+  slotId        String
+  luckyNumberId String
+  slot          Slot        @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  luckyNumber   LuckyNumber @relation(fields: [luckyNumberId], references: [id], onDelete: Cascade)
+  @@unique([slotId, luckyNumberId])
+  @@map("slot_members")
+}
+
+// The plan is intent, not state (ground truth 2.3): which numbers win, together
+// or separate, in which week. Locked plans are excluded from reshuffle pools.
+model WinnerPlan {
+  id        String           @id @default(cuid())
+  cycleId   String
+  weekId    String?
+  mode      WinnerPlanMode   @default(ALONE)
+  status    WinnerPlanStatus @default(PLANNED)
+  createdAt DateTime         @default(now())
+  cycle     Cycle            @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  week      Week?            @relation(fields: [weekId], references: [id], onDelete: SetNull)
+  numbers   WinnerPlanNumber[]
+  @@map("winner_plans")
+}
+
+model WinnerPlanNumber {
+  id            String      @id @default(cuid())
+  planId        String
+  luckyNumberId String
+  plan          WinnerPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  luckyNumber   LuckyNumber @relation(fields: [luckyNumberId], references: [id], onDelete: Cascade)
+  @@unique([planId, luckyNumberId])
+  @@map("winner_plan_numbers")
+}
+
+// A draw is the recorded fact that a slot won in a week. A week has at most
+// one winning slot, and a slot wins at most once per cycle (everyone receives
+// exactly once). Dropping either constraint allows a real defect.
+model Draw {
+  id      String   @id @default(cuid())
+  weekId  String
+  slotId  String
+  drawnAt DateTime @default(now())
+  notes   String?
+  week    Week     @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  slot    Slot     @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  payouts Payout[]
+  @@unique([weekId])
+  @@unique([slotId])
+  @@map("draws")
+}
+
+// Money that actually went out (ground truth 2.14: stored facts, in cents).
+// gross/fee/net record what was ACTUALLY charged and handed over — historical
+// truth, which may predate rule changes; expected values remain derivable.
+model Payout {
+  id            String        @id @default(cuid())
+  luckyNumberId String
+  drawId        String?
+  grossAmount   Int
+  feeAmount     Int
+  netAmount     Int
+  status        PayoutStatus  @default(PENDING)
+  method        PaymentMethod?
+  paidAt        DateTime?
+  notes         String?
+  // netAmount is what actually crosses the table: the draw settlement
+  // DECREMENTS it by the winner's own-week contribution. The settlement
+  // receipt is tied to this payout via idempotencyKey
+  // `draw-settle:{drawId}:{payoutId}` (lib/draw-settlement.ts).
+  luckyNumber   LuckyNumber   @relation(fields: [luckyNumberId], references: [id], onDelete: Cascade)
+  draw          Draw?         @relation(fields: [drawId], references: [id], onDelete: SetNull)
+  @@map("payouts")
+}
+
+// D-32 audit trail: every organizer correction records what changed, from
+// what to what, and when. Append-only from the app's perspective.
+model AuditLog {
+  id        String   @id @default(cuid())
+  entity    String
+  entityId  String
+  action    String
+  summary   String
+  before    String?
+  after     String?
+  createdAt DateTime @default(now())
+  @@map("audit_logs")
+}
+
+// The readable archive of a closed cycle (2.9): who paid what, who was paid
+// out, how much, when. cycleId is a PLAIN STRING — deliberately no relation
+// — so deleting the cycle can never cascade into (or be blocked by) its
+// archive. The archive outlives the cycle; that is its whole point.
+model CycleArchive {
+  id        String   @id @default(cuid())
+  cycleId   String   @unique
+  cycleName String
+  closedAt  DateTime
+  /** JSON snapshot rendered human-readably by the archive page. */
+  data      String
+  createdAt DateTime @default(now())
+  @@map("cycle_archives")
+}
+
+// Carried balance lives on the PERSON as a ledger and survives cycle deletion
+// (ground truth 2.18). DEBT entries record where a balance came from; PAYMENT
+// entries record settlements. The running total is derived, never stored.
+model LedgerEntry {
+  id          String          @id @default(cuid())
+  personId    String
+  type        LedgerEntryType
+  amount      Int
+  description String
+  notes       String?
+  createdAt   DateTime        @default(now())
+  person      Person          @relation(fields: [personId], references: [id])
+  @@map("ledger_entries")
+}
+
+// Platform-level configuration (2.6: everything configurable, nothing
+// hardcoded). Key/value with JSON-encoded values, typed and defaulted at the
+// accessor layer (lib/settings.ts) — new settings need no schema change.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  @@map("settings")
+}
+
+enum CycleStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum ParticipationStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum PaymentMethod {
+  ZELLE
+  CASH
+  OTHER
+}
+
+enum WinnerPlanMode {
+  ALONE
+  TOGETHER
+  /** This number wins; the shuffle may attach one random partner (2.3). */
+  OPEN_PARTNER
+}
+
+enum WinnerPlanStatus {
+  PLANNED
+  FULFILLED
+  CANCELLED
+}
+
+enum LedgerEntryType {
+  DEBT
+  PAYMENT
+}
+
+enum MessageTrigger {
+  /** Direct result of an organizer action (mark-paid confirmation only). */
+  AUTOMATIC
+  /** The organizer previewed and pressed send (2.20). */
+  MANUAL
+}
+
+enum MessageSendStatus {
+  /** Accepted by the provider (Twilio) for delivery. */
+  SENT
+  /** The provider refused it — error records why. */
+  FAILED
+}
+
+enum PayoutStatus {
+  PENDING
+  COLLECTED
+}
