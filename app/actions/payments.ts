@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { allocatePayment, type AllocationWeek } from "@/lib/allocation";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { sendStatement, type SendOutcome } from "@/lib/messaging-engine";
+import { contribution } from "@/lib/contribution";
 import { calculateFinishWeek, currentWeekNumber, MAX_MONEY_CENTS } from "@/lib/money";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma, serializableTransaction } from "@/lib/prisma";
@@ -28,10 +29,15 @@ async function loadMemberWindow(db: Prisma.TransactionClient, participationId: s
     include: {
       person: true,
       payments: true,
-      // Payout settlements are pinned to their drawn week (never fungible).
+      // EVERY receipt: total contributed is their sum (2.14). The pinned
+      // subset — payout settlements, which stay on their drawn week and are
+      // never fungible — is filtered out of this list in code.
       paymentEvents: {
-        where: { pinnedWeekId: { not: null } },
-        select: { amount: true, pinnedWeek: { select: { weekNumber: true } } },
+        select: {
+          amount: true,
+          pinnedWeekId: true,
+          pinnedWeek: { select: { weekNumber: true } },
+        },
       },
       cycle: { include: { weeks: { orderBy: { weekNumber: "asc" } } } },
     },
@@ -334,10 +340,12 @@ export async function getMemberStanding(participationId: string) {
       })),
       totalPaid: participation.payments.reduce((sum, p) => sum + p.amountPaid, 0),
       pinnedByWeek: pinnedMapFromEvents(
-        participation.paymentEvents.map((e) => ({
-          amount: e.amount,
-          weekNumber: e.pinnedWeek?.weekNumber ?? null,
-        })),
+        participation.paymentEvents
+          .filter((e) => e.pinnedWeekId !== null)
+          .map((e) => ({
+            amount: e.amount,
+            weekNumber: e.pinnedWeek?.weekNumber ?? null,
+          })),
       ),
     });
 
@@ -355,6 +363,14 @@ export async function getMemberStanding(participationId: string) {
         startWeek: participation.startWeek,
         weeksCommitted: participation.weeksCommitted,
         currentCycleWeek: cycleWeek,
+        // 2.1: what they have SAVED, as a first-class figure beside what they
+        // owe. Derived from the receipts (2.14), never stored.
+        contribution: contribution({
+          receipts: participation.paymentEvents.map((e) => ({ amount: e.amount })),
+          weeklyAmount: participation.weeklyAmount,
+          weeksCommitted: participation.weeksCommitted,
+          overdue: standing.amountOutstanding,
+        }),
         ...standing,
       },
     };

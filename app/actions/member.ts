@@ -5,6 +5,7 @@ import { errorMessage } from "@/lib/action-result";
 import { linkCurrentUserToPerson } from "@/app/actions/auth";
 import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
 import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
+import { contribution } from "@/lib/contribution";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { toE164 } from "@/lib/phone";
@@ -32,10 +33,15 @@ export async function getMyPortal() {
       include: {
         cycle: { include: { weeks: { orderBy: { weekNumber: "asc" } } } },
         payments: { include: { week: { select: { weekNumber: true, isSkipped: true } } } },
-        // Payout settlements stay pinned to their drawn week (never fungible).
+        // EVERY receipt: their total contributed is the sum of these (2.14).
+        // The pinned subset (payout settlements, which stay on their drawn
+        // week and are never fungible) is filtered out of this list in code.
         paymentEvents: {
-          where: { pinnedWeekId: { not: null } },
-          select: { amount: true, pinnedWeek: { select: { weekNumber: true } } },
+          select: {
+            amount: true,
+            pinnedWeekId: true,
+            pinnedWeek: { select: { weekNumber: true } },
+          },
         },
         luckyNumbers: {
           orderBy: { number: "asc" },
@@ -84,7 +90,9 @@ export async function getMyPortal() {
         }),
       totalPaid: participation.payments.reduce((sum, p) => sum + p.amountPaid, 0),
       pinnedByWeek: pinnedMapFromEvents(
-        participation.paymentEvents.map((e) => ({
+        participation.paymentEvents
+          .filter((e) => e.pinnedWeekId !== null)
+          .map((e) => ({
           amount: e.amount,
           weekNumber: e.pinnedWeek?.weekNumber ?? null,
         })),
@@ -149,6 +157,15 @@ export async function getMyPortal() {
             })?.date.toISOString() ?? null,
           weeksCommitted: participation.weeksCommitted,
           weeklyAmount: participation.weeklyAmount,
+          // 2.1: this is a SAVINGS group. What they have PAID IN leads; what
+          // is left to save and what is overdue are separate figures and are
+          // never conflated (2.14 — all derived from the receipts).
+          contribution: contribution({
+            receipts: participation.paymentEvents.map((e) => ({ amount: e.amount })),
+            weeklyAmount: participation.weeklyAmount,
+            weeksCommitted: participation.weeksCommitted,
+            overdue: standing.amountOutstanding,
+          }),
           weeksCredited: Math.min(standing.weeksCredited, participation.weeksCommitted),
           weeksBehind: standing.weeksBehind,
           lateCount,
@@ -167,6 +184,10 @@ export async function getMyPortal() {
                 | "SKIPPED"),
             isDeferred: w.isDeferred,
             isSkipped: w.isSkipped,
+            // A member must be able to read down their own list and see
+            // $500, $500, $500 and trust the total.
+            amountPaid: w.coveredAtCurrentRate,
+            amountDue: w.amountDue,
           })),
           numbers,
         },

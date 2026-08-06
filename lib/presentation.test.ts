@@ -91,7 +91,8 @@ describe("redactGrid", () => {
           startWeek: 1,
           finishWeek: 20,
           weeksCredited: 8,
-          outstanding: 271500,
+          totalContributed: 0,
+        outstanding: 271500,
         },
       ],
       rows: [

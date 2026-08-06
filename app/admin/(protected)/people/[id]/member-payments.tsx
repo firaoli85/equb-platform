@@ -222,11 +222,11 @@ export function MemberPayments({
               <strong className="text-base font-black text-gray-900 dark:text-white">
                 {formatMoney(outstanding)}
               </strong>{" "}
-              outstanding
+              overdue
             </>
           ) : (
             <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-              Fully paid up
+              Nothing overdue
             </span>
           )}
         </span>
@@ -377,8 +377,26 @@ export function MemberPayments({
                     {formatDateUTC(new Date(w.date))}
                   </span>
                   <Pill tone={s.tone}>{s.text}</Pill>
-                  <span className="flex-1 text-right text-xs tabular-nums text-gray-600 dark:text-gray-400">
-                    {remaining > 0 && !w.isSkipped ? `${formatMoney(remaining)} left` : ""}
+                  {/* THE AMOUNT for this week — the column that lets the
+                      organizer add down the list and trust the total (2.1). */}
+                  <span className="ml-auto tabular-nums font-semibold text-gray-900 dark:text-white">
+                    {w.isSkipped ? (
+                      <span className="font-normal text-gray-600 dark:text-gray-400">—</span>
+                    ) : w.amountAlreadyPaid > 0 && remaining > 0 ? (
+                      <>
+                        {formatMoney(w.amountAlreadyPaid)}
+                        <span className="font-normal text-gray-600 dark:text-gray-400">
+                          {" "}
+                          of {formatMoney(w.amountDue)}
+                        </span>
+                      </>
+                    ) : w.amountAlreadyPaid > 0 ? (
+                      formatMoney(w.amountAlreadyPaid)
+                    ) : (
+                      <span className="font-normal text-gray-600 dark:text-gray-400">
+                        {formatMoney(w.amountDue)} due
+                      </span>
+                    )}
                   </span>
                   <button
                     type="button"

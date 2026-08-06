@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getMyPortal } from "@/app/actions/member";
 import { MemberPayoutCard } from "@/components/member/member-payout-card";
 import { MemberPersonalSummary } from "@/components/member/member-personal-summary";
+import { SavedCard } from "@/components/member/saved-card";
 import { WeekStampList, type StampWeek } from "@/components/member/week-stamp-list";
 import { formatDateLongUTC, formatDateUTC } from "@/lib/format";
 
@@ -51,6 +52,10 @@ export default async function MePage() {
     date: formatDateUTC(w.date),
     status: w.status,
     isPayoutWeek: drawnWeeks.has(w.weekNumber),
+    // The amounts the list was missing — a member must be able to read down
+    // the column and trust the total above it.
+    amountPaid: w.amountPaid,
+    amountDue: w.amountDue,
   }));
 
   // 2.22: a member always sees their OWN finish date — the week number on its
@@ -62,8 +67,21 @@ export default async function MePage() {
       ? `You joined in week ${p.startWeek}. Your weeks run from ${p.startWeek} to ${p.finishWeek}${finishTail}`
       : `Your weeks run from ${p.startWeek} to ${p.finishWeek}${finishTail}`;
 
+  // Their payout: the sum across their numbers, and whether any has landed.
+  const payoutNet = p.numbers.reduce((sum, n) => sum + n.netAmount, 0);
+  const payoutReceived = p.numbers.some((n) => n.payoutStatus === "COLLECTED");
+
   return (
     <div className="space-y-4">
+      {/* 2.1: a savings group leads with what you have SAVED. Nothing on the
+          page may be more prominent than this figure. */}
+      <SavedCard
+        contribution={p.contribution}
+        weeklyAmount={p.weeklyAmount}
+        payoutNet={payoutNet}
+        payoutReceived={payoutReceived}
+      />
+
       <MemberPersonalSummary
         displayName={displayName}
         paidCount={p.weeksCredited}

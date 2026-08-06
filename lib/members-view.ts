@@ -13,6 +13,8 @@ export type MemberRow = {
   finishWeek: number;
   weeksCredited: number;
   outstanding: number;
+  /** 2.1: what they have SAVED — sortable, beside what they owe. */
+  totalContributed: number;
   /** One entry per cycle week, in week order. */
   cells: { weekNumber: number; date: Date; isSkipped: boolean; cell: GridCell }[];
 };
@@ -27,6 +29,7 @@ export function buildMemberRows(grid: PaymentGrid): MemberRow[] {
     finishWeek: c.finishWeek,
     weeksCredited: c.weeksCredited,
     outstanding: c.outstanding,
+    totalContributed: c.totalContributed,
     cells: grid.rows.map((row) => ({
       weekNumber: row.weekNumber,
       date: row.date,
@@ -91,15 +94,27 @@ export function sortWorstFirst(rows: readonly MemberRow[]): MemberRow[] {
   );
 }
 
+export type MemberSort = "worst-first" | "most-saved" | "name";
+
 export function visibleMembers(input: {
   rows: readonly MemberRow[];
   filter: MemberFilter;
   search: string;
   currentWeek: number;
+  /** Defaults to worst-first — the chasing order the organizer works in. */
+  sort?: MemberSort;
 }): MemberRow[] {
-  return sortWorstFirst(
-    input.rows.filter(
-      (r) => matchesFilter(r, input.filter, input.currentWeek) && matchesSearch(r, input.search),
-    ),
+  const shown = input.rows.filter(
+    (r) => matchesFilter(r, input.filter, input.currentWeek) && matchesSearch(r, input.search),
+  );
+  if (input.sort === "most-saved") return sortMostSaved(shown);
+  if (input.sort === "name") return [...shown].sort((a, b) => a.name.localeCompare(b.name));
+  return sortWorstFirst(shown);
+}
+
+/** Most saved first — the savings-group ordering (2.1). */
+export function sortMostSaved(rows: readonly MemberRow[]): MemberRow[] {
+  return [...rows].sort(
+    (a, b) => b.totalContributed - a.totalContributed || a.name.localeCompare(b.name),
   );
 }

@@ -23,7 +23,8 @@ const GRID = buildPaymentGrid({
       startWeek: 1,
       finishWeek: 3,
       weeksCredited: 3,
-      outstanding: 0,
+      totalContributed: 0,
+    outstanding: 0,
       weeks: [1, 2, 3].map((weekNumber) => ({
         weekNumber,
         status: "PAID" as const,
@@ -38,7 +39,8 @@ const GRID = buildPaymentGrid({
       startWeek: 1,
       finishWeek: 3,
       weeksCredited: 1,
-      outstanding: 150_000,
+      totalContributed: 0,
+    outstanding: 150_000,
       weeks: [
         { weekNumber: 1, status: "PAID" as const, storedPaid: 100_000, amountDue: 100_000 },
         { weekNumber: 2, status: "PARTIAL" as const, storedPaid: 40_000, amountDue: 100_000 },
@@ -52,7 +54,8 @@ const GRID = buildPaymentGrid({
       startWeek: 2,
       finishWeek: 3,
       weeksCredited: 1,
-      outstanding: 50_000,
+      totalContributed: 0,
+    outstanding: 50_000,
       weeks: [
         { weekNumber: 2, status: "PAID" as const, storedPaid: 50_000, amountDue: 50_000 },
         { weekNumber: 3, status: "UNPAID" as const, storedPaid: 0, amountDue: 50_000 },

@@ -112,6 +112,8 @@ export async function getPaymentsGrid() {
         finishWeek,
         weeksCredited: standing.weeksCredited,
         outstanding: standing.amountOutstanding,
+        // 2.1/2.14: the savings figure — the sum of what they actually paid.
+        totalContributed: standing.totalPaid,
         weeks: standing.weeks.map((w) => ({
           weekNumber: w.weekNumber,
           status: w.status,

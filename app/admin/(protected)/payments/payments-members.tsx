@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { WeekActionPanel, type WeekTarget } from "@/components/admin/week-action-panel";
+import { Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/format";
 import {
@@ -11,6 +12,7 @@ import {
   visibleMembers,
   type MemberFilter,
   type MemberRow,
+  type MemberSort,
 } from "@/lib/members-view";
 import type { GridCell, PaymentGrid } from "@/lib/payments-view";
 import { STATUS_LABELS, STATUS_LEGEND, statusLabel } from "@/lib/status-labels";
@@ -64,9 +66,10 @@ export function PaymentsMembers({
   const [saved, setSaved] = useState<string | null>(null);
 
   const rows = useMemo(() => buildMemberRows(data.grid), [data.grid]);
+  const [sort, setSort] = useState<MemberSort>("worst-first");
   const shown = useMemo(
-    () => visibleMembers({ rows, filter, search, currentWeek: data.currentCycleWeek }),
-    [rows, filter, search, data.currentCycleWeek],
+    () => visibleMembers({ rows, filter, search, currentWeek: data.currentCycleWeek, sort }),
+    [rows, filter, search, data.currentCycleWeek, sort],
   );
 
   function targetFor(row: MemberRow, weekNumber: number): WeekTarget | null {
@@ -117,8 +120,22 @@ export function PaymentsMembers({
             {f.label}
           </button>
         ))}
-        <span className="text-xs text-gray-600 dark:text-gray-400">
-          {shown.length} of {rows.length} shown · worst first
+        <span className="ml-auto flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Sort</span>
+          <Select
+            value={sort}
+            onChange={(v) => setSort(v as MemberSort)}
+            ariaLabel="Sort the member list"
+            className="w-44"
+            options={[
+              { value: "worst-first", label: "Most owed first" },
+              { value: "most-saved", label: "Most saved first" },
+              { value: "name", label: "Name" },
+            ]}
+          />
+        </span>
+        <span className="basis-full text-xs text-gray-600 dark:text-gray-400">
+          {shown.length} of {rows.length} shown
         </span>
       </div>
 
@@ -177,15 +194,21 @@ export function PaymentsMembers({
                       {row.numbersLabel}
                     </span>
                   )}
+                  {!presentation && (
+                    <span className="text-xs font-bold tabular-nums text-gray-900 dark:text-white">
+                      {formatMoney(row.totalContributed)}
+                      <span className="font-normal text-gray-600 dark:text-gray-400"> paid in</span>
+                    </span>
+                  )}
                   <span className="text-xs tabular-nums text-gray-600 dark:text-gray-400">
-                    {row.weeksCredited} of {row.finishWeek - row.startWeek + 1} weeks paid
+                    {row.weeksCredited} of {row.finishWeek - row.startWeek + 1} weeks
                     {row.startWeek > 1 ? ` · joined wk ${row.startWeek}` : ""}
                   </span>
                   {!presentation &&
                     (row.outstanding > 0 ? (
-                      <Pill tone="problem">{formatMoney(row.outstanding)} owed</Pill>
+                      <Pill tone="problem">{formatMoney(row.outstanding)} overdue</Pill>
                     ) : (
-                      <Pill tone="good">settled</Pill>
+                      <Pill tone="good">nothing overdue</Pill>
                     ))}
 
                   {!presentation && thisWeekCell && dueNow > 0 && (

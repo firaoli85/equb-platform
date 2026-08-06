@@ -210,6 +210,7 @@ describe("buildPaymentGrid — the map (2.15)", () => {
     startWeek: 1,
     finishWeek: 4,
     weeksCredited: 1,
+    totalContributed: 25_000,
     outstanding: 25_000,
     weeks: [
       { weekNumber: 1, status: "PAID", storedPaid: 25_000, amountDue: 25_000 },
@@ -225,6 +226,7 @@ describe("buildPaymentGrid — the map (2.15)", () => {
     startWeek: 3,
     finishWeek: 4,
     weeksCredited: 0,
+    totalContributed: 0,
     outstanding: 50_000,
     weeks: [
       { weekNumber: 3, status: "DEFERRED", storedPaid: 0, amountDue: 50_000 },
@@ -278,10 +280,10 @@ describe("buildPaymentGrid — the map (2.15)", () => {
     expect(grid.rows[2]).toMatchObject({ received: 0, expected: 0, isSkipped: true });
   });
 
-  it("column totals carry each member's credited weeks and outstanding", () => {
+  it("column totals carry credited weeks, outstanding AND what they saved", () => {
     expect(grid.columns).toEqual([
-      { participationId: "a", name: "Early", numbersLabel: "#1", startWeek: 1, finishWeek: 4, weeksCredited: 1, outstanding: 25_000 },
-      { participationId: "b", name: "Late", numbersLabel: "#9", startWeek: 3, finishWeek: 4, weeksCredited: 0, outstanding: 50_000 },
+      { participationId: "a", name: "Early", numbersLabel: "#1", startWeek: 1, finishWeek: 4, weeksCredited: 1, outstanding: 25_000, totalContributed: 25_000 },
+      { participationId: "b", name: "Late", numbersLabel: "#9", startWeek: 3, finishWeek: 4, weeksCredited: 0, outstanding: 50_000, totalContributed: 0 },
     ]);
   });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { formatMoney } from "@/lib/format";
 
 // Ported animation engine: each visible row sweeps a colored fill, then the
 // star (paid, emerald SVG — never emoji) or dash (not paid) bounces in.
@@ -12,6 +13,10 @@ export type StampWeek = {
   date: string;
   status: "PAID" | "LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
   isPayoutWeek: boolean;
+  /** What this week is covered by, in cents. */
+  amountPaid: number;
+  /** What the week costs at the current rate, in cents. */
+  amountDue: number;
 };
 
 // A member reads these. DEFERRED must not look like forgiveness — the money
@@ -228,6 +233,30 @@ export function WeekStampList({
               </span>
 
               <span className="flex-1 text-gray-600 dark:text-gray-400 tabular-nums">{w.date}</span>
+
+              {/* THE AMOUNT. A member reads down this column and the figures
+                  must add up to the total on the card above. A partial shows
+                  what landed against what the week costs; a skipped week owed
+                  nothing, so it shows a dash rather than a misleading $0. */}
+              <span className="shrink-0 tabular-nums font-semibold text-gray-900 dark:text-white">
+                {w.status === "SKIPPED" ? (
+                  <span className="font-normal text-gray-600 dark:text-gray-400">—</span>
+                ) : w.amountPaid > 0 && w.amountPaid < w.amountDue ? (
+                  <>
+                    {formatMoney(w.amountPaid)}
+                    <span className="font-normal text-gray-600 dark:text-gray-400">
+                      {" "}
+                      of {formatMoney(w.amountDue)}
+                    </span>
+                  </>
+                ) : w.amountPaid > 0 ? (
+                  formatMoney(w.amountPaid)
+                ) : (
+                  <span className="font-normal text-gray-600 dark:text-gray-400">
+                    {formatMoney(w.amountDue)} due
+                  </span>
+                )}
+              </span>
 
               {w.isPayoutWeek && (
                 <span

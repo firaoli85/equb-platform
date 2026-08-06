@@ -149,6 +149,8 @@ export type GridMemberInput = {
   weeksCredited: number;
   /** Cents owed now (derived). */
   outstanding: number;
+  /** 2.1: cents they have CONTRIBUTED — the savings figure, derived (2.14). */
+  totalContributed: number;
   weeks: readonly {
     weekNumber: number;
     /** DERIVED status from computeStanding — never stored. */
@@ -178,6 +180,8 @@ export type PaymentGrid = {
     finishWeek: number;
     weeksCredited: number;
     outstanding: number;
+    /** 2.1: what they have SAVED — a first-class column, not only debt. */
+    totalContributed: number;
   }[];
   rows: {
     weekNumber: number;
@@ -245,6 +249,7 @@ export function buildPaymentGrid(input: {
       finishWeek: m.finishWeek,
       weeksCredited: m.weeksCredited,
       outstanding: m.outstanding,
+      totalContributed: m.totalContributed,
     })),
     rows,
   };

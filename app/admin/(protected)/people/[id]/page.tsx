@@ -123,14 +123,23 @@ export default async function PersonPage({
     standing?.ok && active
       ? [
           {
-            label: "Cycle week",
-            value: `${standing.data.currentCycleWeek}`,
-            sub: `of ${active.cycle.plannedWeeks}`,
+            // 2.1: a savings group. What they have put in comes first.
+            label: "Paid in",
+            value: formatMoney(standing.data.contribution.paidIn),
+            sub: `${standing.data.contribution.weeksCovered} of ${standing.data.contribution.weeksCommitted} weeks saved`,
           },
           {
-            label: "Weeks paid",
-            value: `${Math.min(standing.data.weeksCredited, standing.data.weeksCommitted)} of ${standing.data.weeksCommitted}`,
-            sub: `wk ${active.startWeek}–${standing.data.finishWeek}`,
+            label: "Still to save",
+            value: formatMoney(standing.data.contribution.stillToSave),
+            sub:
+              standing.data.contribution.stillToSave === 0
+                ? "commitment complete"
+                : "over the rest of their weeks",
+          },
+          {
+            label: "Cycle week",
+            value: `${standing.data.currentCycleWeek}`,
+            sub: `of ${active.cycle.plannedWeeks} · their wk ${active.startWeek}–${standing.data.finishWeek}`,
           },
           {
             label: "Weeks behind",
@@ -138,12 +147,12 @@ export default async function PersonPage({
             sub: standing.data.weeksBehind === 0 ? "current" : "needs catching up",
           },
           {
-            label: "Outstanding",
+            label: "Overdue",
             value: formatMoney(standing.data.amountOutstanding),
             sub:
-              standing.data.surplus > 0
-                ? `${formatMoney(standing.data.surplus)} ahead`
-                : "at the current rate",
+              standing.data.amountOutstanding === 0
+                ? "nothing owed right now"
+                : "weeks whose window has closed",
           },
           {
             label: "Last payment",
@@ -226,7 +235,7 @@ export default async function PersonPage({
               className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-700 active:scale-[0.97]"
             >
               {standing.data.amountOutstanding > 0
-                ? `${formatMoney(standing.data.amountOutstanding)} outstanding — Record payment`
+                ? `${formatMoney(standing.data.amountOutstanding)} overdue — Record payment`
                 : "Record payment"}
             </Link>
           )}

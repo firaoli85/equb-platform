@@ -31,12 +31,14 @@ export function MemberPayoutCard({
     <div className="rounded-2xl bg-white dark:bg-[#141414] border border-gray-100 dark:border-gray-800 shadow-sm px-5 py-4 animate-fade-in-up-1">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-sm font-bold text-gray-900 dark:text-white">Your payout</h2>
-          <p className="text-2xl font-black text-gray-900 dark:text-white tabular-nums leading-tight mt-0.5">
-            {formatMoney(totalNet)}
-          </p>
-          <p className="text-[11px] text-gray-600 dark:text-gray-400">
-            after the fee{numbers.length > 1 ? " · all numbers together" : ""}
+          <h2 className="text-sm font-bold text-gray-900 dark:text-white">
+            Your lucky number{numbers.length === 1 ? "" : "s"}
+          </h2>
+          {/* The AMOUNT is stated once, on the saved card above — repeating it
+              here read as a duplicated headline. This card owns the mechanics. */}
+          <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 tabular-nums">
+            {formatMoney(totalNet)} when drawn, after the fee
+            {numbers.length > 1 ? " · all numbers together" : ""}
           </p>
         </div>
 

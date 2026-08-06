@@ -27,6 +27,7 @@ export default async function PeoplePage({
         nameAmharic: p.nameAmharic,
         nameEnglish: `${p.nameEnglishFirst} ${p.nameEnglishLast ?? ""}`.trim(),
         phone: p.phone,
+        contributedThisCycle: p.contributedThisCycle,
         pinState:
           p.pinHash !== null
             ? ("own" as const)

@@ -85,6 +85,7 @@ type GridInput<S extends string> = {
       finishWeek: number;
       weeksCredited: number;
       outstanding: number;
+      totalContributed: number;
     }[];
     rows: {
       weekNumber: number;
@@ -116,6 +117,7 @@ export function redactGrid<S extends string>(data: GridInput<S>) {
         finishWeek: c.finishWeek,
         weeksCredited: c.weeksCredited,
         outstanding: 0,
+        totalContributed: 0,
       })),
       rows: data.grid.rows.map((r) => ({
         weekNumber: r.weekNumber,

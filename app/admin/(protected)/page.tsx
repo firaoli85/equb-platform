@@ -135,7 +135,7 @@ export default async function CommandCenterPage() {
           <StatCard
             label="Received to date"
             cents={d.position.totalReceived}
-            sub="By week and by member"
+            sub="Everyone's contributions, added up"
             href="/admin/received"
             emphasis
           />

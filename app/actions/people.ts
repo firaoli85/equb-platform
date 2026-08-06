@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { totalContributed } from "@/lib/contribution";
 import { errorMessage } from "@/lib/action-result";
 import { requireAdmin } from "@/lib/auth";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
@@ -35,7 +36,12 @@ export async function listPeople(searchTerm?: string) {
       include: {
         participations: {
           orderBy: { createdAt: "asc" },
-          include: { cycle: { select: { id: true, name: true, status: true } } },
+          include: {
+            cycle: { select: { id: true, name: true, status: true } },
+            // 2.1/2.14: what they have contributed to the ACTIVE cycle, summed
+            // from the receipts. Derived on every read, never stored.
+            paymentEvents: { select: { amount: true } },
+          },
         },
       },
     });
@@ -43,12 +49,19 @@ export async function listPeople(searchTerm?: string) {
       where: { status: "ACTIVE" },
       select: { id: true },
     });
-    const data = people.map((person) => ({
-      ...person,
-      inActiveCycle: active
-        ? person.participations.some((p) => p.cycleId === active.id)
-        : false,
-    }));
+    const data = people.map((person) => {
+      const here = active
+        ? (person.participations.find((p) => p.cycleId === active.id) ?? null)
+        : null;
+      return {
+        ...person,
+        inActiveCycle: here !== null,
+        /** Cents contributed to the active cycle; 0 when they are not in it. */
+        contributedThisCycle: here
+          ? totalContributed(here.paymentEvents.map((e) => ({ amount: e.amount })))
+          : 0,
+      };
+    });
     return { ok: true as const, data };
   } catch (e) {
     console.error("listPeople failed:", e);

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Pill, type PillTone } from "@/components/ui/primitives";
+import { formatMoney } from "@/lib/format";
 import { useViewMode, ViewToggle } from "@/components/ui/view-toggle";
 
 // Display-only rows, computed server-side — no raw person records cross to
@@ -16,6 +17,8 @@ export type DirectoryRow = {
   lockedMinutesLeft: number | null;
   cycles: string;
   inActiveCycle: boolean;
+  /** Cents contributed to the active cycle (2.1) — 0 when not a member. */
+  contributedThisCycle: number;
 };
 
 const PIN_LABEL: Record<DirectoryRow["pinState"], { tone: PillTone; text: string }> = {
@@ -116,6 +119,11 @@ export function PeopleDirectory({ rows }: { rows: DirectoryRow[] }) {
               <p className="mt-2.5 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-400">
                 <span className="tabular-nums">{p.phone ?? "no phone"}</span>
                 <span>{p.inActiveCycle ? "In the current cycle" : p.cycles}</span>
+                {p.inActiveCycle && (
+                  <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
+                    {formatMoney(p.contributedThisCycle)} paid in
+                  </span>
+                )}
               </p>
             </Link>
           ))}
