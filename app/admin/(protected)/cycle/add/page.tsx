@@ -18,7 +18,7 @@ export default async function AddMemberPage() {
     return (
       <main>
         <h1 className="mb-2 text-xl font-semibold">No active cycle</h1>
-        <p className="text-sm text-gray-700">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
           <Link href="/admin/cycles/new" className="underline">
             Start a new cycle
           </Link>{" "}
@@ -33,7 +33,7 @@ export default async function AddMemberPage() {
     return (
       <main>
         <h1 className="mb-2 text-xl font-semibold">Add member</h1>
-        <p role="alert" className="text-sm text-red-800">
+        <p role="alert" className="text-sm text-red-800 dark:text-red-400">
           {peopleResult.error}
         </p>
       </main>
@@ -86,6 +86,12 @@ export default async function AddMemberPage() {
         }}
         currentWeek={currentWeekNumber(cycle.startDate, new Date())}
         startDateISO={cycle.startDate.toISOString()}
+        // Presentation mode (2.4) strips week dates from this payload; the
+        // wizard then falls back to projecting them, which is the correct
+        // behaviour when no stored date is in hand.
+        cycleWeeks={cycle.weeks
+          .filter((w): w is typeof w & { date: Date } => w.date !== undefined)
+          .map((w) => ({ weekNumber: w.weekNumber, date: w.date.toISOString() }))}
         takenNumbers={takenNumbers}
         numberingMode={numberingMode}
         prevNumbersByPerson={prevNumbersByPerson}

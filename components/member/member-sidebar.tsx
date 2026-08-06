@@ -13,7 +13,7 @@ const LINKS = [
 ] as const;
 
 function NavIcon({ href, active }: { href: string; active: boolean }) {
-  const cls = `w-5 h-5 ${active ? "text-indigo-600 dark:text-indigo-400" : "text-gray-400 dark:text-gray-500"}`;
+  const cls = `w-5 h-5 ${active ? "text-indigo-600 dark:text-indigo-400" : "text-gray-400 dark:text-gray-400"}`;
   switch (href) {
     case "/me":
       return (

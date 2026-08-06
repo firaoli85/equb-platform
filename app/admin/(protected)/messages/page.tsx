@@ -90,7 +90,7 @@ export default async function MessagesPage() {
                     </Td>
                     <Td className="whitespace-nowrap">
                       <span className="font-medium">{entry.personAmharic}</span>
-                      <span className="block text-xs text-gray-500 dark:text-gray-500">
+                      <span className="block text-xs text-gray-500 dark:text-gray-400">
                         {entry.person} · {entry.toPhone}
                       </span>
                     </Td>

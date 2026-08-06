@@ -129,7 +129,7 @@ export function SettingsForm({
         </span>
       </label>
 
-      <div className="rounded border border-gray-300 p-3 text-sm">
+      <div className="rounded border border-gray-300 dark:border-gray-700 p-3 text-sm">
         <p className="mb-2">
           <strong>PIN lockout</strong>
           <br />
@@ -138,7 +138,7 @@ export function SettingsForm({
         </p>
         <div className="flex flex-wrap gap-4">
           <label className="block">
-            <span className="mb-1 block text-xs text-gray-600">Attempts before locking</span>
+            <span className="mb-1 block text-xs text-gray-600 dark:text-gray-400">Attempts before locking</span>
             <input
               type="number"
               min={1}
@@ -152,7 +152,7 @@ export function SettingsForm({
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs text-gray-600">Lock duration (minutes)</span>
+            <span className="mb-1 block text-xs text-gray-600 dark:text-gray-400">Lock duration (minutes)</span>
             <input
               type="number"
               min={1}
@@ -188,7 +188,7 @@ export function SettingsForm({
       </label>
 
       {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800 dark:text-red-400">
           Not saved: {error}
         </p>
       )}

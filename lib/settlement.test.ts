@@ -98,20 +98,28 @@ describe("planWinnerWeekSettlement — the winner does not pay the week they win
 describe("allocatePinned — a settlement replays onto its pinned week ONLY", () => {
   it("fills the pinned week exactly", () => {
     expect(
-      allocatePinned(100_000, { amountDue: 100_000, amountAlreadyPaid: 0, isDeferred: false }),
+      allocatePinned(100_000, { amountDue: 100_000, amountAlreadyPaid: 0, isSkipped: false }),
     ).toEqual({ applied: 100_000, unallocated: 0 });
   });
 
   it("never overfills — the excess is unallocated, not moved to another week", () => {
     expect(
-      allocatePinned(100_000, { amountDue: 100_000, amountAlreadyPaid: 70_000, isDeferred: false }),
+      allocatePinned(100_000, { amountDue: 100_000, amountAlreadyPaid: 70_000, isSkipped: false }),
     ).toEqual({ applied: 30_000, unallocated: 70_000 });
   });
 
-  it("applies nothing to an excused week", () => {
+  it("applies nothing to a SKIPPED week — nobody ever owed it", () => {
     expect(
-      allocatePinned(100_000, { amountDue: 100_000, amountAlreadyPaid: 0, isDeferred: true }),
+      allocatePinned(100_000, { amountDue: 100_000, amountAlreadyPaid: 0, isSkipped: true }),
     ).toEqual({ applied: 0, unallocated: 100_000 });
+  });
+
+  // Organizer ruling (Aug 2026): deferral spares the chasing, not the debt —
+  // so the winner does not pay the week they win even when it was deferred.
+  it("still settles a DEFERRED week in full — the debt was real", () => {
+    expect(
+      allocatePinned(100_000, { amountDue: 100_000, amountAlreadyPaid: 0, isSkipped: false }),
+    ).toEqual({ applied: 100_000, unallocated: 0 });
   });
 });
 

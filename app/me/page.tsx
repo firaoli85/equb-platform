@@ -4,7 +4,7 @@ import { getMyPortal } from "@/app/actions/member";
 import { MemberPayoutCard } from "@/components/member/member-payout-card";
 import { MemberPersonalSummary } from "@/components/member/member-personal-summary";
 import { WeekStampList, type StampWeek } from "@/components/member/week-stamp-list";
-import { formatDateUTC } from "@/lib/format";
+import { formatDateLongUTC, formatDateUTC } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -53,10 +53,14 @@ export default async function MePage() {
     isPayoutWeek: drawnWeeks.has(w.weekNumber),
   }));
 
+  // 2.22: a member always sees their OWN finish date — the week number on its
+  // own means nothing to the person reading it.
+  const finishOn = p.finishDate === null ? null : formatDateLongUTC(new Date(p.finishDate));
+  const finishTail = finishOn === null ? "." : ` — you finish ${finishOn}.`;
   const joinedLine =
     p.startWeek > 1
-      ? `You joined in week ${p.startWeek}. Your weeks run from ${p.startWeek} to ${p.finishWeek}.`
-      : null;
+      ? `You joined in week ${p.startWeek}. Your weeks run from ${p.startWeek} to ${p.finishWeek}${finishTail}`
+      : `Your weeks run from ${p.startWeek} to ${p.finishWeek}${finishTail}`;
 
   return (
     <div className="space-y-4">

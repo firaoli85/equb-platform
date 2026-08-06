@@ -17,6 +17,7 @@ import {
 } from "@/lib/payments-view";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import { oldestN, parseWeekRange, selectableWeekNumbers, weeksInRange } from "@/lib/week-selection";
+import { statusLabel } from "@/lib/status-labels";
 
 type Method = "ZELLE" | "CASH" | "OTHER";
 
@@ -31,16 +32,11 @@ type WeekRow = CatchUpWeek & {
 // recordPayment only; deferral/notes/undo reuse the same actions the grid
 // uses; the ledger is its own money, never the allocation engine).
 
-const STATUS_PILL: Record<string, { text: string; tone: PillTone }> = {
-  PAID: { text: "Paid", tone: "good" },
-  PARTIAL: { text: "Partial", tone: "attention" },
-  UNPAID: { text: "Unpaid", tone: "neutral" },
-  LATE: { text: "Late", tone: "problem" },
-  DEFERRED: { text: "Excused", tone: "neutral" },
-};
-
-function statusOf(w: WeekRow): { text: string; tone: PillTone } {
-  return STATUS_PILL[w.status] ?? { text: w.status, tone: "neutral" };
+// The words and tones come from the ONE vocabulary (lib/status-labels), so
+// this page cannot drift from the grid or the members view.
+function statusOf(w: WeekRow): { text: string; tone: PillTone; meaning: string } {
+  const label = statusLabel(w.status);
+  return { text: label.text, tone: label.tone as PillTone, meaning: label.meaning };
 }
 
 export function MemberPayments({
@@ -357,7 +353,9 @@ export function MemberPayments({
         <ul className="divide-y divide-gray-100 dark:divide-gray-800/60 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
           {weeks.map((w) => {
             const s = statusOf(w);
-            const selectable = !w.isDeferred && w.amountAlreadyPaid < w.amountDue;
+            // A DEFERRED week is still owed, so it stays selectable — only a
+            // SKIPPED week is off the books entirely (Aug 2026 ruling).
+            const selectable = !w.isSkipped && w.amountAlreadyPaid < w.amountDue;
             const remaining = Math.max(0, w.amountDue - w.amountAlreadyPaid);
             const expanded = expandedWeek === w.weekNumber;
             return (
@@ -380,7 +378,7 @@ export function MemberPayments({
                   </span>
                   <Pill tone={s.tone}>{s.text}</Pill>
                   <span className="flex-1 text-right text-xs tabular-nums text-gray-600 dark:text-gray-400">
-                    {remaining > 0 && !w.isDeferred ? `${formatMoney(remaining)} left` : ""}
+                    {remaining > 0 && !w.isSkipped ? `${formatMoney(remaining)} left` : ""}
                   </span>
                   <button
                     type="button"

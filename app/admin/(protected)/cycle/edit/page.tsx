@@ -31,6 +31,9 @@ export default async function CycleEditPage() {
           plannedWeeks: cycle.plannedWeeks,
           unitAmount: cycle.unitAmount,
           feePercent: cycle.feePercent,
+          weeks: cycle.weeks
+            .filter((w): w is typeof w & { date: Date } => w.date !== undefined)
+            .map((w) => ({ weekNumber: w.weekNumber, date: w.date.toISOString() })),
         }}
         members={cycle.participations
           .filter((p) => p.status === "ACTIVE")

@@ -7,11 +7,15 @@ import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog"
 import { Checkbox } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Alert, buttonCls } from "@/components/ui/primitives";
+import { formatDateLongUTC, parseDateInput } from "@/lib/format";
 
 export function WeekEditor({
   week,
+  plannedWeeks,
 }: {
   week: { id: string; weekNumber: number; date: string; isSkipped: boolean; notes: string | null };
+  /** The cycle length, so the LAST week can say it is the finish (2.22). */
+  plannedWeeks: number;
 }) {
   const router = useRouter();
   const [date, setDate] = useState(week.date);
@@ -23,6 +27,14 @@ export function WeekEditor({
 
   const dirty = date !== week.date || isSkipped !== week.isSkipped || notes !== (week.notes ?? "");
   const skipChanged = isSkipped !== week.isSkipped;
+
+  // 2.22: this row IS the cycle's finish. Retyping its date moves when the
+  // whole group finishes, so the consequence is stated here rather than left
+  // for the organizer to work out from a list of dates.
+  const isFinishWeek = week.weekNumber === plannedWeeks;
+  const liveDate = isFinishWeek ? parseDateInput(date) : null;
+  const savedDate = isFinishWeek ? parseDateInput(week.date) : null;
+  const dateChanged = isFinishWeek && date !== week.date;
 
   async function doSave() {
     setBusy(true);
@@ -59,15 +71,26 @@ export function WeekEditor({
           setConfirm({
             title: `Save week ${week.weekNumber}?`,
             destructive: false,
-            body: skipChanged ? (
-              <p>
-                Skipped changes to{" "}
-                <strong>{isSkipped ? "YES — nobody owes this week" : "NO — this week is owed again"}</strong>.
-                EVERY member&apos;s receipts re-allocate immediately, and an audit entry records
-                the change.
-              </p>
-            ) : (
-              <p>An audit entry records the change.</p>
+            body: (
+              <>
+                {dateChanged && liveDate !== null && savedDate !== null && (
+                  <p>
+                    This is the cycle&apos;s <strong>finish week</strong>. The cycle finishes{" "}
+                    <strong>{formatDateLongUTC(savedDate)}</strong> today and would finish{" "}
+                    <strong>{formatDateLongUTC(liveDate)}</strong> after this change.
+                  </p>
+                )}
+                {skipChanged ? (
+                  <p>
+                    Skipped changes to{" "}
+                    <strong>{isSkipped ? "YES — nobody owes this week" : "NO — this week is owed again"}</strong>.
+                    EVERY member&apos;s receipts re-allocate immediately, and an audit entry records
+                    the change.
+                  </p>
+                ) : (
+                  <p>An audit entry records the change.</p>
+                )}
+              </>
             ),
             confirmLabel: `Save week ${week.weekNumber}`,
           })
@@ -77,6 +100,13 @@ export function WeekEditor({
       >
         {busy ? "Saving…" : "Save"}
       </button>
+      {isFinishWeek && (
+        <p className="basis-full text-xs font-semibold text-indigo-800 dark:text-indigo-300">
+          {liveDate !== null
+            ? `The cycle's finish week — the cycle finishes ${formatDateLongUTC(liveDate)}.`
+            : "The cycle's finish week — enter a date to see when the cycle finishes."}
+        </p>
+      )}
       {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
       <ConfirmDialog
         spec={confirm}

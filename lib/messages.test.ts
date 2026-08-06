@@ -5,8 +5,10 @@ import {
   MANUAL_MESSAGE_KEYS,
   MESSAGE_KEYS,
   placeholderValues,
+  PLACEHOLDER_DOCS,
   renderMessage,
   renderTemplate,
+  hasChaseableWeeks,
   sendDecision,
   unknownPlaceholders,
   type MessageKey,
@@ -109,16 +111,27 @@ const CURRENT_MEMBER = factsFrom("Tizita", {
 describe("renderMessage — statements carry the TRUE derived state (2.21)", () => {
   it("the standing behind the ground-truth example derives correctly", () => {
     expect(BEHIND_MEMBER.lastPaymentWeek).toBe(5);
-    expect(BEHIND_MEMBER.weeksBehind).toBe(7);
-    expect(BEHIND_MEMBER.amountOutstanding).toBe(175_000);
+    // Weeks 6-11 have closed unpaid. Week 12 opened Aug 2 and its window is
+    // still open on Aug 5, so it is not owed yet — a statement never accuses
+    // ahead of the boundary the member's own screen uses (2.16).
+    expect(BEHIND_MEMBER.weeksBehind).toBe(6);
+    expect(BEHIND_MEMBER.amountOutstanding).toBe(150_000);
+  });
+
+  it("the behind-count NEVER exceeds the weeks that actually closed", () => {
+    // The contradiction this ruling removes: the old rule counted the current
+    // week as behind while the same statement named only the closed weeks.
+    const late = (BEHIND_MEMBER.weeks ?? []).filter((w) => w.status === "LATE").length;
+    expect(late).toBe(6);
+    expect(BEHIND_MEMBER.weeksBehind).toBe(late);
   });
 
   it("BEHIND_NOTICE states last payment, weeks behind, and the amount", () => {
     const text = renderMessage("BEHIND_NOTICE", BEHIND_MEMBER);
     expect(text).toContain("Meheret");
     expect(text).toContain("week 5");
-    expect(text).toContain("7 weeks behind");
-    expect(text).toContain("$1,750 outstanding");
+    expect(text).toContain("6 weeks behind");
+    expect(text).toContain("$1,500 outstanding");
     expect(text).toContain("5 of 20 weeks");
   });
 
@@ -128,7 +141,8 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     expect(text).toContain("6–11");
     expect(text).not.toContain("12");
     expect(text).toContain("week 5");
-    expect(text).toContain("$1,750");
+    // The amount and the named weeks now come from the SAME boundary.
+    expect(text).toContain("$1,500");
   });
 
   it("PAYMENT_CONFIRMED states the receipt, the weeks it covered, and progress", () => {
@@ -170,7 +184,7 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     const text = renderMessage("CYCLE_CLOSING_STATEMENT", BEHIND_MEMBER);
     expect(text).toContain("5 of 20 weeks");
     expect(text).toContain("Last payment week 5");
-    expect(text).toContain("$1,750");
+    expect(text).toContain("$1,500");
   });
 
   it("LOCKOUT_NOTICE is calm, names the CONFIGURED duration, and promises auto-unlock", () => {
@@ -287,5 +301,134 @@ describe("message keys", () => {
     expect(MANUAL_MESSAGE_KEYS).not.toContain<MessageKey>("PAYMENT_CONFIRMED");
     expect(MANUAL_MESSAGE_KEYS).not.toContain<MessageKey>("LOCKOUT_NOTICE");
     expect(MANUAL_MESSAGE_KEYS).toHaveLength(MESSAGE_KEYS.length - 2);
+  });
+});
+
+// ————— Deferral and the chasing types (organizer ruling, Aug 2026) —————
+//
+// Deferral suppresses the CHASING, never the debt. These tests pin both
+// halves: the reminders stop, and every statement still states the full
+// amount owed.
+describe("deferral leaves a member out of the chasing, not out of the books", () => {
+  const base = { noMessages: false, hasPhone: true, trigger: "MANUAL" as const };
+
+  it("hasChaseableWeeks is true only when a week closed unpaid", () => {
+    expect(hasChaseableWeeks([{ status: "LATE" }, { status: "PAID" }])).toBe(true);
+    expect(hasChaseableWeeks([{ status: "DEFERRED" }, { status: "PAID" }])).toBe(false);
+    expect(hasChaseableWeeks([{ status: "UNPAID" }])).toBe(false);
+    expect(hasChaseableWeeks([])).toBe(false);
+    expect(hasChaseableWeeks(undefined)).toBe(false);
+  });
+
+  it("refuses BEHIND_NOTICE and LATE_NOTICE when the whole shortfall is deferred", () => {
+    for (const key of ["BEHIND_NOTICE", "LATE_NOTICE"] as const) {
+      const decision = sendDecision({
+        ...base,
+        key,
+        weeks: [{ status: "PAID" }, { status: "DEFERRED" }, { status: "DEFERRED" }],
+      });
+      expect(decision.send).toBe(false);
+      if (!decision.send) {
+        expect(decision.reason).toContain("deferred");
+        expect(decision.reason).toContain("still owed");
+      }
+    }
+  });
+
+  it("still chases when a NON-deferred week has closed unpaid", () => {
+    expect(
+      sendDecision({
+        ...base,
+        key: "LATE_NOTICE",
+        weeks: [{ status: "DEFERRED" }, { status: "LATE" }],
+      }).send,
+    ).toBe(true);
+  });
+
+  it("deferral never blocks a STATEMENT — those state the true amount owed", () => {
+    for (const key of ["PAYMENT_CONFIRMED", "WINNER_ANNOUNCEMENT", "CYCLE_CLOSING_STATEMENT"] as const) {
+      expect(
+        sendDecision({
+          ...base,
+          key,
+          trigger: key === "PAYMENT_CONFIRMED" ? "AUTOMATIC" : "MANUAL",
+          weeks: [{ status: "DEFERRED" }, { status: "DEFERRED" }],
+        }).send,
+      ).toBe(true);
+    }
+  });
+
+  it("{amountOwed} includes deferred weeks — a statement never understates a debt", () => {
+    const rendered = renderMessage("CYCLE_CLOSING_STATEMENT", {
+      name: "Alem",
+      weeklyAmount: 50_000,
+      weeksCommitted: 20,
+      currentCycleWeek: 10,
+      finishWeek: 20,
+      weeksCredited: 6,
+      weeksBehind: 4,
+      // computeStanding counts deferred weeks in this figure (2.14).
+      amountOutstanding: 200_000,
+      totalPaid: 300_000,
+      lastPaymentWeek: 6,
+      weeks: [{ weekNumber: 9, status: "DEFERRED" }, { weekNumber: 10, status: "DEFERRED" }],
+    });
+    expect(rendered).toContain("$2,000");
+  });
+
+  it("without weeks the gate behaves exactly as before — no silent filtering", () => {
+    expect(sendDecision({ ...base, key: "LATE_NOTICE" }).send).toBe(true);
+  });
+});
+
+// ————— 2.22: a member's own finish DATE, in a message —————
+//
+// "Every member sees their own finish date, always." A statement that names a
+// finish WEEK and no date makes the member do the arithmetic the organizer is
+// forbidden from doing.
+describe("{finishDate} — the member's own finish date is renderable", () => {
+  const FACTS = {
+    name: "Meheret",
+    weeklyAmount: 150_000,
+    weeksCommitted: 10,
+    currentCycleWeek: 12,
+    finishWeek: 19,
+    finishDate: new Date(Date.UTC(2026, 8, 20)),
+    weeksCredited: 3,
+    weeksBehind: 0,
+    amountOutstanding: 0,
+    totalPaid: 450_000,
+    lastPaymentWeek: 12,
+    weeks: [],
+  };
+
+  it("is offered as a token the organizer can put in any template", () => {
+    expect(PLACEHOLDER_DOCS.map((p) => p.token)).toContain("{finishDate}");
+  });
+
+  it("renders the real calendar date, not a week number", () => {
+    expect(renderMessage("WINNER_ANNOUNCEMENT", FACTS, { payoutNet: 1_960_000, drawnWeek: 12 })).toContain(
+      "Sunday, September 20, 2026",
+    );
+  });
+
+  it("the default winner announcement states BOTH the week and the date", () => {
+    const text = renderMessage("WINNER_ANNOUNCEMENT", FACTS, {
+      payoutNet: 1_960_000,
+      drawnWeek: 12,
+    });
+    expect(text).toContain("week 19");
+    expect(text).toContain("Sunday, September 20, 2026");
+  });
+
+  it("falls back to the week number when no date is supplied — never blank", () => {
+    const text = renderMessage(
+      "WINNER_ANNOUNCEMENT",
+      { ...FACTS, finishDate: null },
+      { payoutNet: 1_960_000, drawnWeek: 12 },
+    );
+    expect(text).toContain("week 19");
+    expect(text).not.toContain("{finishDate}");
+    expect(text).not.toContain("undefined");
   });
 });

@@ -67,7 +67,8 @@ function standingFor(
           date: w.date,
           amountDue: participation.weeklyAmount,
           storedPaid: payment?.amountPaid ?? 0,
-          isDeferred: (payment?.isDeferred ?? false) || w.isSkipped,
+          isDeferred: payment?.isDeferred ?? false,
+          isSkipped: w.isSkipped,
         };
       }),
     totalPaid: participation.payments.reduce((sum, p) => sum + p.amountPaid, 0),
@@ -193,7 +194,7 @@ export async function getCellDetail(input: { participationId: string; weekNumber
       data: {
         memberName: participation.person.nameEnglishFirst,
         weekNumber: input.weekNumber,
-        isDeferred: (payment?.isDeferred ?? false) || week.isSkipped,
+        isDeferred: payment?.isDeferred ?? false,
         weekIsSkipped: week.isSkipped,
         note: payment?.notes ?? "",
         receipts: (payment?.allocations ?? []).map((a) => ({
@@ -243,7 +244,8 @@ export async function getCatchUpWeeks(participationId: string) {
           date: w.date,
           amountDue: participation.weeklyAmount,
           amountAlreadyPaid: payment?.amountPaid ?? 0,
-          isDeferred: (payment?.isDeferred ?? false) || w.isSkipped,
+          isDeferred: payment?.isDeferred ?? false,
+          isSkipped: w.isSkipped,
         };
       });
 

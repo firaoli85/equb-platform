@@ -64,6 +64,9 @@ body {
   --accent: #6366f1;
   --accent-2: #818cf8;
   --accent-ink: #1e1b4b;
+  /* indigo-500 as TEXT measures 4.47:1 on white — under AA at small sizes.
+     Fills keep --accent; small accent TEXT uses this. */
+  --accent-text: #4338ca;
   --hero-bg:
     radial-gradient(
       130% 150% at 0% 0%,
@@ -87,6 +90,7 @@ body {
 .dark {
   --accent: #6366f1;
   --accent-2: #818cf8;
+  --accent-text: #a5b4fc;
   --accent-ink: #ffffff;
   --hero-bg:
     radial-gradient(

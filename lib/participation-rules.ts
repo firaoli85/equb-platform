@@ -1,3 +1,4 @@
+import { nextWeekDates } from "./commitment";
 import { Prisma } from "./generated/prisma/client";
 import { MAX_MONEY_CENTS, MAX_WEEKS, remainingWeeksInCycle } from "./money";
 
@@ -62,19 +63,20 @@ export async function ensureWeeksThrough(
   finishWeek: number,
 ): Promise<void> {
   if (finishWeek <= cycle.plannedWeeks) return;
+  // EVERY existing row, not just the ones past the planned end: the new weeks
+  // continue the rhythm from the last day that actually happened (2.14). The
+  // cycle start date is editable and existing rows are kept deliberately, so
+  // projecting from it could date a later week BEFORE an earlier one.
   const existing = await tx.week.findMany({
-    where: { cycleId: cycle.id, weekNumber: { gt: cycle.plannedWeeks } },
-    select: { weekNumber: true },
+    where: { cycleId: cycle.id },
+    select: { weekNumber: true, date: true },
+    orderBy: { weekNumber: "asc" },
   });
-  const have = new Set(existing.map((w) => w.weekNumber));
-  const data = [];
-  for (let n = cycle.plannedWeeks + 1; n <= finishWeek; n++) {
-    if (have.has(n)) continue;
-    data.push({
-      cycleId: cycle.id,
-      weekNumber: n,
-      date: new Date(cycle.startDate.getTime() + (n - 1) * 7 * 86_400_000),
-    });
-  }
+  const data = nextWeekDates({
+    existing,
+    fromWeek: cycle.plannedWeeks + 1,
+    toWeek: finishWeek,
+    cycleStartDate: cycle.startDate,
+  }).map((w) => ({ cycleId: cycle.id, weekNumber: w.weekNumber, date: w.date }));
   if (data.length > 0) await tx.week.createMany({ data });
 }

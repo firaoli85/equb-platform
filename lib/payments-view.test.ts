@@ -61,11 +61,12 @@ describe("describeAllocation — the preview sentence (2.15)", () => {
 });
 
 describe("bulkCatchUpAmount — sizing a catch-up receipt", () => {
-  const week = (weekNumber: number, paid = 0, isDeferred = false) => ({
+  const week = (weekNumber: number, paid = 0, isSkipped = false) => ({
     weekNumber,
     amountDue: 25_000,
     amountAlreadyPaid: paid,
-    isDeferred,
+    isDeferred: false,
+    isSkipped,
   });
 
   it("sums the shortfall across the selected weeks", () => {
@@ -76,8 +77,17 @@ describe("bulkCatchUpAmount — sizing a catch-up receipt", () => {
     expect(bulkCatchUpAmount([week(8, 10_000), week(9)])).toBe(40_000);
   });
 
-  it("excuses deferred weeks entirely", () => {
+  it("excuses SKIPPED weeks entirely — nobody owed them", () => {
     expect(bulkCatchUpAmount([week(8, 0, true), week(9)])).toBe(25_000);
+  });
+
+  it("INCLUDES deferred weeks — the money is still owed (Aug 2026 ruling)", () => {
+    expect(
+      bulkCatchUpAmount([
+        { weekNumber: 8, amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: true, isSkipped: false },
+        week(9),
+      ]),
+    ).toBe(50_000);
   });
 
   it("is zero when every selected week is already settled", () => {
@@ -87,7 +97,9 @@ describe("bulkCatchUpAmount — sizing a catch-up receipt", () => {
 
   it("rejects fractional cents", () => {
     expect(() =>
-      bulkCatchUpAmount([{ weekNumber: 1, amountDue: 100.5, amountAlreadyPaid: 0, isDeferred: false }]),
+      bulkCatchUpAmount([
+        { weekNumber: 1, amountDue: 100.5, amountAlreadyPaid: 0, isDeferred: false, isSkipped: false },
+      ]),
     ).toThrow(RangeError);
   });
 });

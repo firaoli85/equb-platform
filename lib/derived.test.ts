@@ -30,7 +30,7 @@ describe("weeksCredited (2.14: money ÷ current rate)", () => {
   });
 });
 
-describe("weeksBehind (never below zero; deferred weeks are excused)", () => {
+describe("weeksBehind (never below zero; only SKIPPED weeks are excused)", () => {
   it("elapsed minus credited", () => {
     expect(weeksBehind(5, 3, 0)).toBe(2);
     expect(weeksBehind(6, 6, 0)).toBe(0);
@@ -40,9 +40,16 @@ describe("weeksBehind (never below zero; deferred weeks are excused)", () => {
     expect(weeksBehind(3, 7, 0)).toBe(0);
   });
 
-  it("deferred weeks never count as behind", () => {
+  it("SKIPPED weeks never count as behind — nobody owed them", () => {
     expect(weeksBehind(6, 3, 2)).toBe(1);
     expect(weeksBehind(4, 0, 4)).toBe(0);
+  });
+
+  // Organizer ruling (Aug 2026): a deferred week is still owed, so it is NOT
+  // subtracted. Six elapsed weeks with two of them deferred and three covered
+  // leaves the member three behind, not one.
+  it("DEFERRED weeks still count as behind — the money is still owed", () => {
+    expect(weeksBehind(6, 3, 0)).toBe(3);
   });
 
   it("rate-change follow-through: 6 elapsed, newly credited 3 -> 3 behind", () => {
@@ -59,14 +66,39 @@ describe("paymentStatus (derived from money and the calendar only)", () => {
     expect(paymentStatus({ ...base, amountPaid: 30_000, today: utc("2026-05-17") })).toBe("PAID");
   });
 
-  it("DEFERRED wins over everything — excused is excused", () => {
+  it("SKIPPED wins over everything — the week did not happen for anyone", () => {
+    expect(
+      paymentStatus({ ...base, isSkipped: true, amountPaid: 0, today: utc("2027-01-01") }),
+    ).toBe("SKIPPED");
+    expect(
+      paymentStatus({ ...base, isSkipped: true, isDeferred: true, amountPaid: 25_000, today: utc("2026-05-17") }),
+    ).toBe("SKIPPED");
+  });
+
+  it("DEFERRED stands exactly where LATE would — and nowhere else", () => {
+    // Window long closed, nothing paid: LATE is suppressed, DEFERRED shows.
     expect(
       paymentStatus({ ...base, isDeferred: true, amountPaid: 0, today: utc("2027-01-01") }),
     ).toBe("DEFERRED");
-    // Even with money on the week (recorded before the organizer excused it),
-    // DEFERRED still wins over PAID.
+    // Window still open, nothing paid: still DEFERRED, not UNPAID — the
+    // organizer flagged it, so the flag is what the screen should say.
+    expect(
+      paymentStatus({ ...base, isDeferred: true, amountPaid: 0, today: utc("2026-05-17") }),
+    ).toBe("DEFERRED");
+  });
+
+  it("PAID BEATS DEFERRED — a deferred week covered by money reads PAID", () => {
     expect(
       paymentStatus({ ...base, isDeferred: true, amountPaid: 25_000, today: utc("2026-05-17") }),
+    ).toBe("PAID");
+    expect(
+      paymentStatus({ ...base, isDeferred: true, amountPaid: 30_000, today: utc("2027-01-01") }),
+    ).toBe("PAID");
+  });
+
+  it("a PARTIALLY paid deferred week is DEFERRED, never LATE", () => {
+    expect(
+      paymentStatus({ ...base, isDeferred: true, amountPaid: 10_000, today: utc("2027-01-01") }),
     ).toBe("DEFERRED");
   });
 
@@ -111,17 +143,47 @@ describe("amountOutstanding", () => {
   });
 
   it("nets surplus against debt — money is fungible (2.14)", () => {
-    // Due on non-deferred weeks: 4 x $250 = $1,000. Paid anywhere: $750.
-    // The $150 surplus on the overpaid week offsets other debt.
+    // Due on weeks that were not SKIPPED: 4 x $250 = $1,000. Paid anywhere:
+    // $750. The $150 surplus on the overpaid week offsets other debt.
     expect(
       amountOutstanding([
         { amountDue: 25_000, amountAlreadyPaid: 25_000, isDeferred: false }, // paid
         { amountDue: 25_000, amountAlreadyPaid: 10_000, isDeferred: false }, // short
-        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: true }, // excused: no due
+        { amountDue: 25_000, amountAlreadyPaid: 0, isSkipped: true, isDeferred: false }, // no due
         { amountDue: 25_000, amountAlreadyPaid: 40_000, isDeferred: false }, // surplus counts
         { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: false }, // fully owed
       ]),
     ).toBe(25_000);
+  });
+
+  // Organizer ruling (Aug 2026): deferral suppresses the CHASING, not the
+  // debt, so a deferred week contributes its full amountDue to what is owed.
+  it("DEFERRED weeks are still owed — they count toward outstanding in full", () => {
+    expect(
+      amountOutstanding([
+        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: true },
+        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: false },
+      ]),
+    ).toBe(50_000);
+  });
+
+  it("SKIPPED weeks are still fully excused — they contribute nothing", () => {
+    expect(
+      amountOutstanding([
+        { amountDue: 25_000, amountAlreadyPaid: 0, isSkipped: true, isDeferred: false },
+        { amountDue: 25_000, amountAlreadyPaid: 0, isSkipped: true, isDeferred: true },
+        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: false },
+      ]),
+    ).toBe(25_000);
+  });
+
+  it("money recorded on a SKIPPED week still counts — it is money", () => {
+    expect(
+      amountOutstanding([
+        { amountDue: 25_000, amountAlreadyPaid: 25_000, isSkipped: true, isDeferred: false },
+        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: false },
+      ]),
+    ).toBe(0);
   });
 
   it("rate decrease leaves no stranded debt: 6 weeks paid at the old higher rate", () => {

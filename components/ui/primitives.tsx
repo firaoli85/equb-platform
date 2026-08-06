@@ -89,6 +89,15 @@ export const buttonCls = {
     "inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-gray-600 dark:text-gray-300 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
   danger:
     "inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-300 dark:border-red-800 px-4 py-2 text-sm font-semibold text-red-700 dark:text-red-400 transition-[background-color,transform] duration-150 ease-out hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
+  /**
+   * A destructive action that is ALWAYS on screen (one per row) rather than
+   * one the organizer went looking for. It stays unmistakably red and keeps
+   * its full label, but it does not shout from every row — the outlined
+   * `danger` button turned a read-first page into a wall of red boxes. The
+   * weight belongs in the confirmation, not the list.
+   */
+  dangerQuiet:
+    "inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-red-700 dark:text-red-400 transition-[background-color,transform] duration-150 ease-out hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
 } as const;
 
 // ————— Tables (Twenty-density: quiet rows, tabular figures) —————
@@ -162,7 +171,7 @@ export function Field({
         {label}
       </span>
       {children}
-      {hint && <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-500">{hint}</span>}
+      {hint && <span className="mt-1 block text-[11px] text-gray-600 dark:text-gray-400">{hint}</span>}
     </label>
   );
 }

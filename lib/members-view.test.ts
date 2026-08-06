@@ -164,7 +164,7 @@ describe("partial payment toward a specific week", () => {
       weekNumber,
       amountDue: 50_000,
       amountAlreadyPaid: over[weekNumber] ?? 0,
-      isDeferred: false,
+      isSkipped: false,
     }));
 
   it("with no older debt, $400 toward week 14 lands as a PARTIAL on week 14", () => {
@@ -206,12 +206,21 @@ describe("partial payment toward a specific week", () => {
     ]);
   });
 
-  it("a deferred target week takes nothing — the money moves past it", () => {
+  it("a SKIPPED target week takes nothing — the money moves past it", () => {
     const w = weeks({ 12: 50_000, 13: 50_000 });
-    w[2] = { ...w[2], isDeferred: true }; // week 14 excused
+    w[2] = { ...w[2], isSkipped: true }; // week 14 never happened
     const result = allocatePayment(40_000, w);
     expect(result.allocations).toEqual([
       { weekNumber: 15, applied: 40_000, fillsWeek: false, runningRemainder: 0 },
+    ]);
+  });
+
+  // A DEFERRED week is NOT skipped — the money lands on it normally, which is
+  // exactly why the panel can still say "$400 recorded on week 14".
+  it("a DEFERRED target week takes the money like any other week", () => {
+    const result = allocatePayment(40_000, weeks({ 12: 50_000, 13: 50_000 }));
+    expect(result.allocations).toEqual([
+      { weekNumber: 14, applied: 40_000, fillsWeek: false, runningRemainder: 0 },
     ]);
   });
 });

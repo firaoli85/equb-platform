@@ -31,6 +31,7 @@ export default async function WeeksPage() {
         {cycle.weeks.map((w) => (
           <WeekEditor
             key={w.id}
+            plannedWeeks={cycle.plannedWeeks}
             week={{
               id: w.id,
               weekNumber: w.weekNumber,

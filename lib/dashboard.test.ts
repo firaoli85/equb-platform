@@ -72,8 +72,9 @@ function pay(
   weekNumber: number,
   amountPaid: number,
   isDeferred = false,
+  isSkipped = false,
 ): DashboardPayment {
-  return { participationId, weekNumber, amountPaid, isDeferred };
+  return { participationId, weekNumber, amountPaid, isDeferred, isSkipped };
 }
 
 describe("weekReceipts — window-aware (2.7)", () => {
@@ -213,32 +214,47 @@ describe("memberAttention — worst first, deferred excluded", () => {
     const payments = [
       ...Array.from({ length: 10 }, (_, i) => pay("a", i + 1, 25_000)),
     ];
-    const list = memberAttention({ participations, payments, currentWeek: 14 });
+    const list = memberAttention({ participations, payments, elapsedThroughWeek: 14 });
     expect(list).toEqual([
       { participationId: "b", name: "Late", weeksBehind: 3, amountOwed: 150_000 },
       { participationId: "a", name: "Early", weeksBehind: 4, amountOwed: 100_000 },
     ]);
   });
 
-  it("deferred weeks never count as behind (excused is excused)", () => {
+  it("SKIPPED weeks never count as behind — nobody owed them", () => {
     const payments = [
       pay("a", 1, 25_000),
-      pay("a", 2, 0, true), // excused
+      pay("a", 2, 0, false, true), // the week did not happen for anyone
       pay("a", 3, 25_000),
     ];
     const list = memberAttention({
       participations: [participations[0]],
       payments,
-      currentWeek: 3,
+      elapsedThroughWeek: 3,
     });
     expect(list).toEqual([]);
+  });
+
+  it("DEFERRED weeks DO count as behind — not chased, still owed (Aug 2026)", () => {
+    const payments = [
+      pay("a", 1, 25_000),
+      pay("a", 2, 0, true), // deferred: the debt is real, the chasing is not
+      pay("a", 3, 25_000),
+    ];
+    const list = memberAttention({
+      participations: [participations[0]],
+      payments,
+      elapsedThroughWeek: 3,
+    });
+    expect(list).toHaveLength(1);
+    expect(list[0].weeksBehind).toBe(1);
   });
 
   it("weeks with no stored row still count as owed", () => {
     const list = memberAttention({
       participations: [participations[0]],
       payments: [], // nothing recorded at all
-      currentWeek: 4,
+      elapsedThroughWeek: 4,
     });
     expect(list).toEqual([
       { participationId: "a", name: "Early", weeksBehind: 4, amountOwed: 100_000 },
@@ -248,7 +264,7 @@ describe("memberAttention — worst first, deferred excluded", () => {
   it("paid-ahead members never appear", () => {
     const payments = [pay("a", 1, 250_000)]; // 10 weeks of money in week 1
     expect(
-      memberAttention({ participations: [participations[0]], payments, currentWeek: 5 }),
+      memberAttention({ participations: [participations[0]], payments, elapsedThroughWeek: 5 }),
     ).toEqual([]);
   });
 });

@@ -74,7 +74,8 @@ function memberFinals(cycle: LoadedCycle, today: Date): MemberFinal[] {
             date: w.date,
             amountDue: p.weeklyAmount,
             storedPaid: payment?.amountPaid ?? 0,
-            isDeferred: (payment?.isDeferred ?? false) || w.isSkipped,
+            isDeferred: payment?.isDeferred ?? false,
+            isSkipped: w.isSkipped,
           };
         }),
       totalPaid: p.payments.reduce((sum, pm) => sum + pm.amountPaid, 0),

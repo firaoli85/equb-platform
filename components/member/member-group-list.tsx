@@ -91,7 +91,7 @@ export function MemberGroupList({
           <h1 className="text-xl font-black text-gray-900 dark:text-white text-balance">
             The group
           </h1>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
+          <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 tabular-nums">
             {totalMembers} members · Week {currentWeek} of {plannedWeeks}
           </p>
         </div>
@@ -99,7 +99,7 @@ export function MemberGroupList({
           <p className="text-2xl font-black tabular-nums leading-none text-emerald-600 dark:text-emerald-400">
             {currentCount}/{totalMembers}
           </p>
-          <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-emerald-600/70 dark:text-emerald-400/70">
+          <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-emerald-700 dark:text-emerald-400">
             current this week
           </p>
         </div>
@@ -118,12 +118,12 @@ export function MemberGroupList({
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold leading-snug text-gray-900 dark:text-white truncate">
                 <span className="text-indigo-600 dark:text-indigo-400">You</span>
-                <span className="text-gray-300 dark:text-gray-600 mx-1.5" aria-hidden="true">
+                <span aria-hidden="true" className="text-gray-600 dark:text-gray-400 mx-1.5">
                   ·
                 </span>
                 {viewerName}
               </p>
-              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
+              <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 tabular-nums">
                 {viewer.weeksPaid}
                 {viewerTotal !== null ? ` of ${viewerTotal}` : ""} weeks paid
               </p>
@@ -159,7 +159,7 @@ export function MemberGroupList({
                   gi > 0 ? "border-t border-gray-100 dark:border-gray-800" : "",
                 ].join(" ")}
               >
-                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 dark:text-indigo-500">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
                   {group.letter}
                 </span>
               </div>
@@ -185,7 +185,7 @@ export function MemberGroupList({
                         <p className="text-sm font-semibold text-gray-900 dark:text-white truncate leading-snug">
                           {m.nameEnglishFirst}
                         </p>
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5 tabular-nums leading-snug">
+                        <p className="text-[11px] text-gray-600 dark:text-gray-400 truncate mt-0.5 tabular-nums leading-snug">
                           {m.weeksPaid} week{m.weeksPaid === 1 ? "" : "s"} paid
                         </p>
                       </div>
@@ -200,13 +200,13 @@ export function MemberGroupList({
       )}
 
       {peers.length === 0 && (
-        <p className="text-center py-10 text-sm text-gray-500 dark:text-gray-500">
+        <p className="text-center py-10 text-sm text-gray-600 dark:text-gray-400">
           No other members yet.
         </p>
       )}
 
       {/* ── Privacy notice (2.8) ──────────────────────────────────── */}
-      <p className="text-center text-[11px] text-gray-500 dark:text-gray-500 leading-relaxed px-2">
+      <p className="text-center text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed px-2">
         Payment progress is shared for accountability. Amounts, lucky numbers, and payouts stay
         private.
       </p>

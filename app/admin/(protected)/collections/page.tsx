@@ -89,7 +89,8 @@ export default async function CollectionsPage() {
               date: w.date,
               amountDue: participation.weeklyAmount,
               storedPaid: payment?.amountPaid ?? 0,
-              isDeferred: (payment?.isDeferred ?? false) || w.isSkipped,
+              isDeferred: payment?.isDeferred ?? false,
+              isSkipped: w.isSkipped,
             };
           }),
         totalPaid: participation.payments.reduce((sum, pm) => sum + pm.amountPaid, 0),
@@ -133,6 +134,7 @@ export default async function CollectionsPage() {
         drawId,
         weekNumber: draw.week.weekNumber,
         weekDate: draw.week.date.toISOString(),
+        assignedManually: draw.assignedManually,
         payouts: list.map(toRow),
         undo: undoDrawConsequences({
           weekNumber: draw.week.weekNumber,
@@ -153,6 +155,7 @@ export default async function CollectionsPage() {
       drawId: null,
       weekNumber: null,
       weekDate: null,
+      assignedManually: false,
       payouts: unlinked.map(toRow),
       undo: null,
     });
@@ -167,7 +170,7 @@ export default async function CollectionsPage() {
     <main className="space-y-6">
       <header className="animate-fade-in-up">
         <p className="mb-1 text-sm">
-          <Link href="/admin/cycle" className="text-gray-500 dark:text-gray-400 hover:underline">
+          <Link href="/admin/cycle" className="text-gray-600 dark:text-gray-400 hover:underline">
             ← Cycle
           </Link>
         </p>
@@ -179,9 +182,29 @@ export default async function CollectionsPage() {
       </header>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 animate-fade-in-up-1">
-        <StatCard label="Collected" cents={collectedTotal} sub={`${collected.length} payout${collected.length === 1 ? "" : "s"} handed over`} />
-        <StatCard label="Pending" cents={pendingTotal} sub={`${pending.length} payout${pending.length === 1 ? "" : "s"} waiting`} delayClass="animate-fade-in-up-1" />
-        <StatCard label="The gap" cents={pendingTotal} sub="still to hand over before the books close" delayClass="animate-fade-in-up-2" emphasis={pendingTotal > 0} />
+        <StatCard
+          label="Collected"
+          cents={collectedTotal}
+          sub={`${collected.length} payout${collected.length === 1 ? "" : "s"} handed over`}
+        />
+        <StatCard
+          label="Still owed"
+          cents={pendingTotal}
+          sub={
+            pending.length === 0
+              ? "nobody is waiting to be paid"
+              : `${pending.length} payout${pending.length === 1 ? "" : "s"} drawn and waiting`
+          }
+          href="/admin/waiting"
+          emphasis={pendingTotal > 0}
+          delayClass="animate-fade-in-up-1"
+        />
+        <StatCard
+          label="Gone out in total"
+          cents={collectedTotal + pendingTotal}
+          sub="collected plus committed — what this cycle owes its winners"
+          delayClass="animate-fade-in-up-2"
+        />
       </div>
 
       <div className="animate-fade-in-up-2">

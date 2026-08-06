@@ -354,7 +354,7 @@ export function LoginFlow() {
                   style={{ fontSize: "16px", fontVariantNumeric: "tabular-nums" }}
                   className="w-full px-3.5 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600 transition-colors"
                 />
-                <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1.5">
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5">
                   Use the number you registered with your Equb
                 </p>
               </div>
@@ -387,7 +387,7 @@ export function LoginFlow() {
               </div>
             </div>
 
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-500 mb-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
               Choose how to sign in
             </p>
 
@@ -408,7 +408,7 @@ export function LoginFlow() {
                   </svg>
                   <span className="flex-1 text-left">
                     <span className="block text-sm font-bold text-gray-900 dark:text-white">Enter my PIN</span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-500">Your code · fastest</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">Your code · fastest</span>
                   </span>
                   <svg className="w-4 h-4 text-indigo-400 dark:text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -425,7 +425,7 @@ export function LoginFlow() {
                 style={{ touchAction: "manipulation", minHeight: "56px" }}
                 className="w-full flex items-center gap-3 px-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#141414] hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
               >
-                <svg className="w-5 h-5 text-gray-500 dark:text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <svg className="w-5 h-5 text-gray-500 dark:text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -434,7 +434,7 @@ export function LoginFlow() {
                 </svg>
                 <span className="flex-1 text-left">
                   <span className="block text-sm font-bold text-gray-900 dark:text-white">WhatsApp me a code</span>
-                  <span className="block text-xs text-gray-500 dark:text-gray-500">6-digit code on WhatsApp</span>
+                  <span className="block text-xs text-gray-500 dark:text-gray-400">6-digit code on WhatsApp</span>
                 </span>
                 <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -520,7 +520,7 @@ export function LoginFlow() {
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 {recovering ? "You're in — set a new PIN" : "You're in — choose your own PIN"}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {recovering && !usedDefault
                   ? "You signed in with the WhatsApp code. Choose a new PIN for next time — or skip and use a WhatsApp code again."
                   : "Your phone's last 4 digits are not a secret — anyone who has your number knows them. Pick a PIN only you know to finish signing in."}
@@ -578,7 +578,7 @@ export function LoginFlow() {
                   ? "Enter the code from WhatsApp"
                   : "WhatsApp code"}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {otpStep === "sending"
                   ? "Sending…"
                   : otpStep === "sent" || otpStep === "verifying"

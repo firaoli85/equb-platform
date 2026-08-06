@@ -48,9 +48,11 @@ async function loadMemberWindow(db: Prisma.TransactionClient, participationId: s
         weekNumber: week.weekNumber,
         amountDue: participation.weeklyAmount,
         amountAlreadyPaid: payment?.amountPaid ?? 0,
-        isDeferred: (payment?.isDeferred ?? false) || week.isSkipped,
+        isSkipped: week.isSkipped,
       };
-      return { week, payment, allocation };
+      // DEFERRED rides alongside the allocation input, never inside it: money
+      // lands on a deferred week like any other (organizer ruling, Aug 2026).
+      return { week, payment, allocation, isDeferred: payment?.isDeferred ?? false };
     });
 
   return { participation, finishWeek, windowWeeks };
@@ -327,7 +329,8 @@ export async function getMemberStanding(participationId: string) {
         date: w.week.date,
         amountDue: w.allocation.amountDue,
         storedPaid: w.payment?.amountPaid ?? 0,
-        isDeferred: w.allocation.isDeferred,
+        isDeferred: w.isDeferred,
+        isSkipped: w.allocation.isSkipped,
       })),
       totalPaid: participation.payments.reduce((sum, p) => sum + p.amountPaid, 0),
       pinnedByWeek: pinnedMapFromEvents(

@@ -1,14 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { updateCycle } from "@/app/actions/edits";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, NumberInput } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { buttonCls, Field, inputCls } from "@/components/ui/primitives";
-import { formatDateUTC, formatMoney, parseDollarsToCents, parseDateInput } from "@/lib/format";
-import { dateOfWeek } from "@/lib/money";
+import {
+  cycleFinishPreview,
+  finishLine,
+  parseWeekField,
+  resolveWeekDate,
+  storedWeekDates,
+} from "@/lib/commitment";
+import { formatDateLongUTC, formatDateUTC, formatMoney, parseDollarsToCents, parseDateInput } from "@/lib/format";
+import { MAX_WEEKS } from "@/lib/money";
 import { cycleProjection, type ProjectionMember } from "@/lib/projection";
 
 export function CycleEditForm({
@@ -22,6 +29,13 @@ export function CycleEditForm({
     plannedWeeks: number;
     unitAmount: number;
     feePercent: number;
+    /**
+     * The stored week rows. THIS form is where the divergence originates:
+     * saving a new start date deliberately KEEPS every existing week date as a
+     * historical fact (2.14, 2.7), so the finish it previews must be the
+     * stored day, not a projection off the date being typed.
+     */
+    weeks: { weekNumber: number; date: string }[];
   };
   members: ProjectionMember[];
 }) {
@@ -55,11 +69,31 @@ export function CycleEditForm({
       ? cycleProjection({ members, feePercent: liveFee })
       : null;
   const liveStart = parseDateInput(fields.startDate);
-  const liveWeeks = Number.parseInt(fields.plannedWeeks, 10);
-  const span =
-    liveStart && Number.isSafeInteger(liveWeeks) && liveWeeks >= 1 && liveWeeks <= 1000
-      ? `${formatDateUTC(liveStart)} to ${formatDateUTC(dateOfWeek(liveStart, liveWeeks))}, ${liveWeeks} week${liveWeeks === 1 ? "" : "s"}`
+  const liveWeeks = parseWeekField(fields.plannedWeeks);
+  // 2.22: the organizer never calculates a finish. A cycle has no start week —
+  // week 1 IS its start date — so this is the same pure preview every member
+  // surface uses, and it prints the same sentence.
+  const storedDates = useMemo(() => storedWeekDates(cycle.weeks), [cycle.weeks]);
+  const cyclePreview =
+    liveStart && liveWeeks !== null && liveWeeks <= MAX_WEEKS
+      ? cycleFinishPreview({
+          cycleStartDate: liveStart,
+          plannedWeeks: liveWeeks,
+          stored: storedDates,
+        })
       : null;
+  // Week 1's own date follows the same rule — stored row first.
+  const weekOne = liveStart
+    ? resolveWeekDate({ weekNumber: 1, stored: storedDates, cycleStartDate: liveStart })
+    : null;
+  const cycleStartLabel = weekOne ? formatDateUTC(weekOne.date) : null;
+  // Saving keeps existing week dates, so a typed start date does NOT move a
+  // week that already has a row. Say so rather than letting the organizer
+  // think the preview is broken.
+  const startDateIgnored =
+    weekOne?.source === "stored" &&
+    liveStart !== null &&
+    weekOne.date.getTime() !== liveStart.getTime();
 
   function save(e: React.FormEvent) {
     e.preventDefault();
@@ -146,9 +180,23 @@ export function CycleEditForm({
         <NumberInput value={fields.feePercent} onChange={setValue("feePercent")} min={0} max={100} step={0.1} ariaLabel="Fee percent" className="w-full" />
       </Field>
 
-      {span && (
-        <p className="rounded bg-gray-100 px-3 py-2 text-sm" data-testid="cycle-span">
-          {span}
+      {cyclePreview !== null ? (
+        <p
+          className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-4 py-3 text-base font-bold text-indigo-900 dark:text-indigo-200"
+          data-testid="cycle-span"
+        >
+          Runs week 1 ({cycleStartLabel}) — {finishLine(cyclePreview, formatDateLongUTC, cyclePreview.finishWeek)}
+          {startDateIgnored && (
+            <span className="mt-1.5 block text-xs font-medium text-indigo-900/80 dark:text-indigo-200/80">
+              These are the weeks&apos; own recorded dates. Changing the start date does not move
+              them — a week records the day that actually happened (2.14), so only the
+              current-week calculation shifts.
+            </span>
+          )}
+        </p>
+      ) : (
+        <p className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+          Enter a start date and a length to see when the cycle finishes.
         </p>
       )}
 
@@ -171,7 +219,7 @@ export function CycleEditForm({
       {msg && (
         <p
           role={msg.kind === "err" ? "alert" : "status"}
-          className={`rounded border px-3 py-2 text-sm ${msg.kind === "err" ? "border-red-400 bg-red-50 text-red-800" : "border-green-500 bg-green-50 text-green-900"}`}
+          className={`rounded border px-3 py-2 text-sm ${msg.kind === "err" ? "border-red-400 bg-red-50 text-red-800 dark:text-red-400" : "border-green-500 bg-green-50 text-green-900"}`}
         >
           {msg.text}
         </p>
@@ -193,7 +241,7 @@ export function CycleEditForm({
           <h2 className="mb-2 text-base font-semibold">Each member at {fields.feePercent}%</h2>
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-gray-300 text-left">
+              <tr className="border-b border-gray-300 dark:border-gray-700 text-left">
                 <th className="py-1 pr-3 font-medium">Member</th>
                 <th className="py-1 pr-3 font-medium">Gross</th>
                 <th className="py-1 pr-3 font-medium">Fee</th>
@@ -202,7 +250,7 @@ export function CycleEditForm({
             </thead>
             <tbody>
               {projection.perMember.map((m) => (
-                <tr key={m.id} className="border-b border-gray-200">
+                <tr key={m.id} className="border-b border-gray-200 dark:border-gray-800">
                   <td className="py-1 pr-3">{m.name}</td>
                   <td className="py-1 pr-3">{formatMoney(m.gross)}</td>
                   <td className="py-1 pr-3">{formatMoney(m.fee)}</td>

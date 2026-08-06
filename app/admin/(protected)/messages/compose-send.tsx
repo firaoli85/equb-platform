@@ -183,7 +183,7 @@ export function ComposeSend() {
                           <span className="text-sm font-semibold text-gray-900 dark:text-white">
                             {r.nameAmharic}
                           </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-500">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
                             {r.nameEnglish} {r.phone ? `· ${r.phone}` : ""}
                           </span>
                           {outcome &&

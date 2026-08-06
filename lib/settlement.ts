@@ -27,8 +27,9 @@ export type WinnerWeekSettlementPlan = {
 /**
  * Settle the drawn week FROM the payout: whatever the member still owes on
  * that week comes out of their payout net(s), waterfalling across their
- * payouts in the given order. amountDue 0 (deferred/skipped week, or a week
- * outside their window) settles nothing.
+ * payouts in the given order. amountDue 0 (a SKIPPED week, or a week outside
+ * their window) settles nothing. A DEFERRED week is still owed, so it settles
+ * normally — deferral spares the chasing, not the debt.
  */
 export function planWinnerWeekSettlement(input: {
   /** What this member owes on the drawn week (0 when excused). */
@@ -60,12 +61,14 @@ export function planWinnerWeekSettlement(input: {
  */
 export function allocatePinned(
   amount: number,
-  week: { amountDue: number; amountAlreadyPaid: number; isDeferred: boolean },
+  week: { amountDue: number; amountAlreadyPaid: number; isSkipped: boolean },
 ): { applied: number; unallocated: number } {
   if (!Number.isSafeInteger(amount) || amount < 0) {
     throw new RangeError(`pinned amount must be non-negative integer cents, got ${amount}`);
   }
-  const owed = week.isDeferred ? 0 : Math.max(0, week.amountDue - week.amountAlreadyPaid);
+  // Only a SKIPPED week owes nothing. A deferred week is still owed, so the
+  // settlement lands on it exactly as it would on any other week.
+  const owed = week.isSkipped ? 0 : Math.max(0, week.amountDue - week.amountAlreadyPaid);
   const applied = Math.min(amount, owed);
   return { applied, unallocated: amount - applied };
 }

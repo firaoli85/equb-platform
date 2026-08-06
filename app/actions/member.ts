@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { errorMessage } from "@/lib/action-result";
 import { linkCurrentUserToPerson } from "@/app/actions/auth";
 import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
+import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { toE164 } from "@/lib/phone";
@@ -77,7 +78,8 @@ export async function getMyPortal() {
             date: w.date,
             amountDue: participation.weeklyAmount,
             storedPaid: payment?.amountPaid ?? 0,
-            isDeferred: (payment?.isDeferred ?? false) || w.isSkipped,
+            isDeferred: payment?.isDeferred ?? false,
+            isSkipped: w.isSkipped,
           };
         }),
       totalPaid: participation.payments.reduce((sum, p) => sum + p.amountPaid, 0),
@@ -134,6 +136,17 @@ export async function getMyPortal() {
           cycleWeek,
           startWeek: participation.startWeek,
           finishWeek,
+          // 2.22: "Every member sees their own finish date, always." The week
+          // number alone is not a date to anyone reading their own account.
+          // 2.14/2.7: the STORED week row is the day that actually happened.
+          // The projection is the fallback only when no row exists (a week
+          // past the planned end).
+          finishDate:
+            resolveWeekDate({
+              weekNumber: finishWeek,
+              stored: storedWeekDates(participation.cycle.weeks),
+              cycleStartDate: participation.cycle.startDate,
+            })?.date.toISOString() ?? null,
           weeksCommitted: participation.weeksCommitted,
           weeklyAmount: participation.weeklyAmount,
           weeksCredited: Math.min(standing.weeksCredited, participation.weeksCommitted),
@@ -150,8 +163,10 @@ export async function getMyPortal() {
                 | "PAID"
                 | "PARTIAL"
                 | "LATE"
-                | "DEFERRED"),
+                | "DEFERRED"
+                | "SKIPPED"),
             isDeferred: w.isDeferred,
+            isSkipped: w.isSkipped,
           })),
           numbers,
         },

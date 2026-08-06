@@ -41,6 +41,21 @@ export function formatDateUTC(date: Date): string {
   });
 }
 
+/**
+ * The long form, with the weekday: "Sunday, September 27, 2026". Used where a
+ * date is the thing being DECIDED rather than listed — a finish date the
+ * organizer is committing someone to (2.22) reads as a real day, not a stamp.
+ */
+export function formatDateLongUTC(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 /** Parse an <input type="date"> value ("2026-05-17") to a UTC-midnight Date. */
 export function parseDateInput(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);

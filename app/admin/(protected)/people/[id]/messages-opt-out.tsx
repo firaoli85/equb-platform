@@ -55,14 +55,14 @@ export function MessagesOptOut({
         />
         <span>
           <span className="block text-sm font-medium">No messages (hardship)</span>
-          <span className="block text-xs text-gray-600">
+          <span className="block text-xs text-gray-600 dark:text-gray-400">
             Nothing is ever sent to them — not the automatic payment confirmation, not any
             batch, even if checked there. For someone dealing with a difficult time (2.20).
           </span>
         </span>
       </label>
       {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800 dark:text-red-400">
           Not saved: {error}
         </p>
       )}

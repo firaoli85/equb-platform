@@ -261,3 +261,8 @@ describe("currentWeekNumber", () => {
     expect(currentWeekNumber(utc("2026-03-01"), utc("2026-03-15"))).toBe(3);
   });
 });
+
+// The "finish with the group" pairing moved to lib/commitment.ts, where it is
+// the REAL implementation both the add-member wizard and the participation
+// editor import. The block that used to live here re-declared a local copy of
+// the clamp and proved only that the copy worked — see commitment.test.ts.

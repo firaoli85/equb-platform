@@ -6,12 +6,19 @@ export type SelectableWeek = {
   weekNumber: number;
   amountDue: number;
   amountAlreadyPaid: number;
-  isDeferred: boolean;
+  /** THIS member is not chased for it — the money is still owed. */
+  isDeferred?: boolean;
+  /** Cycle-wide: the week did not happen, so nobody owes it. */
+  isSkipped?: boolean;
 };
 
-/** A week the organizer may select: owed and not excused. */
+/**
+ * A week the organizer may select: still owed and not SKIPPED. A DEFERRED
+ * week IS selectable — deferral spares the chasing, not the debt (organizer
+ * ruling, Aug 2026), so catching a member up must be able to clear it.
+ */
 export function isSelectable(w: SelectableWeek): boolean {
-  return !w.isDeferred && w.amountAlreadyPaid < w.amountDue;
+  return !w.isSkipped && w.amountAlreadyPaid < w.amountDue;
 }
 
 export function selectableWeekNumbers(weeks: readonly SelectableWeek[]): number[] {
@@ -41,7 +48,7 @@ export function parseWeekRange(text: string): { from: number; to: number } | nul
   return null;
 }
 
-/** The SELECTABLE weeks inside a range — paid/excused weeks never sneak in. */
+/** The SELECTABLE weeks inside a range — paid/skipped weeks never sneak in. */
 export function weeksInRange(
   weeks: readonly SelectableWeek[],
   range: { from: number; to: number },

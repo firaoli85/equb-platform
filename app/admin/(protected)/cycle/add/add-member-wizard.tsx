@@ -1,23 +1,30 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   addNewPersonToCycle,
   addToCycle,
   type SavedParticipation,
 } from "@/app/actions/participations";
-import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
+import {
+  commitmentCap,
+  finishLine,
+  finishPreview,
+  parseWeekField,
+  resolveWeekDate,
+  storedWeekDates,
+  weeksToFinishWithGroup,
+} from "@/lib/commitment";
+import { formatDateLongUTC, formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import { chooseAutoNumbers, validateManualNumbers } from "@/lib/lucky-numbers";
 import {
   calculateFee,
   calculateFinishWeek,
   calculateGross,
   calculateNet,
-  dateOfWeek,
   MAX_MONEY_CENTS,
   MAX_WEEKS,
-  remainingWeeksInCycle,
   splitIntoLuckyNumbers,
 } from "@/lib/money";
 
@@ -49,6 +56,7 @@ export function AddMemberWizard({
   currentWeek,
   people,
   startDateISO,
+  cycleWeeks,
   takenNumbers,
   numberingMode,
   prevNumbersByPerson,
@@ -57,6 +65,11 @@ export function AddMemberWizard({
   currentWeek: number;
   people: WizardPerson[];
   startDateISO: string;
+  /**
+   * The cycle's stored week rows. A week row is the day that ACTUALLY
+   * happened, so it wins over any projection off the start date (2.14, 2.7).
+   */
+  cycleWeeks: { weekNumber: number; date: string }[];
   takenNumbers: number[];
   numberingMode: "fresh" | "carryover";
   prevNumbersByPerson: Record<string, number[]>;
@@ -66,10 +79,7 @@ export function AddMemberWizard({
   const defaultStartWeek = Math.max(1, currentWeek);
   // 2.22 / D-31: the default (and the cap) is the remaining weeks — a late
   // joiner finishes with everyone else unless the organizer overrides.
-  const defaultWeeksCommitted = Math.max(
-    1,
-    remainingWeeksInCycle(cycle.plannedWeeks, Math.min(defaultStartWeek, cycle.plannedWeeks)),
-  );
+  const defaultWeeksCommitted = weeksToFinishWithGroup(cycle.plannedWeeks, defaultStartWeek);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [saved, setSaved] = useState<SavedParticipation | null>(null);
@@ -94,6 +104,26 @@ export function AddMemberWizard({
   const [startWeekStr, setStartWeekStr] = useState(String(defaultStartWeek));
   const [weeksStr, setWeeksStr] = useState(String(defaultWeeksCommitted));
   const [extendPastEnd, setExtendPastEnd] = useState(false);
+  // "Finish with the group" (2.22 / D-31), ON by default: weeks committed
+  // TRACKS the start week so a late joiner always lands on the cycle's last
+  // week — the organizer never does the arithmetic. Turning it off (or typing
+  // a weeks figure) hands control back; the cap and its override are unchanged.
+  const [finishWithGroup, setFinishWithGroup] = useState(true);
+
+  function chooseStartWeek(value: string) {
+    setStartWeekStr(value);
+    if (!finishWithGroup) return;
+    const next = parseWeekField(value);
+    if (next === null) return;
+    setWeeksStr(String(weeksToFinishWithGroup(cycle.plannedWeeks, next)));
+  }
+
+  function toggleFinishWithGroup(on: boolean) {
+    setFinishWithGroup(on);
+    if (!on) return;
+    const from = parseWeekField(startWeekStr) ?? defaultStartWeek;
+    setWeeksStr(String(weeksToFinishWithGroup(cycle.plannedWeeks, from)));
+  }
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,21 +194,37 @@ export function AddMemberWizard({
       : null;
   const chosenNumbers = manualNumbers ? parsedManual : (autoNumbers ?? []);
 
+  const storedDates = useMemo(() => storedWeekDates(cycleWeeks), [cycleWeeks]);
+
   const startWeek = Number.parseInt(startWeekStr, 10);
   const weeksCommitted = Number.parseInt(weeksStr, 10);
   const startWeekValid =
     Number.isSafeInteger(startWeek) && startWeek >= 1 && startWeek <= MAX_WEEKS;
-  // 2.22 / D-31: without the override, the commitment may not pass the
-  // planned end.
-  const weeksCap = startWeekValid ? remainingWeeksInCycle(cycle.plannedWeeks, startWeek) : null;
   const weeksInRange =
     Number.isSafeInteger(weeksCommitted) && weeksCommitted >= 1 && weeksCommitted <= MAX_WEEKS;
-  const exceedsCap = weeksInRange && weeksCap !== null && !extendPastEnd && weeksCommitted > weeksCap;
+  // 2.22 / D-31: without the override, the commitment may not pass the
+  // planned end. Same pure helper the participation editor uses.
+  const capInfo = commitmentCap({
+    plannedWeeks: cycle.plannedWeeks,
+    startWeek: startWeekValid ? startWeek : null,
+    weeksCommitted: weeksInRange ? weeksCommitted : null,
+    extendPastPlannedEnd: extendPastEnd,
+  });
+  const weeksCap = capInfo?.cap ?? null;
+  const exceedsCap = capInfo?.exceedsCap ?? false;
   const weeksValid = weeksInRange && !exceedsCap;
-  const finishWeek =
-    startWeekValid && weeksValid ? calculateFinishWeek(startWeek, weeksCommitted) : null;
-  // Dates compute themselves — the organizer never calculates one by hand.
-  const finishDate = finishWeek !== null ? dateOfWeek(new Date(startDateISO), finishWeek) : null;
+  // The finish is shown whenever BOTH fields parse — including while the
+  // figure exceeds the cap. The organizer is deciding whether to override,
+  // and that decision needs the date in front of them, not hidden.
+  const preview = finishPreview({
+    cycleStartDate: new Date(startDateISO),
+    stored: storedDates,
+    plannedWeeks: cycle.plannedWeeks,
+    startWeek: startWeekValid ? startWeek : null,
+    weeksCommitted: weeksInRange ? weeksCommitted : null,
+  });
+  const finishWeek = preview?.finishWeek ?? null;
+  const finishDate = preview?.finishDate ?? null;
 
   const step1Valid =
     mode === "existing"
@@ -246,7 +292,16 @@ export function AddMemberWizard({
         <p className="mt-2 text-sm">
           {saved.person.nameEnglishFirst} {saved.person.nameEnglishLast ?? ""} is in {cycle.name}:{" "}
           {formatMoney(saved.weeklyAmount)}/week, weeks {saved.startWeek} to{" "}
-          {calculateFinishWeek(saved.startWeek, saved.weeksCommitted)}.
+          {calculateFinishWeek(saved.startWeek, saved.weeksCommitted)} —{" "}
+          {(() => {
+            const r = resolveWeekDate({
+              weekNumber: calculateFinishWeek(saved.startWeek, saved.weeksCommitted),
+              stored: storedDates,
+              cycleStartDate: new Date(startDateISO),
+            });
+            return r === null ? "" : formatDateLongUTC(r.date);
+          })()}
+          .
         </p>
         <p className="mt-1 text-sm">
           Lucky number{saved.luckyNumbers.length === 1 ? "" : "s"}:{" "}
@@ -287,11 +342,11 @@ export function AddMemberWizard({
 
   return (
     <div className="max-w-lg space-y-6">
-      <ol className="flex gap-2 text-xs text-gray-600">
+      <ol className="flex gap-2 text-xs text-gray-600 dark:text-gray-400">
         {["Who", "Contribution", "How long", "Confirm"].map((label, i) => (
           <li
             key={label}
-            className={`rounded px-2 py-1 ${step === i + 1 ? "bg-black text-white" : "bg-gray-100"}`}
+            className={`rounded px-2 py-1 ${step === i + 1 ? "bg-black text-white" : "bg-gray-100 dark:bg-white/10"}`}
           >
             {i + 1}. {label}
           </li>
@@ -305,7 +360,7 @@ export function AddMemberWizard({
             <button
               type="button"
               onClick={() => setMode("existing")}
-              className={`rounded border px-3 py-1.5 ${mode === "existing" ? "border-black font-medium" : "border-gray-300"}`}
+              className={`rounded border px-3 py-1.5 ${mode === "existing" ? "border-black font-medium" : "border-gray-300 dark:border-gray-700"}`}
             >
               From the directory
             </button>
@@ -315,7 +370,7 @@ export function AddMemberWizard({
                 setMode("new");
                 setPersonId(null);
               }}
-              className={`rounded border px-3 py-1.5 ${mode === "new" ? "border-black font-medium" : "border-gray-300"}`}
+              className={`rounded border px-3 py-1.5 ${mode === "new" ? "border-black font-medium" : "border-gray-300 dark:border-gray-700"}`}
             >
               Add someone new
             </button>
@@ -331,11 +386,11 @@ export function AddMemberWizard({
                 className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
               />
               {filtered.length === 0 ? (
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
                   No one matches. Use “Add someone new” instead.
                 </p>
               ) : (
-                <ul className="max-h-72 divide-y divide-gray-200 overflow-y-auto rounded border border-gray-300">
+                <ul className="max-h-72 divide-y divide-gray-200 overflow-y-auto rounded border border-gray-300 dark:border-gray-700">
                   {filtered.map((p) => (
                     <li key={p.id}>
                       <button
@@ -344,7 +399,7 @@ export function AddMemberWizard({
                         onClick={() => setPersonId(p.id)}
                         className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
                           personId === p.id ? "bg-gray-900 text-white" : ""
-                        } ${p.inActiveCycle ? "cursor-not-allowed text-gray-400" : "hover:bg-gray-100"}`}
+                        } ${p.inActiveCycle ? "cursor-not-allowed text-gray-600 dark:text-gray-400" : "hover:bg-gray-100 dark:bg-white/10"}`}
                       >
                         <span>
                           {p.nameAmharic} — {p.nameEnglishFirst} {p.nameEnglishLast ?? ""}
@@ -409,18 +464,18 @@ export function AddMemberWizard({
           </label>
 
           {luckyAmounts && (
-            <p className="rounded bg-gray-100 px-3 py-2 text-sm" data-testid="lucky-preview">
+            <p className="rounded bg-gray-100 dark:bg-white/10 px-3 py-2 text-sm" data-testid="lucky-preview">
               {formatMoney(weeklyAmount!)} becomes {countWord(luckyAmounts.length)} number
               {luckyAmounts.length === 1 ? "" : "s"}:{" "}
               {luckyAmounts.map((a) => formatMoney(a)).join(" and ")}
             </p>
           )}
           {weeklyDollars.trim() !== "" && !luckyAmounts && (
-            <p className="text-sm text-red-800">{weeklyError ?? "Enter a valid dollar amount."}</p>
+            <p className="text-sm text-red-800 dark:text-red-400">{weeklyError ?? "Enter a valid dollar amount."}</p>
           )}
 
           {luckyAmounts && !manualNumbers && autoNumbers && (
-            <p className="rounded bg-gray-100 px-3 py-2 text-sm" data-testid="auto-numbers">
+            <p className="rounded bg-gray-100 dark:bg-white/10 px-3 py-2 text-sm" data-testid="auto-numbers">
               Numbers: {autoNumbers.map((n) => `#${n}`).join(" and ")} (automatic
               {carriedOver ? " — carried over from their previous cycle" : ""})
             </p>
@@ -443,7 +498,7 @@ export function AddMemberWizard({
               <div className="flex gap-2">
                 {luckyAmounts.map((amount, i) => (
                   <label key={i} className="text-sm">
-                    <span className="mb-1 block text-gray-600">
+                    <span className="mb-1 block text-gray-600 dark:text-gray-400">
                       #{i + 1} ({formatMoney(amount)})
                     </span>
                     <input
@@ -461,7 +516,7 @@ export function AddMemberWizard({
                 ))}
               </div>
               {manualError && (
-                <p role="alert" className="text-sm text-red-800" data-testid="manual-number-error">
+                <p role="alert" className="text-sm text-red-800 dark:text-red-400" data-testid="manual-number-error">
                   {manualError}
                 </p>
               )}
@@ -493,16 +548,37 @@ export function AddMemberWizard({
               type="number"
               min={1}
               value={startWeekStr}
-              onChange={(e) => setStartWeekStr(e.target.value)}
+              onChange={(e) => chooseStartWeek(e.target.value)}
               className="w-full rounded border border-gray-400 px-3 py-2"
             />
             {!startWeekValid && startWeekStr.trim() !== "" && (
-              <span className="mt-1 block text-sm text-red-800">
+              <span className="mt-1 block text-sm text-red-800 dark:text-red-400">
                 {Number.isSafeInteger(startWeek) && startWeek > MAX_WEEKS
                   ? `Start week must be at most ${MAX_WEEKS}.`
                   : "Start week can never be before week 1."}
               </span>
             )}
+          </label>
+
+          {/* Finish with the group — ON by default, and it KEEPS tracking the
+              start week rather than being a one-time default. */}
+          <label className="flex items-start gap-2 text-sm" data-testid="finish-with-group">
+            <input
+              type="checkbox"
+              checked={finishWithGroup}
+              onChange={(e) => toggleFinishWithGroup(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <strong>Finish with the group</strong> — commit them to the rest of the cycle
+              {finishWithGroup && weeksCap !== null && startWeekValid && (
+                <>
+                  {" "}
+                  ({weeksCap} week{weeksCap === 1 ? "" : "s"} from week {startWeek})
+                </>
+              )}
+              . Uncheck to choose a different length.
+            </span>
           </label>
 
           <label className="block">
@@ -512,21 +588,34 @@ export function AddMemberWizard({
               min={1}
               max={extendPastEnd ? MAX_WEEKS : (weeksCap ?? undefined)}
               value={weeksStr}
-              onChange={(e) => setWeeksStr(e.target.value)}
-              className="w-full rounded border border-gray-400 px-3 py-2"
+              // NOT readOnly: the onChange below treats typing as the override
+              // itself, and readOnly made that impossible — the organizer had
+              // to find the checkbox first. Same behaviour as the
+              // participation editor now.
+              onChange={(e) => {
+                // Typing a figure is itself the override — no need to hunt for
+                // the checkbox first.
+                setFinishWithGroup(false);
+                setWeeksStr(e.target.value);
+              }}
+              className={`w-full rounded border border-gray-400 px-3 py-2 ${
+                finishWithGroup ? "bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300" : ""
+              }`}
             />
-            <span className="mt-1 block text-xs text-gray-600">
-              Default is the remaining weeks in the cycle — they finish with everyone else.
+            <span className="mt-1 block text-xs text-gray-600 dark:text-gray-400">
+              {finishWithGroup
+                ? "Filled from the remaining weeks in the cycle — they finish with everyone else."
+                : "Your own figure. The cap and its override below still apply."}
             </span>
             {weeksStr.trim() !== "" && exceedsCap && (
-              <span className="mt-1 block text-sm text-red-800">
+              <span className="mt-1 block text-sm text-red-800 dark:text-red-400">
                 {weeksCap === 0
                   ? "The planned weeks are over — extending past the end requires the override below."
                   : `Only ${weeksCap} week${weeksCap === 1 ? "" : "s"} remain in the cycle. Use the override below to extend past the planned end.`}
               </span>
             )}
             {weeksStr.trim() !== "" && !weeksInRange && (
-              <span className="mt-1 block text-sm text-red-800">
+              <span className="mt-1 block text-sm text-red-800 dark:text-red-400">
                 Weeks committed must be between 1 and {MAX_WEEKS}.
               </span>
             )}
@@ -546,12 +635,16 @@ export function AddMemberWizard({
             </span>
           </label>
 
-          {finishWeek !== null && finishDate !== null && (
-            <p className="rounded bg-gray-100 px-3 py-2 text-sm" data-testid="finish-preview">
-              Finishes in week {finishWeek} — {formatDateUTC(finishDate)}
-              {finishWeek > cycle.plannedWeeks &&
-                ` (${finishWeek - cycle.plannedWeeks} week${finishWeek - cycle.plannedWeeks === 1 ? "" : "s"} past the planned ${cycle.plannedWeeks})`}
-              .
+          {preview !== null ? (
+            <p
+              className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-4 py-3 text-base font-bold text-indigo-900 dark:text-indigo-200"
+              data-testid="finish-preview"
+            >
+              {finishLine(preview, formatDateLongUTC, cycle.plannedWeeks)}
+            </p>
+          ) : (
+            <p className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+              Enter a start week and a length to see when they finish.
             </p>
           )}
 
@@ -574,13 +667,13 @@ export function AddMemberWizard({
       {/* ————— Step 4: Confirm ————— */}
       {step === 4 && (
         <section className="space-y-4">
-          <p className="rounded bg-gray-100 px-3 py-3 text-sm" data-testid="confirm-summary">
-            {displayName}, {formatMoney(weeklyAmount!)}/week, weeks {startWeek} to {finishWeek}
-            {finishDate !== null && <> (finishing {formatDateUTC(finishDate)})</>}
-            {finishWeek !== null && finishWeek > cycle.plannedWeeks && (
-              <> — extends the cycle to week {finishWeek}</>
+          <p className="rounded bg-gray-100 dark:bg-white/10 px-3 py-3 text-sm" data-testid="confirm-summary">
+            {displayName}, {formatMoney(weeklyAmount!)}/week, from week {startWeek} for{" "}
+            {weeksCommitted} week{weeksCommitted === 1 ? "" : "s"}.
+            <br />
+            {preview !== null && (
+              <strong>{finishLine(preview, formatDateLongUTC, cycle.plannedWeeks)}</strong>
             )}
-            .
             <br />
             Lucky number{chosenNumbers.length === 1 ? "" : "s"}:{" "}
             {chosenNumbers.map((n) => `#${n}`).join(", ")}
@@ -591,7 +684,7 @@ export function AddMemberWizard({
           </p>
 
           {error && (
-            <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800 dark:text-red-400">
               Not saved: {error}
             </p>
           )}

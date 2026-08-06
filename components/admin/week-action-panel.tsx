@@ -9,6 +9,7 @@ import { AmountInput, Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import { describeAllocation } from "@/lib/payments-view";
+import { DEFERRED_PHRASE, SKIPPED_PHRASE } from "@/lib/status-labels";
 
 // THE one per-week action panel (2.19: one way to do each thing). Used by the
 // payments Members view, the payments Grid, and the member profile — so
@@ -206,21 +207,24 @@ export function WeekActionPanel({
         body: next ? (
           <>
             <p>
-              A deferred week is excused: never owed, never counts as behind. Their receipts
-              re-allocate immediately and every derived figure recalculates.
+              <strong>Deferring does not cancel the debt.</strong> {target.memberName} still owes{" "}
+              {formatMoney(target.amountDue)} for week {target.weekNumber}; it still counts in
+              their outstanding total and their weeks behind. What changes is that the week
+              stops reading LATE and they drop out of the chasing messages.
             </p>
             <p>An audit entry records the decision.</p>
           </>
         ) : (
           <>
             <p>
-              Week {target.weekNumber} ({formatMoney(target.amountDue)}) is owed again. Their
-              receipts re-allocate immediately.
+              Week {target.weekNumber} goes back to being chased. The {formatMoney(target.amountDue)}{" "}
+              was owed all along — this only lets it read LATE again and puts{" "}
+              {target.memberName} back in the reminders.
             </p>
             <p>An audit entry records the decision.</p>
           </>
         ),
-        confirmLabel: next ? `Defer week ${target.weekNumber}` : "Make it owed again",
+        confirmLabel: next ? `Defer week ${target.weekNumber}` : "Chase it again",
       },
       async () => {
         const result = await setWeekDeferral({
@@ -232,8 +236,8 @@ export function WeekActionPanel({
         else
           onSaved(
             next
-              ? `✓ Week ${target.weekNumber} deferred — excused, never owed.`
-              : `✓ Deferral removed — week ${target.weekNumber} is owed again.`,
+              ? `✓ Week ${target.weekNumber} deferred — not chased, still owed.`
+              : `✓ Deferral removed — week ${target.weekNumber} is chased again.`,
           );
       },
     );
@@ -245,10 +249,13 @@ export function WeekActionPanel({
         <h3 className="text-sm font-black text-gray-900 dark:text-white">
           {target.memberName} — week {target.weekNumber}
         </h3>
-        {detail?.isDeferred ? (
-          <Pill tone="neutral">Excused</Pill>
+        {detail?.weekIsSkipped ? (
+          <Pill tone="neutral">{SKIPPED_PHRASE}</Pill>
         ) : remaining > 0 ? (
-          <Pill tone="attention">{formatMoney(remaining)} still due</Pill>
+          <>
+            <Pill tone="attention">{formatMoney(remaining)} still due</Pill>
+            {detail?.isDeferred && <Pill tone="attention">{DEFERRED_PHRASE}</Pill>}
+          </>
         ) : (
           <Pill tone="good">Settled</Pill>
         )}
@@ -276,7 +283,7 @@ export function WeekActionPanel({
       {ok && <Alert kind="ok">{ok}</Alert>}
 
       {/* ————— Record: prefilled to this week's due, editable for a partial ————— */}
-      {!detail?.isDeferred && (
+      {!detail?.weekIsSkipped && (
         <div className="space-y-2">
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
@@ -394,9 +401,9 @@ export function WeekActionPanel({
           Receipts on this week ({detail?.receipts.length ?? "…"})
         </p>
         {detail === null ? (
-          <p className="text-xs text-gray-500 dark:text-gray-500">Loading…</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Loading…</p>
         ) : detail.receipts.length === 0 ? (
-          <p className="text-xs text-gray-500 dark:text-gray-500">None yet.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">None yet.</p>
         ) : (
           <ul className="space-y-1">
             {detail.receipts.map((r) => (

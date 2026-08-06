@@ -7,7 +7,7 @@
 // hardship flag, and the imported-history rule are tested law in this file,
 // not UI behavior.
 
-import { formatMoney } from "./format";
+import { formatDateLongUTC, formatMoney } from "./format";
 
 export const MESSAGE_KEYS = [
   "PAYMENT_CONFIRMED",
@@ -25,6 +25,15 @@ export const MESSAGE_KEYS = [
  * judgement and must be MANUAL.
  */
 export const AUTOMATIC_MESSAGE_KEYS = ["PAYMENT_CONFIRMED", "LOCKOUT_NOTICE"] as const;
+
+/**
+ * The types that CHASE a member for money they have not paid. These are the
+ * only ones deferral suppresses (organizer ruling, Aug 2026): a deferred week
+ * is still owed, but the member is not chased for it. Statements — the
+ * confirmation, the winner announcement, the closing statement — are NOT
+ * chasing, so they always state the true amount owed, deferral included.
+ */
+export const CHASING_MESSAGE_KEYS = ["BEHIND_NOTICE", "LATE_NOTICE"] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
 
@@ -54,6 +63,12 @@ export type StandingFacts = {
   weeksCommitted: number;
   currentCycleWeek: number;
   finishWeek: number;
+  /**
+   * The calendar date their own window ends (2.22: every member sees their own
+   * finish DATE, always). Optional so older callers still render — the token
+   * then falls back to the week number rather than printing nothing.
+   */
+  finishDate?: Date | null;
   weeksCredited: number;
   weeksBehind: number;
   amountOutstanding: number;
@@ -77,6 +92,20 @@ export type MessageExtras = {
   lockMinutes?: number;
 };
 
+/**
+ * Is there anything to chase this member ABOUT? Only a LATE week qualifies: by
+ * definition it is unpaid, its window has closed, and it is neither deferred
+ * nor skipped (2.16 — LATE is derived, and DEFERRED stands where LATE would).
+ * A member whose entire shortfall sits on deferred weeks has nothing chaseable
+ * — the debt is real and every statement still says so, but no reminder goes
+ * out for it.
+ */
+export function hasChaseableWeeks(
+  weeks: readonly { status: string }[] | undefined,
+): boolean {
+  return (weeks ?? []).some((w) => w.status === "LATE");
+}
+
 /** "8" · "8–10" · "3, 8–10" — compact human form for a list of week numbers. */
 export function formatWeekList(weeks: readonly number[]): string {
   const sorted = [...new Set(weeks)].sort((a, b) => a - b);
@@ -98,7 +127,9 @@ export function formatWeekList(weeks: readonly number[]): string {
 }
 
 /**
- * Every placeholder a template may use, filled from derived state. Values
+ * Every placeholder a template may use, filled from derived state. {amountOwed}
+ * is the TRUE amount outstanding, deferred weeks included — a statement never
+ * understates a debt just because we are not chasing it. Values
  * are display-ready strings; money renders through formatMoney. {week} is
  * the week most relevant to the message: the drawn week for a winner
  * announcement, the last week a receipt covered for a confirmation, and the
@@ -126,6 +157,7 @@ export function placeholderValues(
     amountOwed: formatMoney(standing.amountOutstanding),
     lastPaymentWeek: standing.lastPaymentWeek === null ? "—" : String(standing.lastPaymentWeek),
     finishWeek: String(standing.finishWeek),
+    finishDate: standing.finishDate ? formatDateLongUTC(standing.finishDate) : String(standing.finishWeek),
     weeklyAmount: formatMoney(standing.weeklyAmount),
     totalPaid: formatMoney(standing.totalPaid),
     amountReceived:
@@ -148,6 +180,7 @@ export const PLACEHOLDER_DOCS: { token: string; description: string }[] = [
   { token: "{amountOwed}", description: "Amount outstanding right now" },
   { token: "{lastPaymentWeek}", description: "The week of their last recorded payment" },
   { token: "{finishWeek}", description: "The week their own window ends" },
+  { token: "{finishDate}", description: "The calendar date their own window ends" },
   { token: "{weeklyAmount}", description: "Their weekly contribution" },
   { token: "{totalPaid}", description: "Everything they have paid this cycle" },
   { token: "{amountReceived}", description: "The payment just recorded (confirmation only)" },
@@ -210,7 +243,7 @@ export const DEFAULT_TEMPLATES: Record<MessageKey, { name: string; body: string 
     name: "Winner announcement",
     body:
       "{name}, you receive this week — week {week}. Your payout is {payoutAmount}. " +
-      "You have paid {weeksPaid} of {weeksTotal} weeks; {weeksLeft} weeks remain to week {finishWeek}.",
+      "You have paid {weeksPaid} of {weeksTotal} weeks; {weeksLeft} weeks remain to week {finishWeek} ({finishDate}).",
   },
   CYCLE_CLOSING_STATEMENT: {
     name: "Cycle closing statement",
@@ -260,6 +293,12 @@ export function sendDecision(input: {
   trigger: SendTrigger;
   noMessages: boolean;
   hasPhone: boolean;
+  /**
+   * The member's derived weeks. Supplied for the chasing types so a member
+   * whose whole shortfall is DEFERRED is left out of the chasing (2.2 —
+   * organizer discretion, made law). Omitted, no deferral filtering happens.
+   */
+  weeks?: readonly { status: string }[];
 }): SendDecision {
   if (input.trigger === "IMPORT") {
     return { send: false, reason: "Imported history never sends messages (2.21)." };
@@ -278,6 +317,20 @@ export function sendDecision(input: {
       send: false,
       reason:
         "Only the payment confirmation and the lockout notice send automatically — everything else needs the organizer to press send (2.20).",
+    };
+  }
+  if (
+    (CHASING_MESSAGE_KEYS as readonly string[]).includes(input.key) &&
+    input.weeks !== undefined &&
+    !hasChaseableWeeks(input.weeks)
+  ) {
+    const deferred = input.weeks.filter((w) => w.status === "DEFERRED").length;
+    return {
+      send: false,
+      reason:
+        deferred > 0
+          ? `Nothing to chase — ${deferred === 1 ? "their unpaid week is" : `all ${deferred} of their unpaid weeks are`} deferred. The money is still owed and every statement says so; they are simply not chased for it.`
+          : "Nothing to chase — no week has closed unpaid.",
     };
   }
   return { send: true };

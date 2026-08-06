@@ -6,8 +6,9 @@ import { createCycle } from "@/app/actions/cycles";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AmountInput, NumberInput, Radio } from "@/components/ui/controls";
 import { Alert, buttonCls, Card, Field } from "@/components/ui/primitives";
-import { formatDateUTC, formatMoney, parseDateInput, parseDollarsToCents } from "@/lib/format";
-import { calculateFee, calculateGross, generateWeekDates, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
+import { cycleFinishPreview, finishLine, parseWeekField } from "@/lib/commitment";
+import { formatDateLongUTC, formatDateUTC, formatMoney, parseDateInput, parseDollarsToCents } from "@/lib/format";
+import { calculateFee, calculateGross, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
 
 const INITIAL = {
   name: "",
@@ -80,17 +81,19 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
     setSavedAsDraft(null);
   };
 
-  // Live preview: "20 weeks, May 17, 2026 to Sep 27, 2026"
+  // 2.22: the organizer never calculates a finish. Same pure preview and same
+  // sentence as the add-member wizard and the participation editor — a cycle
+  // simply always starts at its own week 1.
   const startDate = parseDateInput(fields.startDate);
-  const weeks = Number.parseInt(fields.plannedWeeks, 10);
-  const weeksValid = Number.isSafeInteger(weeks) && weeks >= 1 && weeks <= MAX_WEEKS;
+  const weeks = parseWeekField(fields.plannedWeeks);
+  const weeksValid = weeks !== null && weeks <= MAX_WEEKS;
   const preview =
     startDate && weeksValid
-      ? (() => {
-          const dates = generateWeekDates(startDate, weeks);
-          return `${weeks} week${weeks === 1 ? "" : "s"}, ${formatDateUTC(dates[0])} to ${formatDateUTC(dates[dates.length - 1])}`;
-        })()
+      ? // No cycle exists yet, so there are no stored week rows to prefer —
+        // createCycle writes them with this same rhythm on submit.
+        cycleFinishPreview({ cycleStartDate: startDate, plannedWeeks: weeks, stored: null })
       : null;
+  const startLabel = startDate ? formatDateUTC(startDate) : null;
 
   // ————— The money projection (live) —————
   const feePercentNum = Number.parseFloat(fields.feePercent || "0");
@@ -230,12 +233,16 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
           </div>
         </fieldset>
 
-        {preview && (
+        {preview !== null ? (
           <p
-            className="rounded-xl bg-gray-100 dark:bg-white/5 px-3.5 py-2.5 text-sm text-gray-800 dark:text-gray-200 tabular-nums"
+            className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-4 py-3 text-base font-bold text-indigo-900 dark:text-indigo-200"
             data-testid="cycle-preview"
           >
-            {preview}
+            Runs week 1 ({startLabel}) — {finishLine(preview, formatDateLongUTC, preview.finishWeek)}
+          </p>
+        ) : (
+          <p className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+            Enter a start date and a length to see when the cycle finishes.
           </p>
         )}
 

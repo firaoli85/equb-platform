@@ -9,8 +9,15 @@ export type AllocationWeek = {
   amountDue: number;
   /** Cents already recorded on this week. */
   amountAlreadyPaid: number;
-  /** Excused by the organizer — never owed, never allocated to (2.15). */
-  isDeferred: boolean;
+  /**
+   * Cycle-wide: the week did not happen, so nobody owes it and no money is
+   * ever allocated to it (2.15).
+   *
+   * NOTE this is SKIPPED, not deferred. A deferred week is still owed — the
+   * member is only spared the chasing — so money lands on it like any other
+   * week, oldest first (organizer ruling, Aug 2026).
+   */
+  isSkipped: boolean;
 };
 
 export type WeekAllocation = {
@@ -46,7 +53,8 @@ function assertCents(name: string, cents: number): void {
  *
  *   1. The oldest not-fully-paid week is filled to its amountDue.
  *   2. Then the next, and the next — current week, then future weeks.
- *   3. Deferred weeks are skipped entirely: excused, never owed.
+ *   3. SKIPPED weeks are passed over entirely: nobody owed them. Deferred
+ *      weeks are NOT skipped — they are still owed.
  *   4. A leftover too small to fill a week becomes a PARTIAL on that week.
  *   5. Money beyond the last available week is returned as `unallocated`.
  *
@@ -79,7 +87,7 @@ export function allocatePayment(
 
   for (const week of weeks) {
     if (remaining === 0) break;
-    if (week.isDeferred) continue;
+    if (week.isSkipped) continue;
     const owed = week.amountDue - week.amountAlreadyPaid;
     if (owed <= 0) continue;
     const applied = Math.min(owed, remaining);

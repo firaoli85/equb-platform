@@ -14,15 +14,15 @@ export default async function AuditPage() {
     <main>
       <h1 className="mb-6 text-xl font-semibold">Audit log</h1>
       {!result.ok ? (
-        <p role="alert" className="text-sm text-red-800">
+        <p role="alert" className="text-sm text-red-800 dark:text-red-400">
           {result.error}
         </p>
       ) : result.data.length === 0 ? (
-        <p className="text-sm text-gray-700">No changes recorded yet.</p>
+        <p className="text-sm text-gray-700 dark:text-gray-300">No changes recorded yet.</p>
       ) : (
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-gray-300 text-left">
+            <tr className="border-b border-gray-300 dark:border-gray-700 text-left">
               <th className="py-2 pr-4 font-medium">When</th>
               <th className="py-2 pr-4 font-medium">Entity</th>
               <th className="py-2 pr-4 font-medium">Action</th>
@@ -31,8 +31,8 @@ export default async function AuditPage() {
           </thead>
           <tbody>
             {result.data.map((entry) => (
-              <tr key={entry.id} className="border-b border-gray-200 align-top">
-                <td className="whitespace-nowrap py-2 pr-4 text-gray-600">
+              <tr key={entry.id} className="border-b border-gray-200 dark:border-gray-800 align-top">
+                <td className="whitespace-nowrap py-2 pr-4 text-gray-600 dark:text-gray-400">
                   {entry.createdAt.toLocaleString("en-US")}
                 </td>
                 <td className="py-2 pr-4">{entry.entity}</td>
@@ -40,7 +40,7 @@ export default async function AuditPage() {
                 <td className="py-2">
                   {entry.summary}
                   {(entry.before || entry.after) && (
-                    <details className="mt-1 text-xs text-gray-600">
+                    <details className="mt-1 text-xs text-gray-600 dark:text-gray-400">
                       <summary className="cursor-pointer">from / to</summary>
                       {entry.before && <pre className="overflow-x-auto">before: {entry.before}</pre>}
                       {entry.after && <pre className="overflow-x-auto">after:  {entry.after}</pre>}

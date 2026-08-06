@@ -276,6 +276,10 @@ model Draw {
   slotId  String
   drawnAt DateTime @default(now())
   notes   String?
+  // 2.2 organizer discretion: a payout the organizer ASSIGNED (an emergency,
+  // an agreement) rather than one the wheel produced. Both are legitimate and
+  // behave identically — this only makes the difference visible in the record.
+  assignedManually Boolean @default(false)
   week    Week     @relation(fields: [weekId], references: [id], onDelete: Cascade)
   slot    Slot     @relation(fields: [slotId], references: [id], onDelete: Cascade)
   payouts Payout[]

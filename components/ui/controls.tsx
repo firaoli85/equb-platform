@@ -324,7 +324,7 @@ export function AmountInput({
     <div className={`relative ${className}`}>
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-sm font-semibold text-gray-500 dark:text-gray-400"
+        className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center justify-center text-sm font-semibold text-gray-600 dark:text-gray-400"
       >
         $
       </span>

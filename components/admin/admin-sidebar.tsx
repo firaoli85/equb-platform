@@ -20,6 +20,7 @@ const GROUPS: NavGroup[] = [
     links: [
       { label: "Payments", href: "/admin/payments" },
       { label: "Collections", href: "/admin/collections" },
+      { label: "Who is waiting", href: "/admin/waiting" },
     ],
   },
   {
@@ -83,6 +84,14 @@ function NavIcon({ href }: { href: string }) {
             strokeLinejoin="round"
             d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
           />
+        </svg>
+      );
+    case "/admin/waiting":
+      // A clock: the group owes this money and time is passing.
+      return (
+        <svg {...common}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 3a9 9 0 100 18 9 9 0 000-18z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
         </svg>
       );
     case "/admin/wheel/setup":
@@ -171,7 +180,13 @@ export function AdminSidebar() {
   }
 
   return (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4" aria-label="Admin navigation">
+    // min-h-0 is load-bearing: a flex child will not shrink below its content
+    // without it, so overflow-y-auto never engages and the last nav groups are
+    // simply unreachable on a short laptop screen.
+    <nav
+      className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-3 py-4"
+      aria-label="Admin navigation"
+    >
       {GROUPS.map((group) => (
         <div key={group.eyebrow}>
           <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">
@@ -191,7 +206,7 @@ export function AdminSidebar() {
                       : "font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5"
                   }`}
                 >
-                  <span className={active ? "text-indigo-600 dark:text-indigo-400" : "text-gray-500 dark:text-gray-500"}>
+                  <span className={active ? "text-indigo-600 dark:text-indigo-400" : "text-gray-500 dark:text-gray-400"}>
                     <NavIcon href={link.href} />
                   </span>
                   {link.label}

@@ -219,7 +219,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
     const chipTone = picked
       ? "border-indigo-600 bg-indigo-600 text-white"
       : immovable
-        ? "cursor-not-allowed border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-500"
+        ? "cursor-not-allowed border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400"
         : n.eligible
           ? "border-[var(--gold-badge-border)] text-[var(--gold-badge-text)] hover:border-indigo-400"
           : "border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300";
@@ -508,7 +508,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
                 </p>
                 <div className="flex min-h-7 flex-wrap gap-1.5">
                   {s.luckyNumberIds.length === 0 ? (
-                    <span className="text-xs text-gray-500 dark:text-gray-500">
+                    <span className="text-xs text-gray-600 dark:text-gray-400">
                       empty — drop numbers here
                     </span>
                   ) : (
@@ -535,7 +535,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
           </p>
           <div className="flex min-h-7 flex-wrap gap-1.5">
             {draft.unassigned.length === 0 ? (
-              <span className="text-xs text-gray-500 dark:text-gray-500">empty</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">empty</span>
             ) : (
               draft.unassigned.map((id) => chip(id))
             )}
@@ -576,7 +576,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
                     setPlanNumbers(next);
                   }}
                 />
-                #{n.number} <span className="text-gray-500 dark:text-gray-500">{n.owner}</span>
+                #{n.number} <span className="text-gray-500 dark:text-gray-400">{n.owner}</span>
               </label>
             ))}
         </div>

@@ -10,22 +10,32 @@ export type StampWeek = {
   id: string;
   weekNumber: number;
   date: string;
-  status: "PAID" | "LATE" | "DEFERRED" | "PARTIAL" | "PENDING";
+  status: "PAID" | "LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
   isPayoutWeek: boolean;
 };
 
+// A member reads these. DEFERRED must not look like forgiveness — the money
+// is still theirs to pay; we simply are not chasing them for it.
 const STATUS_LABEL: Record<StampWeek["status"], string> = {
   PAID: "Paid",
   LATE: "Late",
-  DEFERRED: "Excused",
+  DEFERRED: "Deferred",
+  SKIPPED: "Skipped",
   PARTIAL: "Partial",
   PENDING: "Upcoming",
+};
+
+/** The sub-line under the badge, so nobody misreads a deferral. */
+const STATUS_NOTE: Partial<Record<StampWeek["status"], string>> = {
+  DEFERRED: "still owed, not chased",
+  SKIPPED: "nobody owed this week",
 };
 
 const BADGE_CLS: Record<StampWeek["status"], string> = {
   PAID: "text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40",
   LATE: "text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/40",
-  DEFERRED: "text-orange-700 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40",
+  DEFERRED: "text-sky-800 dark:text-sky-300 bg-sky-100 dark:bg-sky-900/50",
+  SKIPPED: "text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700/60",
   PARTIAL: "text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40",
   PENDING: "text-gray-500 dark:text-gray-400",
 };
@@ -213,7 +223,7 @@ export function WeekStampList({
             )}
 
             <div className="relative z-10 flex items-center gap-2 px-2.5 py-2 text-xs">
-              <span className="w-5 text-[11px] text-center font-mono font-bold text-gray-500 dark:text-gray-500 shrink-0 tabular-nums">
+              <span className="w-5 text-[11px] text-center font-mono font-bold text-gray-500 dark:text-gray-400 shrink-0 tabular-nums">
                 {w.weekNumber}
               </span>
 
@@ -222,7 +232,7 @@ export function WeekStampList({
               {w.isPayoutWeek && (
                 <span
                   className="text-[9px] font-bold uppercase tracking-wider shrink-0"
-                  style={{ color: "var(--accent)" }}
+                  style={{ color: "var(--accent-text)" }}
                 >
                   payout
                 </span>

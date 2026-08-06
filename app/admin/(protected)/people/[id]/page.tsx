@@ -4,13 +4,15 @@ import { getCatchUpWeeks } from "@/app/actions/payments-view";
 import { getMemberStanding } from "@/app/actions/payments";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
-import { formatDateUTC, formatMoney } from "@/lib/format";
+import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
+import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { ledgerBalance } from "@/lib/ledger";
-import { calculateFinishWeek, dateOfWeek } from "@/lib/money";
+import { calculateFinishWeek } from "@/lib/money";
 import { defaultPinForPhone } from "@/lib/pin";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { calculatePayout } from "@/lib/wheel";
+import { AssignPayout } from "./assign-payout";
 import { MemberPayments } from "./member-payments";
 import { MemberTabBar, parseTab } from "./member-tabs";
 import { MessagesOptOut } from "./messages-opt-out";
@@ -29,6 +31,9 @@ export const dynamic = "force-dynamic";
 //   SETTINGS  participation (the ONLY editor), lucky numbers, person, PIN, hardship
 //   HISTORY   every cycle this person has been in
 // Standing is derived by getMemberStanding — nothing recomputed here (2.14).
+// One finish sentence for the whole platform (2.22) — the same finishLine the
+// wizard and the participation editor render, so the card cannot drift into a
+// fourth phrasing of the same fact.
 export default async function PersonPage({
   params,
   searchParams,
@@ -55,6 +60,8 @@ export default async function PersonPage({
               startDate: true,
               plannedWeeks: true,
               feePercent: true,
+              // The stored week rows win over any projection (2.14, 2.7).
+              weeks: { select: { weekNumber: true, date: true } },
             },
           },
           luckyNumbers: {
@@ -81,6 +88,18 @@ export default async function PersonPage({
   const [standing, catchUp] = active
     ? await Promise.all([getMemberStanding(active.id), getCatchUpWeeks(active.id)])
     : [null, null];
+
+  // The one finish preview this page shows (2.22) — same pure module as every
+  // editable surface, so the card, the editor and the wizard all agree.
+  const payoutFinish = active
+    ? finishPreview({
+        cycleStartDate: active.cycle.startDate,
+        plannedWeeks: active.cycle.plannedWeeks,
+        startWeek: active.startWeek,
+        weeksCommitted: active.weeksCommitted,
+        stored: storedWeekDates(active.cycle.weeks),
+      })
+    : null;
 
   const carried = ledgerBalance(person.ledgerEntries);
   // Lock state (2.23), computed once server-side — the client renders labels.
@@ -147,7 +166,7 @@ export default async function PersonPage({
       {/* ————— HEADER — always visible, never scrolls away ————— */}
       <header className="sticky top-0 z-20 -mx-4 border-b border-gray-200 dark:border-gray-800 bg-[var(--page-bg)]/95 px-4 pb-2 pt-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--page-bg)]/80 sm:-mx-6 sm:px-6">
         <p className="mb-1 text-sm">
-          <Link href="/admin/people" className="text-gray-500 dark:text-gray-400 hover:underline">
+          <Link href="/admin/people" className="text-gray-600 dark:text-gray-400 hover:underline">
             ← Directory
           </Link>
         </p>
@@ -218,12 +237,12 @@ export default async function PersonPage({
           <dl className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1 sm:grid-cols-5">
             {stats.map((s) => (
               <div key={s.label}>
-                <dt className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-500">
+                <dt className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
                   {s.label}
                 </dt>
                 <dd className="text-sm font-black tabular-nums text-gray-900 dark:text-white">
                   {s.value}{" "}
-                  <span className="font-normal text-[11px] text-gray-500 dark:text-gray-500">
+                  <span className="font-normal text-[11px] text-gray-600 dark:text-gray-400">
                     {s.sub}
                   </span>
                 </dd>
@@ -280,9 +299,10 @@ export default async function PersonPage({
                 amountDue: w.amountDue,
                 amountAlreadyPaid: w.amountAlreadyPaid,
                 isDeferred: w.isDeferred,
+                isSkipped: w.isSkipped,
                 status:
                   standing.data.weeks.find((sw) => sw.weekNumber === w.weekNumber)?.status ??
-                  (w.isDeferred ? "DEFERRED" : "UNPAID"),
+                  (w.isSkipped ? "SKIPPED" : w.isDeferred ? "DEFERRED" : "UNPAID"),
               }))}
             />
           </div>
@@ -311,14 +331,8 @@ export default async function PersonPage({
                 title="Payout"
                 sub={
                   <>
-                    {formatMoney(active.weeklyAmount)}/week · weeks {active.startWeek}–
-                    {calculateFinishWeek(active.startWeek, active.weeksCommitted)} · finishes{" "}
-                    {formatDateUTC(
-                      dateOfWeek(
-                        active.cycle.startDate,
-                        calculateFinishWeek(active.startWeek, active.weeksCommitted),
-                      ),
-                    )}
+                    {formatMoney(active.weeklyAmount)}/week · from week {active.startWeek}
+                    {payoutFinish !== null && <> · {finishLine(payoutFinish, formatDateLongUTC, active.cycle.plannedWeeks)}</>}
                   </>
                 }
               />
@@ -390,6 +404,11 @@ export default async function PersonPage({
                     .
                   </p>
                 )}
+
+                {/* 2.2: the organizer may simply DECIDE to pay someone out. */}
+                <div className="mt-4 border-t border-gray-100 dark:border-gray-800/60 pt-4">
+                  <AssignPayout participationId={active.id} />
+                </div>
               </div>
             </Card>
           )}
@@ -417,6 +436,11 @@ export default async function PersonPage({
                   startWeek: active.startWeek,
                   weeksCommitted: active.weeksCommitted,
                   plannedWeeks: active.cycle.plannedWeeks,
+                  cycleStartDate: active.cycle.startDate.toISOString(),
+                  cycleWeeks: active.cycle.weeks.map((w) => ({
+                    weekNumber: w.weekNumber,
+                    date: w.date.toISOString(),
+                  })),
                   personName: person.nameEnglishFirst,
                   cycleName: active.cycle.name,
                 }}
@@ -471,6 +495,11 @@ export default async function PersonPage({
                     startWeek: active.startWeek,
                     weeksCommitted: active.weeksCommitted,
                     plannedWeeks: active.cycle.plannedWeeks,
+                    cycleStartDate: active.cycle.startDate.toISOString(),
+                    cycleWeeks: active.cycle.weeks.map((w) => ({
+                      weekNumber: w.weekNumber,
+                      date: w.date.toISOString(),
+                    })),
                     personName: person.nameEnglishFirst,
                     cycleName: active.cycle.name,
                   }}
@@ -592,6 +621,16 @@ export default async function PersonPage({
                       </td>
                       <td className="border-b border-gray-100 dark:border-gray-800/60 py-2 pr-3 tabular-nums text-gray-700 dark:text-gray-300">
                         {p.startWeek}–{calculateFinishWeek(p.startWeek, p.weeksCommitted)}
+                        <span className="ml-1.5 font-normal text-gray-600 dark:text-gray-400">
+                          {(() => {
+                            const r = resolveWeekDate({
+                              weekNumber: calculateFinishWeek(p.startWeek, p.weeksCommitted),
+                              stored: storedWeekDates(p.cycle.weeks),
+                              cycleStartDate: p.cycle.startDate,
+                            });
+                            return r === null ? "" : formatDateUTC(r.date);
+                          })()}
+                        </span>
                       </td>
                       <td className="border-b border-gray-100 dark:border-gray-800/60 py-2">
                         <Pill tone={p.status === "ACTIVE" ? "good" : "neutral"}>

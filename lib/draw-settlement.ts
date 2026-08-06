@@ -102,7 +102,9 @@ export async function settleWinnerWeeks(
     const weekNumber = draw.week.weekNumber;
     const finishWeek = calculateFinishWeek(participation.startWeek, participation.weeksCommitted);
     const inWindow = weekNumber >= participation.startWeek && weekNumber <= finishWeek;
-    const excused = draw.week.isSkipped || (paymentRow?.isDeferred ?? false);
+    // Only a SKIPPED week excuses the contribution. A DEFERRED week is still
+    // owed (organizer ruling, Aug 2026), so the payout settles it like any other.
+    const excused = draw.week.isSkipped;
     const amountDue = inWindow && !excused ? participation.weeklyAmount : 0;
 
     const plan = planWinnerWeekSettlement({

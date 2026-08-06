@@ -262,7 +262,7 @@ export function CloseFlow({ review }: { review: Review }) {
         >
           Close {review.cycleName}…
         </button>
-        <span className="text-xs text-gray-500 dark:text-gray-500">
+        <span className="text-xs text-gray-600 dark:text-gray-400">
           Typed confirmation required — this writes ledger debts.
         </span>
       </div>

@@ -36,6 +36,8 @@ export type WeekGroup = {
   drawId: string | null;
   weekNumber: number | null;
   weekDate: string | null;
+  /** 2.2: the organizer decided this payout rather than spinning for it. */
+  assignedManually: boolean;
   payouts: PayoutRow[];
   undo: UndoDrawConsequences | null;
 };
@@ -93,23 +95,38 @@ export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cy
 
       {groups.map((group) => (
         <Card key={group.drawId ?? "unlinked"}>
-          <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4 pb-2">
-            <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-              {group.weekNumber !== null ? (
-                <>
-                  Week {group.weekNumber}
-                  <span className="ml-2 font-normal tabular-nums text-gray-500 dark:text-gray-500">
-                    {group.weekDate ? formatDateUTC(new Date(group.weekDate)) : ""}
-                  </span>
-                </>
-              ) : (
-                "Not linked to a draw"
-              )}
-            </h2>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pt-4 pb-2">
+            <div className="min-w-0">
+              <h2 className="flex flex-wrap items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
+                {group.weekNumber !== null ? (
+                  <>
+                    <span>Week {group.weekNumber}</span>
+                    <span className="font-normal tabular-nums text-gray-500 dark:text-gray-400">
+                      {group.weekDate ? formatDateUTC(new Date(group.weekDate)) : ""}
+                    </span>
+                    {group.assignedManually && <Pill tone="accent">assigned, not drawn</Pill>}
+                  </>
+                ) : (
+                  "Not linked to a draw"
+                )}
+              </h2>
+              {/* The week's own subtotal — what this draw is worth, and what
+                  of it is still owed. Computed here, never typed in. */}
+              <p className="mt-0.5 text-xs tabular-nums text-gray-600 dark:text-gray-400">
+                {group.payouts.length} payout{group.payouts.length === 1 ? "" : "s"} ·{" "}
+                {formatMoney(group.payouts.reduce((s, p) => s + p.netAmount, 0))} total
+                {(() => {
+                  const owed = group.payouts
+                    .filter((p) => p.status === "PENDING")
+                    .reduce((s, p) => s + p.netAmount, 0);
+                  return owed > 0 ? ` · ${formatMoney(owed)} still to hand over` : " · all collected";
+                })()}
+              </p>
+            </div>
             {group.drawId && group.undo && (
               <button
                 type="button"
-                className={buttonCls.danger + " !px-3 !py-1.5 !text-xs"}
+                className={buttonCls.dangerQuiet + " !text-xs"}
                 onClick={() => {
                   const u = group.undo!;
                   ask(
@@ -263,41 +280,49 @@ function PayoutLine({
 
   return (
     <li className="px-5 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-        <span
-          className="inline-flex select-none items-center rounded-full border px-2.5 py-0.5 text-[11px] font-black tabular-nums"
-          style={{
-            background: "var(--gold-badge-bg)",
-            borderColor: "var(--gold-badge-border)",
-            color: "var(--gold-badge-text)",
-          }}
-        >
-          #{p.number}
-        </span>
-        <span className="min-w-28 font-semibold text-gray-900 dark:text-white">{p.who}</span>
-        <span className="tabular-nums text-gray-600 dark:text-gray-400">
-          {formatMoney(p.grossAmount)} gross · {formatMoney(p.feeAmount)} fee
-          {p.settlementAmount > 0 && (
-            <>
-              {" "}
-              · week {weekNumber} contribution {formatMoney(p.settlementAmount)} deducted
-            </>
-          )}
-        </span>
-        <span className="font-bold tabular-nums text-gray-900 dark:text-white">
-          {formatMoney(p.netAmount)} net
-        </span>
-        <Pill tone={p.status === "COLLECTED" ? "good" : "attention"}>
-          {p.status === "COLLECTED" ? "Collected" : "Pending"}
-        </Pill>
-        {p.status === "COLLECTED" && (
-          <span className="text-xs tabular-nums text-gray-500 dark:text-gray-500">
-            {p.method ?? "—"}
-            {p.paidAt ? ` · ${formatDateUTC(new Date(p.paidAt + "T00:00:00Z"))}` : ""}
-          </span>
-        )}
+      {/* One obligation per row, read left to right: who, then the state,
+          then the money right-aligned so a column of figures lines up. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="inline-flex select-none items-center rounded-full border px-2.5 py-0.5 text-[11px] font-black tabular-nums"
+              style={{
+                background: "var(--gold-badge-bg)",
+                borderColor: "var(--gold-badge-border)",
+                color: "var(--gold-badge-text)",
+              }}
+            >
+              #{p.number}
+            </span>
+            <span className="truncate font-bold text-gray-900 dark:text-white">{p.who}</span>
+            <Pill tone={p.status === "COLLECTED" ? "good" : "attention"}>
+              {p.status === "COLLECTED" ? "Collected" : "Pending"}
+            </Pill>
+          </div>
+          <p className="mt-0.5 text-xs tabular-nums text-gray-600 dark:text-gray-400">
+            {formatMoney(p.grossAmount)} gross · {formatMoney(p.feeAmount)} fee
+            {p.settlementAmount > 0 && (
+              <> · week {weekNumber} contribution {formatMoney(p.settlementAmount)} deducted</>
+            )}
+            {p.status === "COLLECTED" && (
+              <>
+                {" · "}
+                {p.method ?? "—"}
+                {p.paidAt ? ` · ${formatDateUTC(new Date(p.paidAt + "T00:00:00Z"))}` : ""}
+              </>
+            )}
+          </p>
+        </div>
 
-        <span className="ml-auto flex items-center gap-1.5">
+        <p className="text-right text-base font-black tabular-nums leading-none text-gray-900 dark:text-white">
+          {formatMoney(p.netAmount)}
+          <span className="ml-1 text-[11px] font-semibold text-gray-500 dark:text-gray-400">
+            net
+          </span>
+        </p>
+
+        <span className="flex items-center gap-1.5">
           {p.status === "PENDING" && (
             <button
               type="button"
@@ -350,7 +375,7 @@ function PayoutLine({
                 `✓ #${p.number}'s payout deleted — the draw stands.`,
               )
             }
-            className={buttonCls.danger + " !px-2.5 !py-1.5 !text-xs"}
+            className={buttonCls.dangerQuiet + " !text-xs"}
           >
             Delete payout
           </button>

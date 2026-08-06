@@ -27,7 +27,7 @@ export default async function ArchivePage({ params }: { params: Promise<{ id: st
     <main className="space-y-6">
       <header className="animate-fade-in-up">
         <p className="mb-1 text-sm">
-          <Link href="/admin/cycle/close" className="text-gray-500 dark:text-gray-400 hover:underline">
+          <Link href="/admin/cycle/close" className="text-gray-600 dark:text-gray-400 hover:underline">
             ← Closing
           </Link>
         </p>
@@ -98,7 +98,7 @@ export default async function ArchivePage({ params }: { params: Promise<{ id: st
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-1.5 tabular-nums text-gray-700 dark:text-gray-300">
                     {m.receivedNet > 0 ? formatMoney(m.receivedNet) : "—"}
                     {m.settledFromPayout > 0 && (
-                      <span className="block text-[11px] text-gray-500 dark:text-gray-500">
+                      <span className="block text-[11px] text-gray-500 dark:text-gray-400">
                         + {formatMoney(m.settledFromPayout)} settled onto their win week
                       </span>
                     )}

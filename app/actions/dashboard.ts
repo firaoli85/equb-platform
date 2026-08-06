@@ -11,6 +11,7 @@ import {
   type DashboardPayment,
 } from "@/lib/dashboard";
 import { PAYMENT_WINDOW_DAYS } from "@/lib/derived";
+import { elapsedThroughWeek } from "@/lib/commitment";
 import { currentWeekNumber } from "@/lib/money";
 import { redactDashboard } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
@@ -72,7 +73,8 @@ export async function getDashboard() {
         participationId: participation.id,
         weekNumber: payment.week.weekNumber,
         amountPaid: payment.amountPaid,
-        isDeferred: payment.isDeferred || payment.week.isSkipped,
+        isDeferred: payment.isDeferred,
+        isSkipped: payment.week.isSkipped,
       })),
     );
 
@@ -97,7 +99,9 @@ export async function getDashboard() {
     const attention = memberAttention({
       participations: activeNamed,
       payments: flatPayments,
-      currentWeek,
+      // 2.14: the money boundary is each week's OWN stored date, never the
+      // week number projected off an editable cycle start date.
+      elapsedThroughWeek: elapsedThroughWeek(cycle.weeks, today),
     });
 
     // Weeks whose payment window has CLOSED with money still outstanding
@@ -170,6 +174,7 @@ export async function getDashboard() {
           weekNumber: currentWeek,
           participations: activeNamed,
           payments: flatPayments,
+          isSkipped: cycle.weeks.find((w) => w.weekNumber === currentWeek)?.isSkipped ?? false,
         }),
       // 2.23: locked-out members surface HERE — the organizer must never
       // have to hunt for who is stuck. Derived from rows already loaded;

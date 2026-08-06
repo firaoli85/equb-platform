@@ -19,6 +19,7 @@ import { allocatePayment, type AllocationResult, type AllocationWeek } from "./a
 import {
   amountOutstanding,
   paymentStatus,
+  weekHasElapsed,
   weeksBehind,
   weeksCredited,
   type PaymentStatusValue,
@@ -33,8 +34,17 @@ export type StandingWeekInput = {
   amountDue: number;
   /** Receipts recorded on this week's row, in cents. */
   storedPaid: number;
-  /** Personal deferral or cycle-wide skipped week — excused, never owed. */
+  /**
+   * THIS MEMBER's week is not chased — the money is STILL OWED (organizer
+   * ruling, Aug 2026). It counts toward outstanding and weeks-behind, and
+   * money allocates to it normally; it simply never reads LATE.
+   */
   isDeferred: boolean;
+  /**
+   * CYCLE-WIDE: the week did not happen, so nobody owes it. Fully excused —
+   * this is what deferral used to mean. Never conflate the two.
+   */
+  isSkipped?: boolean;
 };
 
 export type StandingWeek = {
@@ -46,6 +56,7 @@ export type StandingWeek = {
   /** What the member's fungible money covers here at the current rate. */
   coveredAtCurrentRate: number;
   isDeferred: boolean;
+  isSkipped: boolean;
   status: PaymentStatusValue;
 };
 
@@ -73,7 +84,11 @@ export function computeStanding(input: {
   weeklyAmount: number;
   startWeek: number;
   weeksCommitted: number;
-  /** The cycle's current calendar week (0 before the cycle starts). */
+  /**
+   * The cycle's current calendar week (0 before the cycle starts). DISPLAY
+   * ONLY — no money number derives from it (2.14). Elapsed weeks come from
+   * each week row's own stored date.
+   */
   cycleWeek: number;
   today: Date;
   windowWeeks: readonly StandingWeekInput[];
@@ -81,16 +96,17 @@ export function computeStanding(input: {
   /** Payout-settled cents per weekNumber — NOT fungible, stays on its week. */
   pinnedByWeek?: ReadonlyMap<number, number>;
 }): Standing {
-  const { windowWeeks, cycleWeek, today, totalPaid } = input;
+  const { windowWeeks, today, totalPaid } = input;
   const finishWeek = calculateFinishWeek(input.startWeek, input.weeksCommitted);
 
-  // Pinned settlements land on their own week first (capped at its due; an
-  // excused week takes nothing — that money becomes fungible again).
+  // Pinned settlements land on their own week first (capped at its due). A
+  // SKIPPED week takes nothing — that money becomes fungible again. A
+  // DEFERRED week still owes, so its settlement lands normally.
   const pinnedApplied = new Map<number, number>();
   let pinnedTotal = 0;
   for (const w of windowWeeks) {
     const pinned = input.pinnedByWeek?.get(w.weekNumber) ?? 0;
-    if (pinned <= 0 || w.isDeferred) continue;
+    if (pinned <= 0 || w.isSkipped) continue;
     const applied = Math.min(pinned, w.amountDue);
     if (applied > 0) {
       pinnedApplied.set(w.weekNumber, applied);
@@ -107,7 +123,8 @@ export function computeStanding(input: {
         weekNumber: w.weekNumber,
         amountDue: w.amountDue,
         amountAlreadyPaid: pinnedApplied.get(w.weekNumber) ?? 0,
-        isDeferred: w.isDeferred,
+        // Only a skipped week is passed over — deferred money is still owed.
+        isSkipped: w.isSkipped ?? false,
       }),
     ),
   );
@@ -116,15 +133,27 @@ export function computeStanding(input: {
     coveredByWeek.set(a.weekNumber, (coveredByWeek.get(a.weekNumber) ?? 0) + a.applied);
   }
 
-  const elapsed = windowWeeks.filter((w) => w.weekNumber <= cycleWeek);
-  const deferredElapsed = elapsed.filter((w) => w.isDeferred).length;
+  // ELAPSED IS DECIDED BY EACH WEEK'S OWN STORED DATE (2.14), not by
+  // projecting a week number off the cycle's start date. `cycleWeek` is still
+  // accepted — the calendar position is a useful DISPLAY fact — but no money
+  // number depends on it any more, so correcting a start date can never move
+  // anyone's arrears while their week rows are unchanged.
+  //
+  // The boundary is the payment window, the same one paymentStatus uses for
+  // LATE: a week the screen still shows as UNPAID-and-open can no longer also
+  // count as behind.
+  const elapsed = windowWeeks.filter((w) => weekHasElapsed({ weekDate: w.date, today }));
+  // Only SKIPPED weeks are taken off the behind-count. A deferred week the
+  // member has not paid makes them behind exactly like any other.
+  const skippedElapsed = elapsed.filter((w) => w.isSkipped).length;
   const credited = weeksCredited(totalPaid, input.weeklyAmount);
-  const behind = weeksBehind(elapsed.length, credited, deferredElapsed);
+  const behind = weeksBehind(elapsed.length, credited, skippedElapsed);
   const outstanding = amountOutstanding(
     elapsed.map((w) => ({
       amountDue: w.amountDue,
       amountAlreadyPaid: coveredByWeek.get(w.weekNumber) ?? 0,
       isDeferred: w.isDeferred,
+      isSkipped: w.isSkipped ?? false,
     })),
   );
 
@@ -147,10 +176,12 @@ export function computeStanding(input: {
       amountPaid: w.storedPaid,
       coveredAtCurrentRate: coveredByWeek.get(w.weekNumber) ?? 0,
       isDeferred: w.isDeferred,
+      isSkipped: w.isSkipped ?? false,
       status: paymentStatus({
         amountPaid: coveredByWeek.get(w.weekNumber) ?? 0,
         amountDue: w.amountDue,
         isDeferred: w.isDeferred,
+        isSkipped: w.isSkipped ?? false,
         weekDate: w.date,
         today,
       }),

@@ -19,6 +19,7 @@ import {
   type SendTrigger,
   type StandingFacts,
 } from "./messages";
+import { resolveWeekDate, storedWeekDates } from "./commitment";
 import { calculateFinishWeek, currentWeekNumber } from "./money";
 import { toE164 } from "./phone";
 import { prisma } from "./prisma";
@@ -97,7 +98,8 @@ export async function loadStandingFacts(participationId: string): Promise<Loaded
           date: w.date,
           amountDue: participation.weeklyAmount,
           storedPaid: payment?.amountPaid ?? 0,
-          isDeferred: (payment?.isDeferred ?? false) || w.isSkipped,
+          isDeferred: payment?.isDeferred ?? false,
+          isSkipped: w.isSkipped,
         };
       }),
     totalPaid: participation.payments.reduce((sum, p) => sum + p.amountPaid, 0),
@@ -115,6 +117,14 @@ export async function loadStandingFacts(participationId: string): Promise<Loaded
     weeksCommitted: participation.weeksCommitted,
     currentCycleWeek: cycleWeek,
     finishWeek: standing.finishWeek,
+    // 2.22: a statement states the member's own finish DATE, not just a week.
+    // 2.14: a statement quotes the day that actually belonged to that week.
+    finishDate:
+      resolveWeekDate({
+        weekNumber: standing.finishWeek,
+        stored: storedWeekDates(participation.cycle.weeks),
+        cycleStartDate: participation.cycle.startDate,
+      })?.date ?? null,
     weeksCredited: standing.weeksCredited,
     weeksBehind: standing.weeksBehind,
     amountOutstanding: standing.amountOutstanding,
@@ -156,6 +166,9 @@ async function deliver(input: {
     trigger: input.trigger,
     noMessages: person.noMessages,
     hasPhone: (person.phone?.trim() ?? "") !== "",
+    // The derived weeks let the gate leave deferred members out of the
+    // chasing types — the debt stays on every statement either way.
+    weeks: input.facts.weeks,
   });
   if (!decision.send) return { status: "SKIPPED", reason: decision.reason };
 

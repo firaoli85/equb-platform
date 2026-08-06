@@ -8,42 +8,17 @@ import { Alert } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney } from "@/lib/format";
 import { matchesFilter, buildMemberRows, type MemberFilter } from "@/lib/members-view";
 import { type PaymentGrid } from "@/lib/payments-view";
+import { STATUS_LABELS, STATUS_LEGEND, statusLabel } from "@/lib/status-labels";
 
 // THE GRID — the map (2.15): everyone at once, to spot patterns. It does not
 // record money by itself; clicking a cell opens the SAME per-week panel the
 // Members view uses, so there is one way to do each thing. Paid/unpaid/
 // partial/late are DERIVED (2.14) and have no direct setter anywhere.
 
-// Same MEASURED palette as the Members view — one visual language for a
-// status wherever it appears, every pair over 4.5:1 in both themes.
-const MARKERS: Record<string, { label: string; className: string; meaning: string }> = {
-  PAID: {
-    label: "✓",
-    className: "bg-emerald-700 text-white",
-    meaning: "paid in full",
-  },
-  PARTIAL: {
-    label: "◐",
-    className: "bg-amber-400 text-amber-950",
-    meaning: "partially paid",
-  },
-  UNPAID: {
-    label: "·",
-    className: "bg-gray-100 text-gray-700 dark:bg-[#2f2f2f] dark:text-gray-100",
-    meaning: "unpaid, window open",
-  },
-  LATE: {
-    label: "✗",
-    className: "bg-red-600 text-white",
-    meaning: "unpaid, window closed",
-  },
-  DEFERRED: {
-    label: "—",
-    className: "bg-gray-300 text-gray-800 dark:bg-gray-600 dark:text-gray-100",
-    meaning: "deferred (excused)",
-  },
-};
-
+// The status vocabulary lives in ONE place (lib/status-labels) so a week can
+// never be called one thing here and another on the Members view or the
+// member profile. Every pair is MEASURED over 4.5:1 in both themes.
+const MARKERS = STATUS_LABELS;
 export function PaymentsGrid({
   data,
   filter,
@@ -130,16 +105,19 @@ export function PaymentsGrid({
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-700 dark:text-gray-300">
-        {Object.entries(MARKERS).map(([key, m]) => (
+        {STATUS_LEGEND.map((key) => {
+          const m = MARKERS[key];
+          return (
           <span key={key} className="flex items-center gap-1.5">
             <span
-              className={`inline-flex h-5 w-5 items-center justify-center rounded font-bold ${m.className}`}
+              className={`inline-flex h-5 w-5 items-center justify-center rounded font-bold ${m.cls}`}
             >
-              {m.label}
+              {m.glyph}
             </span>
             {m.meaning}
           </span>
-        ))}
+          );
+        })}
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-5 w-5 rounded text-center text-gray-400 dark:text-gray-600">
             ○
@@ -181,11 +159,11 @@ export function PaymentsGrid({
                         {c.name.split("—")[1]?.trim() ?? c.name}
                       </Link>
                     )}
-                    <span className="block text-[10px] font-medium text-gray-500 dark:text-gray-500">
+                    <span className="block text-[10px] font-medium text-gray-500 dark:text-gray-400">
                       {c.numbersLabel}
                     </span>
                     {c.startWeek > 1 && (
-                      <span className="block text-[10px] font-medium text-gray-500 dark:text-gray-500">
+                      <span className="block text-[10px] font-medium text-gray-500 dark:text-gray-400">
                         joined wk {c.startWeek}
                       </span>
                     )}
@@ -212,7 +190,7 @@ export function PaymentsGrid({
                     }`}
                   >
                     <span className="tabular-nums">{row.weekNumber}</span>
-                    <span className="ml-1.5 font-normal tabular-nums text-gray-500 dark:text-gray-500">
+                    <span className="ml-1.5 font-normal tabular-nums text-gray-500 dark:text-gray-400">
                       {formatDateUTC(row.date)}
                     </span>
                     {isNow && (
@@ -251,11 +229,11 @@ export function PaymentsGrid({
                       );
                     }
 
-                    const marker = MARKERS[cell.status];
+                    const marker = statusLabel(cell.status);
                     const isOpen =
                       open?.participationId === column.participationId &&
                       open?.weekNumber === row.weekNumber;
-                    const label = `${column.name} — week ${row.weekNumber}: ${cell.status.toLowerCase()}, ${formatMoney(cell.storedPaid)} of ${formatMoney(cell.amountDue)}`;
+                    const label = `${column.name} — week ${row.weekNumber}: ${marker.meaning}, ${formatMoney(cell.storedPaid)} of ${formatMoney(cell.amountDue)}`;
 
                     if (presentation) {
                       return (
@@ -264,10 +242,10 @@ export function PaymentsGrid({
                           className={`border border-gray-100 dark:border-gray-800/60 p-0.5 text-center ${nowBg}`}
                         >
                           <span
-                            title={`${column.numbersLabel} — week ${row.weekNumber}: ${cell.status.toLowerCase()}`}
-                            className={`flex h-8 w-full min-w-9 items-center justify-center rounded font-bold ${marker.className}`}
+                            title={`${column.numbersLabel} — week ${row.weekNumber}: ${marker.meaning}`}
+                            className={`flex h-8 w-full min-w-9 items-center justify-center rounded font-bold ${marker.cls}`}
                           >
-                            {marker.label}
+                            {marker.glyph}
                           </span>
                         </td>
                       );
@@ -291,11 +269,11 @@ export function PaymentsGrid({
                           }
                           aria-label={label}
                           title={label}
-                          className={`flex h-8 w-full min-w-9 items-center justify-center rounded font-bold transition-transform duration-100 ease-out hover:brightness-110 active:scale-95 ${marker.className} ${
+                          className={`flex h-8 w-full min-w-9 items-center justify-center rounded font-bold transition-transform duration-100 ease-out hover:brightness-110 active:scale-95 ${marker.cls} ${
                             isOpen ? "outline outline-2 outline-indigo-600" : ""
                           }`}
                         >
-                          {marker.label}
+                          {marker.glyph}
                         </button>
                       </td>
                     );

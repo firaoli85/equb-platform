@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { getDashboard } from "@/app/actions/dashboard";
+import { getWaiting } from "@/app/actions/waiting";
+import { WaitingSummary } from "@/components/admin/waiting-summary";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatMoney } from "@/lib/format";
@@ -10,7 +12,9 @@ export const dynamic = "force-dynamic";
 // financial world, in front of him, without hunting. The wheel is a tool
 // inside the platform — this page is the platform.
 export default async function CommandCenterPage() {
-  const result = await getDashboard();
+  // Both reads in parallel — the obligations section is part of the command
+  // center (2.1), not a page the organizer has to go looking for.
+  const [result, waiting] = await Promise.all([getDashboard(), getWaiting()]);
 
   if (!result.ok) {
     return (
@@ -171,6 +175,9 @@ export default async function CommandCenterPage() {
         </p>
       </section>
 
+      {/* ————— Who is waiting — the money the group OWES (2.1) ————— */}
+      {waiting.ok && <WaitingSummary data={waiting.data} />}
+
       {/* ————— This week ————— */}
       <Card className="animate-fade-in-up-2">
         <CardHeader
@@ -247,7 +254,7 @@ export default async function CommandCenterPage() {
                       {m.name}
                     </span>
                     <Pill tone="problem">PIN locked · {m.minutesLeft} min left — unlock?</Pill>
-                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                   </Link>
@@ -265,7 +272,7 @@ export default async function CommandCenterPage() {
                     <Pill tone="attention">
                       {m.weeksBehind} behind · {formatMoney(m.amountOwed)} owed
                     </Pill>
-                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                   </Link>
@@ -286,7 +293,7 @@ export default async function CommandCenterPage() {
                       )}
                     </span>
                     <Pill tone="accent">{formatMoney(p.netAmount)} pending</Pill>
-                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                   </Link>
@@ -302,7 +309,7 @@ export default async function CommandCenterPage() {
                       Week {w.weekNumber} closed with money outstanding
                     </span>
                     <Pill tone="problem">{formatMoney(w.shortfall)} outstanding</Pill>
-                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                   </Link>

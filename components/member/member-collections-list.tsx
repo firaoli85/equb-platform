@@ -41,7 +41,7 @@ export function MemberCollectionsList({
         <h1 className="text-xl font-black text-gray-900 dark:text-white text-balance">
           Collections
         </h1>
-        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
+        <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 tabular-nums">
           Who has been drawn, by lucky number · Week {currentWeek}
         </p>
       </div>
@@ -65,7 +65,7 @@ export function MemberCollectionsList({
           ))
         )}
         {nextDraw && (
-          <p className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums pt-1 border-t border-indigo-100 dark:border-indigo-900/50">
+          <p className="text-[11px] text-gray-600 dark:text-gray-400 tabular-nums pt-1 border-t border-indigo-100 dark:border-indigo-900/50">
             Next draw: week {nextDraw.weekNumber} · {formatDateUTC(nextDraw.date)}
           </p>
         )}
@@ -73,7 +73,7 @@ export function MemberCollectionsList({
 
       {/* ── Draw history — numbers only ───────────────────────────── */}
       {draws.length === 0 ? (
-        <p className="text-center py-10 text-sm text-gray-500 dark:text-gray-500">
+        <p className="text-center py-10 text-sm text-gray-600 dark:text-gray-400">
           No draws yet — the first one starts the history.
         </p>
       ) : (
@@ -93,7 +93,7 @@ export function MemberCollectionsList({
                   <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                     {numbersLabel(d.numbers)}
                     {d.numbers.length > 1 && (
-                      <span className="font-normal text-gray-500 dark:text-gray-400"> — shared draw</span>
+                      <span className="font-normal text-gray-600 dark:text-gray-400"> — shared draw</span>
                     )}
                     {isMine && (
                       <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
@@ -101,7 +101,7 @@ export function MemberCollectionsList({
                       </span>
                     )}
                   </p>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums mt-0.5">
+                  <p className="text-[11px] text-gray-600 dark:text-gray-400 tabular-nums mt-0.5">
                     {formatDateUTC(d.date)}
                   </p>
                 </div>
@@ -121,7 +121,7 @@ export function MemberCollectionsList({
         </div>
       )}
 
-      <p className="text-center text-[11px] text-gray-500 dark:text-gray-500 leading-relaxed px-2">
+      <p className="text-center text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed px-2">
         Draws are shown by lucky number. Who holds which number stays private.
       </p>
     </div>

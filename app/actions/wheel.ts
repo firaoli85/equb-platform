@@ -6,7 +6,7 @@ import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { formatMoney } from "@/lib/format";
-import { currentWeekNumber } from "@/lib/money";
+import { currentWeekFromRows } from "@/lib/commitment";
 import { prisma, serializableTransaction } from "@/lib/prisma";
 import { frozenCycleRefusal } from "@/lib/cycle-close";
 import { SETTLEMENT_EVENT_WHERE, settleWinnerWeeks, unsettleDraw } from "@/lib/draw-settlement";
@@ -98,7 +98,13 @@ async function loadWheel(db: Prisma.TransactionClient | typeof prisma = prisma) 
     amount: n.amount,
     participationId: n.participationId,
   }));
-  const currentWeek = currentWeekNumber(cycle.startDate, new Date());
+  // 2.14: the clock comes from the stored week rows, so correcting a start
+  // date can never change who is eligible to be drawn.
+  const currentWeek = currentWeekFromRows({
+    weeks: cycle.weeks,
+    today: new Date(),
+    cycleStartDate: cycle.startDate,
+  });
   const eligible = eligibleNumbers({
     luckyNumbers: wheelNumbers,
     participations: wheelParticipations,
@@ -147,8 +153,15 @@ export async function getWheelState() {
           : loaded.anchoredNumberIds.has(n.id)
             ? "anchored"
             : null;
+      // A manually ASSIGNED payout takes the number out of the pool exactly
+      // like a spin does (2.27) — the wheel only distinguishes the WHY.
+      const manuallyAssigned = loaded.draws.some(
+        (d) => d.assignedManually && d.slot.members.some((m) => m.luckyNumberId === n.id),
+      );
       const lockReason = loaded.drawnNumberIds.has(n.id)
-        ? "already drawn — history, cannot move"
+        ? manuallyAssigned
+          ? "payout assigned manually — out of the pool, cannot move"
+          : "already drawn — history, cannot move"
         : loaded.committedNumberIds.has(n.id)
           ? "committed to a winner plan — cancel the plan to move it"
           : loaded.anchoredNumberIds.has(n.id)

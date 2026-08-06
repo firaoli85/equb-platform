@@ -16,23 +16,30 @@ const wk = (
   amountDue: 50_000,
   amountAlreadyPaid: 0,
   isDeferred: false,
+  isSkipped: false,
   ...over,
 });
 
 const WEEKS: SelectableWeek[] = [
   wk(1, { amountAlreadyPaid: 50_000 }), // paid
   wk(2), // owing
-  wk(3, { isDeferred: true }), // excused
+  wk(3, { isSkipped: true }), // never happened — nobody owed it
   wk(4, { amountAlreadyPaid: 20_000 }), // partial → owing
   wk(5), // owing
   wk(6), // owing
 ];
 
-describe("isSelectable — only owed, unexcused weeks", () => {
-  it("excludes paid and deferred weeks; includes partial and unpaid", () => {
+describe("isSelectable — only weeks still owed", () => {
+  it("excludes paid and SKIPPED weeks; includes partial and unpaid", () => {
     expect(selectableWeekNumbers(WEEKS)).toEqual([2, 4, 5, 6]);
     expect(isSelectable(wk(9, { amountAlreadyPaid: 50_000 }))).toBe(false);
-    expect(isSelectable(wk(9, { isDeferred: true }))).toBe(false);
+    expect(isSelectable(wk(9, { isSkipped: true }))).toBe(false);
+  });
+
+  // Organizer ruling (Aug 2026): a deferred week is still owed, so catching a
+  // member up must be able to include it.
+  it("INCLUDES a deferred week — deferral spares the chasing, not the debt", () => {
+    expect(isSelectable(wk(9, { isDeferred: true }))).toBe(true);
   });
 });
 

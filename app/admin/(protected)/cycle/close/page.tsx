@@ -31,7 +31,7 @@ export default async function CycleClosePage() {
     <main className="space-y-6">
       <header className="animate-fade-in-up">
         <p className="mb-1 text-sm">
-          <Link href="/admin/cycle" className="text-gray-500 dark:text-gray-400 hover:underline">
+          <Link href="/admin/cycle" className="text-gray-600 dark:text-gray-400 hover:underline">
             ← Cycle
           </Link>
         </p>

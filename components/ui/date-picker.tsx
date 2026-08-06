@@ -331,7 +331,7 @@ export function DatePicker({
                 <>
                   <div className="grid grid-cols-7">
                     {DAY_HEADS.map((d) => (
-                      <span key={d} className="py-1 text-center text-[10px] font-bold uppercase text-gray-500 dark:text-gray-500">
+                      <span key={d} className="py-1 text-center text-[10px] font-bold uppercase text-gray-500 dark:text-gray-400">
                         {d}
                       </span>
                     ))}

@@ -35,7 +35,7 @@ export default async function DocumentsPage() {
           </svg>
         </div>
         <p className="text-sm font-semibold text-gray-900 dark:text-white">No documents yet</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
           When the organizer shares something with the group, it appears here.
         </p>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   addLuckyNumber,
   deleteLuckyNumber,
@@ -16,7 +16,15 @@ import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog"
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Alert, buttonCls, Field, inputCls } from "@/components/ui/primitives";
-import { formatMoney, parseDollarsToCents } from "@/lib/format";
+import {
+  commitmentCap,
+  finishLine,
+  finishPreview,
+  parseWeekField,
+  storedWeekDates,
+  weeksToFinishWithGroup,
+} from "@/lib/commitment";
+import { formatDateLongUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import { nameConfirmed } from "@/lib/settlement";
 
 type Method = "ZELLE" | "CASH" | "OTHER" | null;
@@ -59,6 +67,14 @@ export function ParticipationEditor(props: {
     startWeek: number;
     weeksCommitted: number;
     plannedWeeks: number;
+    /** The cycle's week-1 date, ISO — the fallback when a week has no row. */
+    cycleStartDate: string;
+    /**
+     * The cycle's stored week rows. A week row records the day that actually
+     * happened, so it WINS over any projection off the start date (2.14, 2.7)
+     * — the start date is editable and existing rows are kept deliberately.
+     */
+    cycleWeeks: { weekNumber: number; date: string }[];
     personName: string;
     cycleName: string;
   };
@@ -133,6 +149,49 @@ export function ParticipationEditor(props: {
   const [weeks, setWeeks] = useState(String(participation.weeksCommitted));
   const [extend, setExtend] = useState(false);
 
+  // ————— 2.22: the organizer never calculates a finish —————
+  //
+  // Identical to the add-member wizard, through the same pure module: "Finish
+  // with the group" is ON by default and KEEPS TRACKING the start week, and
+  // the finish week + date are shown live whether the toggle is on or off.
+  const [finishWithGroup, setFinishWithGroup] = useState(true);
+
+  function chooseStartWeek(value: string) {
+    setStartWeek(value);
+    if (!finishWithGroup) return;
+    const next = parseWeekField(value);
+    if (next === null) return;
+    setWeeks(String(weeksToFinishWithGroup(participation.plannedWeeks, next)));
+  }
+
+  function toggleFinishWithGroup(on: boolean) {
+    setFinishWithGroup(on);
+    if (!on) return;
+    const from = parseWeekField(startWeek) ?? participation.startWeek;
+    setWeeks(String(weeksToFinishWithGroup(participation.plannedWeeks, from)));
+  }
+
+  const startWeekNum = parseWeekField(startWeek);
+  const weeksNum = parseWeekField(weeks);
+  const cycleStart = new Date(participation.cycleStartDate);
+  const storedDates = useMemo(
+    () => storedWeekDates(participation.cycleWeeks),
+    [participation.cycleWeeks],
+  );
+  const preview = finishPreview({
+    cycleStartDate: cycleStart,
+    plannedWeeks: participation.plannedWeeks,
+    startWeek: startWeekNum,
+    weeksCommitted: weeksNum,
+    stored: storedDates,
+  });
+  const cap = commitmentCap({
+    plannedWeeks: participation.plannedWeeks,
+    startWeek: startWeekNum,
+    weeksCommitted: weeksNum,
+    extendPastPlannedEnd: extend,
+  });
+
   // ————— The settlement step (2.18 / 2.23): shown when the server refuses
   // a drawn member's terms change until the gap is settled. —————
   const [settlement, setSettlement] = useState<NeedsSettlement | null>(null);
@@ -194,14 +253,26 @@ export function ParticipationEditor(props: {
       title: `Save ${participation.personName}'s participation?`,
       destructive: false,
       body: (
-        <p>
-          Weekly <strong className="tabular-nums">{formatMoney(input.weeklyAmount)}</strong>, weeks{" "}
-          {input.startWeek}–{input.startWeek + input.weeksCommitted - 1}. Their receipts
-          re-allocate oldest-first against the new shape and every derived figure recalculates
-          immediately. If a receipt no longer fits, NOTHING changes and you see the reason. If
-          they have already been drawn and the terms change what they were entitled to, a
-          settlement step opens with the real numbers. An audit entry records the change.
-        </p>
+        <>
+          <p>
+            Weekly <strong className="tabular-nums">{formatMoney(input.weeklyAmount)}</strong>, from
+            week {input.startWeek} for {input.weeksCommitted} week
+            {input.weeksCommitted === 1 ? "" : "s"}.
+          </p>
+          {/* The SAME sentence the live preview shows — the confirmation must
+              never restate a finish in different words (2.22). */}
+          {preview !== null && (
+            <p>
+              <strong>{finishLine(preview, formatDateLongUTC, participation.plannedWeeks)}</strong>
+            </p>
+          )}
+          <p>
+            Their receipts re-allocate oldest-first against the new shape and every derived figure
+            recalculates immediately. If a receipt no longer fits, NOTHING changes and you see the
+            reason. If they have already been drawn and the terms change what they were entitled
+            to, a settlement step opens with the real numbers. An audit entry records the change.
+          </p>
+        </>
       ),
       confirmLabel: "Save participation",
     });
@@ -271,12 +342,74 @@ export function ParticipationEditor(props: {
             <AmountInput value={weeklyDollars} onChange={setWeeklyDollars} ariaLabel="Weekly amount in dollars" className="w-28" />
           </Field>
           <Field label="Start week">
-            <NumberInput value={startWeek} onChange={setStartWeek} min={1} ariaLabel="Start week" className="w-24" />
+            <NumberInput value={startWeek} onChange={chooseStartWeek} min={1} ariaLabel="Start week" className="w-24" />
           </Field>
-          <Field label="Weeks committed">
-            <NumberInput value={weeks} onChange={setWeeks} min={1} ariaLabel="Weeks committed" className="w-24" />
+          <Field
+            label="Weeks committed"
+            hint={
+              finishWithGroup
+                ? "Filled from the weeks left in the cycle."
+                : "Your own figure. The cap and its override still apply."
+            }
+          >
+            <NumberInput
+              value={weeks}
+              // Typing a figure IS the override — the organizer never has to
+              // find the toggle first (same rule as the add-member wizard).
+              onChange={(v) => {
+                setFinishWithGroup(false);
+                setWeeks(v);
+              }}
+              min={1}
+              ariaLabel="Weeks committed"
+              className={`w-24 ${finishWithGroup ? "bg-gray-100 dark:bg-white/5" : ""}`}
+            />
           </Field>
         </div>
+
+        {/* 2.22: ON by default, and it KEEPS tracking the start week. */}
+        <Checkbox
+          checked={finishWithGroup}
+          onChange={toggleFinishWithGroup}
+          label={
+            <span data-testid="finish-with-group-label">
+              <strong>Finish with the group</strong> — commit them to the rest of the cycle
+              {startWeekNum !== null && cap !== null && (
+                <>
+                  {" "}
+                  ({weeksToFinishWithGroup(participation.plannedWeeks, startWeekNum)} week
+                  {weeksToFinishWithGroup(participation.plannedWeeks, startWeekNum) === 1 ? "" : "s"}{" "}
+                  from week {startWeekNum})
+                </>
+              )}
+              . Uncheck, or just type a figure, to choose a different length.
+            </span>
+          }
+        />
+
+        {/* THE thing being decided — prominent, live, and shown whether the
+            toggle is on or off (the organizer never computes a finish date). */}
+        {preview !== null ? (
+          <p
+            data-testid="finish-preview"
+            className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-4 py-3 text-base font-bold text-indigo-900 dark:text-indigo-200"
+          >
+            {finishLine(preview, formatDateLongUTC, participation.plannedWeeks)}
+          </p>
+        ) : (
+          <p className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+            Enter a start week and a length to see when they finish.
+          </p>
+        )}
+
+        {cap !== null && cap.exceedsCap && (
+          <p className="text-sm font-semibold text-red-800 dark:text-red-400">
+            {cap.cap === 0
+              ? `The planned ${participation.plannedWeeks} weeks are over — extending past the end needs the override below.`
+              : `Only ${cap.cap} week${cap.cap === 1 ? "" : "s"} remain in the cycle (2.22). Use the override below to extend past the planned end.`}
+          </p>
+        )}
+
         <Checkbox
           checked={extend}
           onChange={setExtend}
@@ -369,6 +502,10 @@ export function ParticipationEditor(props: {
                   <button
                     type="button"
                     onClick={() => {
+                      // A balancing figure is a deliberate custom length, so it
+                      // must release "finish with the group" — otherwise the
+                      // next start-week edit would silently overwrite it.
+                      setFinishWithGroup(false);
                       setWeeks(String(settlement.balancingWeeksWhole));
                       setSettlement(null);
                       setBanner({
@@ -751,7 +888,7 @@ function WeekRow({
   return (
     <tr className="border-b border-gray-200 dark:border-gray-800">
       <td className="py-1.5 pr-3 text-gray-900 dark:text-white">
-        {w.weekNumber} <span className="text-gray-500 dark:text-gray-500">({w.date})</span>
+        {w.weekNumber} <span className="text-gray-500 dark:text-gray-400">({w.date})</span>
       </td>
       <td className="py-1.5 pr-3 tabular-nums text-gray-800 dark:text-gray-200">{formatMoney(w.amountPaid)}</td>
       <td className="py-1.5 pr-3">

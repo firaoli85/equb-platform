@@ -35,7 +35,7 @@ export function MemberPayoutCard({
           <p className="text-2xl font-black text-gray-900 dark:text-white tabular-nums leading-tight mt-0.5">
             {formatMoney(totalNet)}
           </p>
-          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+          <p className="text-[11px] text-gray-600 dark:text-gray-400">
             after the fee{numbers.length > 1 ? " · all numbers together" : ""}
           </p>
         </div>
@@ -63,7 +63,7 @@ export function MemberPayoutCard({
       <div className="space-y-1.5 mb-3">
         {numbers.map((n) => (
           <div key={n.id} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-gray-500 dark:text-gray-400 tabular-nums">#{n.number}</span>
+            <span className="text-gray-600 dark:text-gray-400 tabular-nums">#{n.number}</span>
             {n.payoutStatus === "COLLECTED" ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full border text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-900">
                 <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
@@ -85,7 +85,7 @@ export function MemberPayoutCard({
       </div>
 
       {/* Bottom line: progress + next due */}
-      <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100 dark:border-gray-800 text-[11px] text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-between gap-2 pt-3 border-t border-gray-100 dark:border-gray-800 text-[11px] text-gray-600 dark:text-gray-400">
         <span className="tabular-nums">
           <span className="font-bold text-gray-900 dark:text-white">{paidCount}</span> of{" "}
           <span className="font-bold text-gray-900 dark:text-white">{totalWeeks}</span> weeks paid

@@ -234,7 +234,7 @@ export function PinControls({
         >
           {saving === "pin" ? "Saving…" : pinSet ? "Replace PIN" : "Set PIN"}
         </button>
-        <p className="text-xs text-gray-600">
+        <p className="text-xs text-gray-600 dark:text-gray-400">
           Stored as a bcrypt hash only — the PIN itself is never saved. {pinSet ? "A PIN is currently set." : "No PIN set yet."}
         </p>
       </form>
@@ -249,7 +249,7 @@ export function PinControls({
           >
             {saving === "reset" ? "Resetting…" : "Reset PIN (back to default)"}
           </button>
-          <p className="mt-1 text-xs text-gray-600">
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
             Clears their PIN so the last 4 digits of their phone work again (while the
             default setting is on) and they can choose a new PIN. Nothing is ever shown
             or picked for them.
@@ -273,7 +273,7 @@ export function PinControls({
       </label>
 
       {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800 dark:text-red-400">
           Not saved: {error}
         </p>
       )}

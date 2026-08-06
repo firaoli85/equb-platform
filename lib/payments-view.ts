@@ -41,18 +41,23 @@ export type CatchUpWeek = {
   weekNumber: number;
   amountDue: number;
   amountAlreadyPaid: number;
+  /** THIS member is not chased for it — the money is still owed. */
   isDeferred: boolean;
+  /** Cycle-wide: the week did not happen, so nobody owes it. */
+  isSkipped: boolean;
 };
 
 /**
  * What a bulk catch-up over the chosen weeks is worth: the shortfall on each
- * selected week, deferred weeks excused. The engine still decides WHERE the
- * money lands (oldest debt first) — this only sizes the receipt.
+ * selected week. Only SKIPPED weeks are excused — a DEFERRED week is still
+ * owed (organizer ruling, Aug 2026), so catching up includes it. The engine
+ * still decides WHERE the money lands (oldest debt first); this only sizes
+ * the receipt.
  */
 export function bulkCatchUpAmount(weeks: readonly CatchUpWeek[]): number {
   let total = 0;
   for (const w of weeks) {
-    if (w.isDeferred) continue;
+    if (w.isSkipped) continue;
     if (!Number.isSafeInteger(w.amountDue) || !Number.isSafeInteger(w.amountAlreadyPaid)) {
       throw new RangeError(`week ${w.weekNumber} amounts must be integer cents`);
     }
@@ -211,7 +216,9 @@ export function buildPaymentGrid(input: {
         // No row data (pre-D-31 gap): the calendar has outrun their rows.
         if (!mw) return { kind: "after-finish" as const };
         received += mw.storedPaid;
-        if (!week.isSkipped && mw.status !== "DEFERRED") expected += mw.amountDue;
+        // Only a SKIPPED week is off the books. A DEFERRED week is still
+        // owed, so it belongs in what the week EXPECTED to collect.
+        if (!week.isSkipped && mw.status !== "SKIPPED") expected += mw.amountDue;
         return {
           kind: "week" as const,
           status: mw.status,

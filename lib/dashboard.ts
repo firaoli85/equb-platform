@@ -73,8 +73,10 @@ export type DashboardPayment = {
   participationId: string;
   weekNumber: number;
   amountPaid: number;
-  /** Personal deferral OR cycle-wide skipped week — excused, not expected. */
+  /** THIS member is not chased for it — the money is still owed. */
   isDeferred: boolean;
+  /** Cycle-wide: the week did not happen, so nobody owes it. */
+  isSkipped: boolean;
 };
 
 export type WeekReceipts = {
@@ -174,14 +176,22 @@ export type WeekMemberStatus = {
   name: string;
   weeklyAmount: number;
   amountPaid: number;
-  status: "PAID" | "PARTIAL" | "UNPAID" | "DEFERRED";
+  status: "PAID" | "PARTIAL" | "UNPAID" | "DEFERRED" | "SKIPPED";
 };
 
-/** Who has paid this week and who has not — in-window members only (2.7). */
+/**
+ * Who has paid this week and who has not — in-window members only (2.7).
+ *
+ * The order matches paymentStatus (2.14): SKIPPED (nobody owed it), then PAID
+ * (the money is there — PAID BEATS DEFERRED), then DEFERRED (still owed, just
+ * not chased), then PARTIAL/UNPAID.
+ */
 export function weekMemberStatus(input: {
   weekNumber: number;
   participations: readonly (DashboardParticipation & { name: string })[];
   payments: readonly DashboardPayment[];
+  /** Cycle-wide: this week did not happen, so nobody owes it. */
+  isSkipped?: boolean;
 }): WeekMemberStatus[] {
   const paymentFor = new Map(
     input.payments
@@ -202,13 +212,15 @@ export function weekMemberStatus(input: {
       name: participation.name,
       weeklyAmount: participation.weeklyAmount,
       amountPaid,
-      status: payment?.isDeferred
-        ? "DEFERRED"
+      status: input.isSkipped
+        ? "SKIPPED"
         : amountPaid >= participation.weeklyAmount
           ? "PAID"
-          : amountPaid > 0
-            ? "PARTIAL"
-            : "UNPAID",
+          : payment?.isDeferred
+            ? "DEFERRED"
+            : amountPaid > 0
+              ? "PARTIAL"
+              : "UNPAID",
     });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
@@ -225,15 +237,18 @@ export type AttentionMember = {
 };
 
 /**
- * Members behind, worst first (by amount owed, then weeks). Deferred weeks
- * are excluded entirely — excused is excused. `currentWeek` is the cycle's
- * derived calendar week (the caller computes it from the start date and
- * today, exactly once).
+ * Members behind, worst first (by amount owed, then weeks).
+ *
+ * Only SKIPPED weeks are excused — a DEFERRED week is still owed (Aug 2026
+ * ruling), it simply is not chased. `elapsedThroughWeek` is the last week
+ * whose OWN STORED DATE has passed its payment window (2.14), so this list
+ * cannot disagree with computeStanding or with the LATE markers beside it.
  */
 export function memberAttention(input: {
   participations: readonly (DashboardParticipation & { name: string })[];
   payments: readonly DashboardPayment[];
-  currentWeek: number;
+  /** The last week whose stored date + payment window has passed. */
+  elapsedThroughWeek: number;
 }): AttentionMember[] {
   const byParticipation = new Map<string, DashboardPayment[]>();
   for (const p of input.payments) {
@@ -247,7 +262,7 @@ export function memberAttention(input: {
     const rows = byParticipation.get(participation.id) ?? [];
     const finishWeek = calculateFinishWeek(participation.startWeek, participation.weeksCommitted);
     const elapsedCount = Math.min(
-      Math.max(0, input.currentWeek - participation.startWeek + 1),
+      Math.max(0, input.elapsedThroughWeek - participation.startWeek + 1),
       participation.weeksCommitted,
     );
     const totalPaid = rows.reduce((sum, r) => sum + r.amountPaid, 0);
@@ -255,10 +270,10 @@ export function memberAttention(input: {
     const elapsedRows = rows.filter(
       (r) =>
         r.weekNumber >= participation.startWeek &&
-        r.weekNumber <= Math.min(input.currentWeek, finishWeek),
+        r.weekNumber <= Math.min(input.elapsedThroughWeek, finishWeek),
     );
-    const deferredCount = elapsedRows.filter((r) => r.isDeferred).length;
-    const behind = weeksBehind(elapsedCount, credited, deferredCount);
+    const skippedCount = elapsedRows.filter((r) => r.isSkipped).length;
+    const behind = weeksBehind(elapsedCount, credited, skippedCount);
     if (behind === 0) continue;
 
     // Owed now: netted over elapsed weeks (2.14 — money is fungible). Weeks
@@ -267,7 +282,7 @@ export function memberAttention(input: {
     const elapsedWindow = [];
     for (
       let n = participation.startWeek;
-      n <= Math.min(input.currentWeek, finishWeek);
+      n <= Math.min(input.elapsedThroughWeek, finishWeek);
       n++
     ) {
       const row = rowsByWeek.get(n);

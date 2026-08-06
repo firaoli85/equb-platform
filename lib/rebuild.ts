@@ -43,7 +43,8 @@ export async function rebuildParticipationPayments(
         week,
         paymentId: payment?.id ?? null,
         paid: 0,
-        isDeferred: (payment?.isDeferred ?? false) || week.isSkipped,
+        isDeferred: payment?.isDeferred ?? false,
+        isSkipped: week.isSkipped,
       };
     });
 
@@ -86,7 +87,7 @@ export async function rebuildParticipationPayments(
         ? allocatePinned(event.amount, {
             amountDue: participation.weeklyAmount,
             amountAlreadyPaid: s.paid,
-            isDeferred: s.isDeferred,
+            isSkipped: s.isSkipped,
           })
         : null;
       if (!s || !fit || fit.unallocated > 0) {
@@ -106,7 +107,7 @@ export async function rebuildParticipationPayments(
         weekNumber: s.week.weekNumber,
         amountDue: participation.weeklyAmount,
         amountAlreadyPaid: s.paid,
-        isDeferred: s.isDeferred,
+        isSkipped: s.isSkipped,
       })),
     );
     if (result.unallocated > 0) {

@@ -13,33 +13,29 @@ import {
   type MemberRow,
 } from "@/lib/members-view";
 import type { GridCell, PaymentGrid } from "@/lib/payments-view";
+import { STATUS_LABELS, STATUS_LEGEND, statusLabel } from "@/lib/status-labels";
 
 // THE MEMBERS VIEW — where marking happens (the grid is the map, this is the
 // workspace). One row per member, a week strip whose segments are big enough
 // to read and hit, and one click into the shared per-week panel where
 // recording, PARTIAL recording, deferral, receipts and notes all live.
 
-// Contrast MEASURED, not assumed: the week number is 11px bold, which WCAG
-// does not treat as large text, so every pair here clears 4.5:1 in both
-// themes (emerald-500/red-500 and a gray-400 on white/10 did not).
-const STATUS_STYLE: Record<string, { cls: string; label: string }> = {
-  PAID: { cls: "bg-emerald-700 text-white", label: "paid" },
-  PARTIAL: { cls: "bg-amber-400 text-amber-950", label: "partial" },
-  UNPAID: {
-    cls: "bg-gray-100 text-gray-700 dark:bg-[#2f2f2f] dark:text-gray-100",
-    label: "unpaid",
-  },
-  LATE: { cls: "bg-red-600 text-white", label: "late" },
-  DEFERRED: { cls: "bg-gray-300 text-gray-800 dark:bg-gray-600 dark:text-gray-100", label: "excused" },
-};
+// One vocabulary for every screen (lib/status-labels): same words, same
+// colours here, in the grid and on the member profile. Contrast is MEASURED,
+// not assumed — the week number is 11px bold, which WCAG does not treat as
+// large text, so every pair clears 4.5:1 in both themes.
+const STATUS_STYLE = STATUS_LABELS;
 
 function cellTitle(memberName: string, weekNumber: number, cell: GridCell): string {
   if (cell.kind === "before-start") return `${memberName} had not joined in week ${weekNumber}`;
   if (cell.kind === "after-finish") return `${memberName} had finished by week ${weekNumber}`;
   const remaining = Math.max(0, cell.amountDue - cell.storedPaid);
+  const label = statusLabel(cell.status);
+  // A SKIPPED week owes nothing, so quoting an amount would be a lie. A
+  // DEFERRED week is still owed, so it keeps its figures.
   return (
-    `${memberName} — week ${weekNumber}: ${STATUS_STYLE[cell.status]?.label ?? cell.status.toLowerCase()}` +
-    (cell.status === "DEFERRED"
+    `${memberName} — week ${weekNumber}: ${label.meaning}` +
+    (cell.status === "SKIPPED"
       ? ""
       : `, ${formatMoney(cell.storedPaid)} of ${formatMoney(cell.amountDue)}` +
         (remaining > 0 ? ` (${formatMoney(remaining)} left)` : ""))
@@ -128,10 +124,10 @@ export function PaymentsMembers({
 
       {/* Legend — the strip is only readable if the colours are named. */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-700 dark:text-gray-300">
-        {["PAID", "PARTIAL", "UNPAID", "LATE", "DEFERRED"].map((s) => (
+        {STATUS_LEGEND.map((s) => (
           <span key={s} className="flex items-center gap-1.5">
             <span className={`inline-block h-3.5 w-3.5 rounded ${STATUS_STYLE[s].cls}`} />
-            {STATUS_STYLE[s].label}
+            {STATUS_STYLE[s].short}
           </span>
         ))}
         <span className="flex items-center gap-1.5">
@@ -177,7 +173,7 @@ export function PaymentsMembers({
                     </Link>
                   )}
                   {!presentation && (
-                    <span className="text-xs tabular-nums text-gray-500 dark:text-gray-500">
+                    <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
                       {row.numbersLabel}
                     </span>
                   )}
@@ -219,14 +215,19 @@ export function PaymentsMembers({
                       "flex h-8 w-9 shrink-0 items-center justify-center rounded-md text-[11px] font-bold tabular-nums transition-transform duration-100 ease-out";
 
                     if (cell.kind !== "week") {
+                      // Outside this member's window. The digit here used to
+                      // be printed in gray-300, which measures 1.47:1 — text
+                      // nobody can read and a screen reader announces as a
+                      // bare number. The dashed placeholder holds the column
+                      // position; the meaning lives in the label.
                       return (
                         <span
                           key={weekNumber}
+                          role="img"
+                          aria-label={cellTitle(shortName, weekNumber, cell)}
                           title={cellTitle(shortName, weekNumber, cell)}
-                          className={`${base} border border-dashed border-gray-200 dark:border-gray-800 text-gray-300 dark:text-gray-700${nowRing}`}
-                        >
-                          {weekNumber}
-                        </span>
+                          className={`${base} border border-dashed border-gray-200 dark:border-gray-800${nowRing}`}
+                        />
                       );
                     }
                     const style = STATUS_STYLE[cell.status] ?? STATUS_STYLE.UNPAID;
@@ -236,7 +237,7 @@ export function PaymentsMembers({
                       return (
                         <span
                           key={weekNumber}
-                          title={`week ${weekNumber}: ${style.label}`}
+                          title={`week ${weekNumber}: ${style.short}`}
                           className={`${base} ${style.cls}${nowRing}`}
                         >
                           {weekNumber}

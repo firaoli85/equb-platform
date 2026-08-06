@@ -11,7 +11,7 @@ import { motionTokens } from "@/lib/motion-tokens";
 export type CalendarWeek = {
   weekNumber: number;
   date: string; // YYYY-MM-DD (UTC)
-  status: "PAID" | "LATE" | "DEFERRED" | "PARTIAL" | "PENDING";
+  status: "PAID" | "LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
 };
 
 const MONTH_NAMES = [
@@ -22,19 +22,21 @@ const MONTH_NAMES = [
 const DAY_HEADS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 const STATUS_CELL: Record<CalendarWeek["status"], string> = {
-  PAID: "bg-emerald-500 dark:bg-emerald-600 text-white",
-  LATE: "bg-red-500 dark:bg-red-600 text-white",
-  DEFERRED: "bg-orange-500 dark:bg-orange-600 text-white",
-  PARTIAL: "bg-amber-500 dark:bg-amber-600 text-white",
-  PENDING: "ring-2 ring-inset ring-indigo-400 dark:ring-indigo-500 text-indigo-700 dark:text-indigo-400",
+  PAID: "bg-emerald-700 text-white",
+  LATE: "bg-red-600 text-white",
+  DEFERRED: "bg-sky-800 text-white",
+  SKIPPED: "bg-gray-600 text-white",
+  PARTIAL: "bg-amber-400 text-amber-950",
+  PENDING: "ring-2 ring-inset ring-indigo-400 dark:ring-indigo-500 text-indigo-700 dark:text-indigo-300",
 };
 
 const STATUS_DOT: Record<CalendarWeek["status"], string> = {
-  PAID: "bg-emerald-500",
-  LATE: "bg-red-500",
-  DEFERRED: "bg-orange-500",
-  PARTIAL: "bg-amber-500",
-  PENDING: "bg-indigo-400",
+  PAID: "bg-emerald-700",
+  LATE: "bg-red-600",
+  DEFERRED: "bg-sky-800",
+  SKIPPED: "bg-gray-600",
+  PARTIAL: "bg-amber-400",
+  PENDING: "bg-indigo-500",
 };
 
 const LEGEND = [
@@ -42,7 +44,8 @@ const LEGEND = [
   { key: "PAID" as const, label: "Paid" },
   { key: "PARTIAL" as const, label: "Partial" },
   { key: "LATE" as const, label: "Late" },
-  { key: "DEFERRED" as const, label: "Excused" },
+  { key: "DEFERRED" as const, label: "Deferred" },
+  { key: "SKIPPED" as const, label: "Skipped" },
 ];
 
 export function EqubCalendar({
@@ -121,7 +124,7 @@ export function EqubCalendar({
 
       <div className="grid grid-cols-7 mb-1">
         {DAY_HEADS.map((d) => (
-          <div key={d} className="text-center text-[10px] font-bold text-gray-500 dark:text-gray-500 py-1">
+          <div key={d} className="text-center text-[10px] font-bold text-gray-500 dark:text-gray-400 py-1">
             {d}
           </div>
         ))}
@@ -149,7 +152,7 @@ export function EqubCalendar({
                 ? STATUS_CELL[status]
                 : isToday
                   ? "ring-1 ring-inset ring-gray-300 dark:ring-gray-600 text-gray-700 dark:text-gray-300"
-                  : "text-gray-400 dark:text-gray-600";
+                  : "text-gray-600 dark:text-gray-400";
 
               const statusLabel =
                 status === "PAID"
@@ -157,10 +160,12 @@ export function EqubCalendar({
                   : status === "LATE"
                     ? "Late"
                     : status === "DEFERRED"
-                      ? "Excused"
-                      : status === "PARTIAL"
-                        ? "Partial"
-                        : "Upcoming";
+                      ? "Deferred — still owed, not chased"
+                      : status === "SKIPPED"
+                        ? "Skipped — nobody owed this week"
+                        : status === "PARTIAL"
+                          ? "Partial"
+                          : "Upcoming";
 
               return (
                 <div key={day} className="flex items-center justify-center py-0.5">
@@ -179,7 +184,7 @@ export function EqubCalendar({
             {LEGEND.map(({ key, label }) => (
               <div key={key} className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[key]}`} />
-                <span className="text-[10px] text-gray-500 dark:text-gray-500">{label}</span>
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">{label}</span>
               </div>
             ))}
           </div>

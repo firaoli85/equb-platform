@@ -14,7 +14,7 @@ function weeks(
       weekNumber: n,
       amountDue,
       amountAlreadyPaid: 0,
-      isDeferred: false,
+      isSkipped: false,
       ...overrides[n],
     });
   }
@@ -66,18 +66,29 @@ describe("allocatePayment — the ground-truth cases (2.15, 2.19)", () => {
     ]);
   });
 
-  it("deferred weeks are skipped entirely — excused, never owed", () => {
-    const list = weeks(8, 10, 25_000, { 8: { isDeferred: true } });
+  it("SKIPPED weeks are passed over entirely — nobody ever owed them", () => {
+    const list = weeks(8, 10, 25_000, { 8: { isSkipped: true } });
     const result = allocatePayment(25_000, list);
     expect(result.allocations).toEqual([
       { weekNumber: 9, applied: 25_000, fillsWeek: true, runningRemainder: 0 },
     ]);
   });
 
-  it("a deferred week between debts is skipped, not filled", () => {
-    const list = weeks(8, 12, 25_000, { 10: { isDeferred: true } });
+  it("a skipped week between debts is passed over, not filled", () => {
+    const list = weeks(8, 12, 25_000, { 10: { isSkipped: true } });
     const result = allocatePayment(75_000, list);
     expect(result.allocations.map((a) => a.weekNumber)).toEqual([8, 9, 11]);
+  });
+
+  // The organizer ruling (Aug 2026): a DEFERRED week is still owed, so the
+  // engine never even hears about deferral — money lands on it like any other
+  // week, oldest first. There is no isDeferred on AllocationWeek by design.
+  it("a deferred week is an ordinary week to the engine — money lands on it", () => {
+    const list = weeks(8, 10, 25_000);
+    const result = allocatePayment(25_000, list);
+    expect(result.allocations).toEqual([
+      { weekNumber: 8, applied: 25_000, fillsWeek: true, runningRemainder: 0 },
+    ]);
   });
 });
 
@@ -127,18 +138,18 @@ describe("allocatePayment — edges", () => {
     expect(result).toEqual({ allocations: [], totalApplied: 0, unallocated: 50_000 });
   });
 
-  it("all weeks deferred -> everything unallocated", () => {
+  it("all weeks skipped -> everything unallocated", () => {
     const list = weeks(1, 3, 25_000, {
-      1: { isDeferred: true },
-      2: { isDeferred: true },
-      3: { isDeferred: true },
+      1: { isSkipped: true },
+      2: { isSkipped: true },
+      3: { isSkipped: true },
     });
     expect(allocatePayment(50_000, list).unallocated).toBe(50_000);
   });
 
   it("applied + unallocated always equals the amount received", () => {
     for (const amount of [0, 1, 24_999, 25_000, 65_000, 75_001, 500_000]) {
-      const result = allocatePayment(amount, weeks(8, 12, 25_000, { 9: { isDeferred: true } }));
+      const result = allocatePayment(amount, weeks(8, 12, 25_000, { 9: { isSkipped: true } }));
       const sum = result.allocations.reduce((s, a) => s + a.applied, 0);
       expect(sum).toBe(result.totalApplied);
       expect(result.totalApplied + result.unallocated).toBe(amount);
@@ -150,20 +161,20 @@ describe("allocatePayment — edges", () => {
     expect(() => allocatePayment(100.5, [])).toThrow(RangeError);
     expect(() =>
       allocatePayment(100, [
-        { weekNumber: 2, amountDue: 100, amountAlreadyPaid: 0, isDeferred: false },
-        { weekNumber: 1, amountDue: 100, amountAlreadyPaid: 0, isDeferred: false },
+        { weekNumber: 2, amountDue: 100, amountAlreadyPaid: 0, isSkipped: false },
+        { weekNumber: 1, amountDue: 100, amountAlreadyPaid: 0, isSkipped: false },
       ]),
     ).toThrow(RangeError);
     // Duplicate week numbers are as corrupt as descending ones.
     expect(() =>
       allocatePayment(100, [
-        { weekNumber: 1, amountDue: 100, amountAlreadyPaid: 0, isDeferred: false },
-        { weekNumber: 1, amountDue: 100, amountAlreadyPaid: 0, isDeferred: false },
+        { weekNumber: 1, amountDue: 100, amountAlreadyPaid: 0, isSkipped: false },
+        { weekNumber: 1, amountDue: 100, amountAlreadyPaid: 0, isSkipped: false },
       ]),
     ).toThrow(RangeError);
     expect(() =>
       allocatePayment(100, [
-        { weekNumber: 1, amountDue: -5, amountAlreadyPaid: 0, isDeferred: false },
+        { weekNumber: 1, amountDue: -5, amountAlreadyPaid: 0, isSkipped: false },
       ]),
     ).toThrow(RangeError);
   });

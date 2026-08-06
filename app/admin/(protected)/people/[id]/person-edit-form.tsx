@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { deletePerson, updatePerson } from "@/app/actions/edits";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
+import { buttonCls } from "@/components/ui/primitives";
 
 type PersonFields = {
   id: string;
@@ -114,7 +115,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       ))}
 
       {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p role="alert" className="rounded-xl border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-400">
           Not saved: {error}
         </p>
       )}
@@ -141,7 +142,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
               ? "In a cycle — remove the participation first"
               : "Remove from the directory"
           }
-          className="rounded border border-red-400 px-4 py-2 text-sm text-red-800 disabled:opacity-40"
+          className={buttonCls.danger}
         >
           Remove from directory
         </button>

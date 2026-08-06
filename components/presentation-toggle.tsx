@@ -38,10 +38,14 @@ export function PresentationToggle({ on }: { on: boolean }) {
           ? "Presentation mode is ON: names, money, plans, phones and the audit log are hidden. Click to show them again."
           : "Hide names, money, plans, phones and the audit log before screen-sharing. Click to turn on."
       }
+      // Both themes, measured: the OFF state used gray-500 with no dark
+      // variant, which fell to 4.09:1 on the dark shell. ON is a safety state
+      // (2.4), so it is a solid fill nobody can mistake for off.
       className={
-        on
-          ? "rounded-full border border-gray-500 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-800 disabled:opacity-40"
-          : "rounded-full border border-gray-300 px-3 py-1 text-xs text-gray-500 hover:border-gray-500 disabled:opacity-40"
+        "rounded-full border px-3 py-1.5 text-xs font-semibold transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none " +
+        (on
+          ? "border-amber-500 bg-amber-500 text-amber-950 hover:bg-amber-400 dark:border-amber-400 dark:bg-amber-400 dark:text-amber-950"
+          : "border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-white/5")
       }
     >
       {error ? "Could not switch — try again" : busy ? "Switching…" : on ? "● Presentation" : "○ Presentation off"}

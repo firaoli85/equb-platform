@@ -106,7 +106,7 @@ function TemplateCard({
     <div className="rounded-xl border border-gray-200 dark:border-gray-800 p-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-bold text-gray-900 dark:text-white">{template.name}</h3>
-        <span className="text-[11px] font-mono text-gray-500 dark:text-gray-500">
+        <span className="text-[11px] font-mono text-gray-500 dark:text-gray-400">
           {template.key}
         </span>
       </div>
@@ -135,7 +135,7 @@ function TemplateCard({
           placeholder="Empty until Meta approves this wording"
           className={inputCls}
         />
-        <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-500">
+        <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-400">
           Needed for sends outside the 24-hour window (2.28). Record it here once Meta
           approves, so this message type maps to its approved template.
         </span>
