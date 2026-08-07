@@ -17,6 +17,13 @@ import {
   RECAPTCHA_CONTAINER_ID,
 } from "@/lib/firebase/client";
 import { motionTokens } from "@/lib/motion-tokens";
+import {
+  isValidE164,
+  smsErrorLogLine,
+  smsErrorMessage,
+  SMS_SEND_TIMEOUT_MS,
+  withTimeout,
+} from "@/lib/sms-login";
 
 // The two-step member login, in the portal's own visual system so entry
 // feels continuous: (1) phone number → (2) bilingual welcome + method
@@ -311,47 +318,13 @@ export function LoginFlow() {
   // The server never trusts a bare phone number here.
 
   /**
-   * NEVER SWALLOW THE REASON.
-   *
-   * This used to be a bare `catch { setSmsError(generic) }`: the Firebase
-   * error object was discarded, nothing reached the console, and every
-   * distinct failure — bad container, unauthorised domain, blocked reCAPTCHA,
-   * malformed number — arrived as the same sentence. A silent failure with a
-   * generic message is undiagnosable, which is exactly how this bug survived.
-   *
-   * Every failure now logs the real error FIRST (name, code, message, and the
-   * whole object so the stack is expandable), and the user-facing text names
-   * the Firebase code when we do not have a friendlier translation for it.
+   * NEVER SWALLOW THE REASON. Logs the real error FIRST — code, name, message,
+   * plus the object itself so the stack is expandable — then returns the text
+   * the member sees. The mapping and the log line are tested in lib/sms-login.
    */
   function reportSmsError(stage: "send" | "verify", error: unknown): string {
-    const err = error as { code?: string; message?: string; name?: string } | null;
-    const code = err?.code ?? "";
-    const message = err?.message ?? String(error);
-
-    console.error(
-      `[SMS ${stage}] Firebase Phone Auth failed\n` +
-        `  code   : ${code || "(none — not a Firebase AuthError)"}\n` +
-        `  name   : ${err?.name ?? "(none)"}\n` +
-        `  message: ${message}`,
-      error,
-    );
-
-    if (code === "auth/too-many-requests") return "Too many attempts. Wait a few minutes and try again.";
-    if (code === "auth/invalid-verification-code") return "That code is not right.";
-    if (code === "auth/code-expired") return "That code expired — request a new one.";
-    if (code === "auth/invalid-phone-number") return "That phone number is not in a valid format.";
-    if (code === "auth/quota-exceeded") return "SMS is temporarily unavailable. Try WhatsApp or your PIN.";
-    if (code === "auth/captcha-check-failed") return "The reCAPTCHA check failed. Reload the page and try again.";
-    if (code === "auth/unauthorized-domain") return "This site is not authorised for SMS sign-in. Contact the organizer.";
-    if (code === "auth/argument-error") return "SMS sign-in could not start on this page. Reload and try again.";
-    if (code === "auth/operation-not-allowed") return "SMS sign-in is not enabled for this project. Contact the organizer.";
-    if (code === "auth/network-request-failed") return "Could not reach the network. Check your connection and try again.";
-    if (code === "auth/internal-error") return "The sign-in service returned an error. Try again, or use another method.";
-    // No translation? Say WHAT went wrong rather than hiding it — the member
-    // can read it out to the organizer, and it appears in the console too.
-    return code
-      ? `Could not send the code (${code}). Try again, or use another method.`
-      : `Could not send the code: ${message}. Try again, or use another method.`;
+    console.error(smsErrorLogLine(stage, error), error);
+    return smsErrorMessage(error);
   }
 
   async function sendSms(l: Lookup) {
@@ -384,7 +357,7 @@ export function LoginFlow() {
       // 2. The number must be E.164 before Firebase sees it. An invalid value
       //    is rejected client-side with no network call — indistinguishable
       //    from every other silent failure unless it is named here.
-      if (!/^\+[1-9]\d{7,14}$/.test(l.phone)) {
+      if (!isValidE164(l.phone)) {
         console.error(
           `[SMS send] Phone number is not valid E.164: ${JSON.stringify(l.phone)}. ` +
             `Firebase rejects this before making any request.`,
@@ -415,7 +388,26 @@ export function LoginFlow() {
       }
 
       console.info(`[SMS send] requesting a code for ${l.phone}…`);
-      confirmation.current = await signInWithPhoneNumber(auth, l.phone, recaptcha.current);
+
+      // A HANG IS ALSO A SILENT FAILURE — and it is the one that was
+      // happening here.
+      //
+      // signInWithPhoneNumber awaits RecaptchaVerifier.verify(), which
+      // resolves ONLY when reCAPTCHA hands back a token. When reCAPTCHA
+      // decides to challenge the visitor (the "select all…" overlay), that
+      // token arrives only after a human solves it — and if the visitor never
+      // does, or dismisses the overlay, the promise NEVER settles. No
+      // rejection, no request, no console error: the button just says
+      // "Sending…" forever. Verified in a real browser: the bframe challenge
+      // iframe mounts at 375×555 and the promise stays pending indefinitely.
+      //
+      // So the wait is bounded. The timeout is generous — someone genuinely
+      // solving a challenge needs time — but it always ends, and it ends by
+      // SAYING what happened.
+      confirmation.current = await withTimeout(
+        signInWithPhoneNumber(auth, l.phone, recaptcha.current),
+        SMS_SEND_TIMEOUT_MS,
+      );
       console.info("[SMS send] code request accepted by Firebase.");
       setSmsStep("sent");
     } catch (err) {

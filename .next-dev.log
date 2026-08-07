@@ -8779,3 +8779,1113 @@ Import trace:
   Server Component:
     ./app/admin/(protected)/collections/collections-view.tsx
     ./app/admin/(protected)/collections/page.tsx 
+ GET /login 200 in 60ms (next.js: 7ms, proxy.ts: 9ms, application-code: 43ms)
+ POST /login 200 in 469ms (next.js: 4ms, proxy.ts: 4ms, application-code: 461ms)
+  └─ ƒ lookupMemberByPhone({"phone":"3015416005"}) in 439ms app/actions/member.ts
+✓ Compiled in 1048ms
+ GET /login 200 in 114ms (next.js: 28ms, proxy.ts: 14ms, application-code: 72ms)
+ GET /login 200 in 565ms (next.js: 8ms, proxy.ts: 506ms, application-code: 51ms)
+ GET /login 200 in 1289ms (next.js: 8ms, proxy.ts: 1247ms, application-code: 33ms)
+ GET /admin/cycles/new 200 in 1509ms (next.js: 7ms, proxy.ts: 1351ms, application-code: 152ms)
+✓ Compiled in 811ms
+ GET /login 200 in 132ms (next.js: 29ms, proxy.ts: 17ms, application-code: 86ms)
+ GET /login 200 in 113ms (next.js: 37ms, proxy.ts: 23ms, application-code: 52ms)
+ GET /login 200 in 589ms (next.js: 11ms, proxy.ts: 543ms, application-code: 35ms)
+ GET /admin/cycles/new 200 in 770ms (next.js: 30ms, proxy.ts: 536ms, application-code: 204ms)
+✓ Compiled in 581ms
+ GET /login 200 in 304ms (next.js: 21ms, proxy.ts: 10ms, application-code: 273ms)
+ GET /login 200 in 257ms (next.js: 29ms, proxy.ts: 25ms, application-code: 203ms)
+ GET /login 200 in 895ms (next.js: 79ms, proxy.ts: 712ms, application-code: 104ms)
+ GET /admin/cycles/new 200 in 1164ms (next.js: 17ms, proxy.ts: 357ms, application-code: 790ms)
+✓ Compiled in 475ms
+ GET /login 200 in 206ms (next.js: 47ms, proxy.ts: 43ms, application-code: 116ms)
+ GET /login 200 in 200ms (next.js: 64ms, proxy.ts: 59ms, application-code: 77ms)
+ GET /login 200 in 481ms (next.js: 14ms, proxy.ts: 392ms, application-code: 75ms)
+ GET /admin/cycles/new 200 in 536ms (next.js: 5ms, proxy.ts: 333ms, application-code: 198ms)
+ GET /login 200 in 73ms (next.js: 7ms, proxy.ts: 9ms, application-code: 57ms)
+ POST /login 200 in 479ms (next.js: 6ms, proxy.ts: 10ms, application-code: 464ms)
+  └─ ƒ lookupMemberByPhone({"phone":"3015416005"}) in 448ms app/actions/member.ts
+✓ Compiled in 971ms
+ GET /login 200 in 339ms (next.js: 18ms, proxy.ts: 12ms, application-code: 309ms)
+ GET /login 200 in 260ms (next.js: 45ms, proxy.ts: 58ms, application-code: 157ms)
+ GET /login 200 in 1201ms (next.js: 55ms, proxy.ts: 1036ms, application-code: 110ms)
+ GET /admin/cycles/new 200 in 1261ms (next.js: 11ms, proxy.ts: 911ms, application-code: 339ms)
+✓ Compiled in 1258ms
+ GET /login 200 in 160ms (next.js: 32ms, proxy.ts: 13ms, application-code: 115ms)
+ GET /login 200 in 133ms (next.js: 7ms, proxy.ts: 71ms, application-code: 55ms)
+ GET /login 200 in 795ms (next.js: 8ms, proxy.ts: 664ms, application-code: 123ms)
+ GET /admin/cycles/new 200 in 981ms (next.js: 43ms, proxy.ts: 674ms, application-code: 264ms)
+[browser] [SMS send] Firebase Phone Auth failed
+  code   : (none — not a Firebase AuthError)
+  name   : RecaptchaTimeout
+  message: Timed out waiting for the reCAPTCHA check to complete. If a reCAPTCHA challenge appeared, it was not completed. RecaptchaTimeout: Timed out waiting for the reCAPTCHA check to complete. If a reCAPTCHA challenge appeared, it was not completed.
+    at <unknown> (components/member/login-flow.tsx:328:21)
+  326 |     return new Promise<T>((resolve, reject) => {
+  327 |       const timer = setTimeout(() => {
+> 328 |         const err = new Error(
+      |                     ^
+  329 |           "Timed out waiting for the reCAPTCHA check to complete. If a " +
+  330 |             "reCAPTCHA challenge appeared, it was not completed.",
+  331 |         ); (components/member/login-flow.tsx:366:13)
+ GET /login 200 in 133ms (next.js: 16ms, proxy.ts: 12ms, application-code: 105ms)
+ GET /login 200 in 73ms (next.js: 14ms, proxy.ts: 25ms, application-code: 34ms)
+ GET /login 200 in 619ms (next.js: 6ms, proxy.ts: 487ms, application-code: 127ms)
+ GET /admin/cycles/new 200 in 778ms (next.js: 16ms, proxy.ts: 585ms, application-code: 176ms)
+ GET /login 200 in 48ms (next.js: 5ms, proxy.ts: 4ms, application-code: 39ms)
+ GET /login 200 in 201ms (next.js: 7ms, proxy.ts: 8ms, application-code: 186ms)
+ POST /login 200 in 380ms (next.js: 7ms, proxy.ts: 12ms, application-code: 361ms)
+  └─ ƒ lookupMemberByPhone({"phone":"5550009999"}) in 347ms app/actions/member.ts
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+ GET /admin/balances 200 in 803ms (next.js: 46ms, proxy.ts: 598ms, application-code: 159ms)
+ GET /admin/wheel/setup 200 in 1067ms (next.js: 66ms, proxy.ts: 189ms, application-code: 812ms)
+ GET /admin/waiting 200 in 1013ms (next.js: 40ms, proxy.ts: 187ms, application-code: 786ms)
+ POST /login 200 in 1999ms (next.js: 8ms, proxy.ts: 16ms, application-code: 1975ms)
+  └─ ƒ signInWithPin({"phone":"+15550009999","pin":"9999"}) in 1922ms app/actions/auth.ts
+ GET /admin/settings 200 in 884ms (next.js: 53ms, proxy.ts: 188ms, application-code: 643ms)
+✓ Compiled in 563ms
+ GET /login 200 in 111ms (next.js: 18ms, proxy.ts: 41ms, application-code: 52ms)
+ GET /login 200 in 471ms (next.js: 22ms, proxy.ts: 342ms, application-code: 107ms)
+ GET /login 200 in 470ms (next.js: 62ms, proxy.ts: 341ms, application-code: 67ms)
+ GET /me 200 in 1803ms (next.js: 461ms, proxy.ts: 200ms, application-code: 1142ms)
+ GET /admin/settings 200 in 1176ms (next.js: 9ms, proxy.ts: 224ms, application-code: 944ms)
+✓ Compiled in 544ms
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+⨯ ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  [90m59 |[0m [90m * short enough that a stuck flow does not spin forever.[0m
+  [90m60 |[0m [90m */[0m
+[31m[1m>[0m [90m61 |[0m [36mconst[0m [33mSMS_SEND_TIMEOUT_MS[0m = [35m60[0m_000;
+  [90m   |[0m       [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+  [90m62 |[0m
+  [90m63 |[0m [36mfunction[0m [33mErrorMsg[0m({ msg }: { msg: string }) {
+  [90m64 |[0m   [36mreturn[0m (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+
+ GET /login 500 in 480ms (next.js: 39ms, proxy.ts: 419ms, application-code: 21ms)
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+⨯ ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  [90m59 |[0m [90m * short enough that a stuck flow does not spin forever.[0m
+  [90m60 |[0m [90m */[0m
+[31m[1m>[0m [90m61 |[0m [36mconst[0m [33mSMS_SEND_TIMEOUT_MS[0m = [35m60[0m_000;
+  [90m   |[0m       [31m[1m^^^^^^^^^^^^^^^^^^^[0m
+  [90m62 |[0m
+  [90m63 |[0m [36mfunction[0m [33mErrorMsg[0m({ msg }: { msg: string }) {
+  [90m64 |[0m   [36mreturn[0m (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+
+ GET /login 500 in 219ms (next.js: 12ms, proxy.ts: 191ms, application-code: 16ms)
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] Uncaught Error: ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+
+    at <unknown> (Error: ./components/member/login-flow.tsx:61:7)
+    at <unknown> (Error: (./components/member/login-flow.tsx:61:7)
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 475ms
+ GET /login 200 in 256ms (next.js: 31ms, proxy.ts: 22ms, application-code: 203ms)
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:61:7
+Error: the name `SMS_SEND_TIMEOUT_MS` is defined multiple times
+  59 |  * short enough that a stuck flow does not spin forever.
+  60 |  */
+> 61 | const SMS_SEND_TIMEOUT_MS = 60_000;
+     |       ^^^^^^^^^^^^^^^^^^^
+  62 |
+  63 | function ErrorMsg({ msg }: { msg: string }) {
+  64 |   return (
+
+Ecmascript file had an error
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+ GET /login 200 in 656ms (next.js: 4ms, proxy.ts: 580ms, application-code: 72ms)
+ GET /login 200 in 765ms (next.js: 18ms, proxy.ts: 449ms, application-code: 297ms)
+ GET /me 200 in 1218ms (next.js: 63ms, proxy.ts: 446ms, application-code: 708ms)
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload when ./components/member/login-flow.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 863ms
+ GET /login 200 in 1218ms (next.js: 622ms, proxy.ts: 337ms, application-code: 258ms)
+ GET /login 200 in 198ms (next.js: 19ms, proxy.ts: 125ms, application-code: 53ms)
+[browser] Uncaught Error: Module [project]/lib/sms-login.ts [app-client] (ecmascript) was instantiated because it was required from module [project]/components/member/login-flow.tsx [app-client] (ecmascript), but the module factory is not available.
+This is often caused by a stale browser cache, misconfigured Cache-Control headers, or a service worker serving outdated responses.
+To fix this, make sure your Cache-Control headers allow revalidation of chunks and review your service worker configuration. As an immediate workaround, try hard-reloading the page, clearing the browser cache, or unregistering any service workers.
+    at module evaluation (components/member/login-flow.tsx:20:1)
+  18 | } from "@/lib/firebase/client";
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+> 20 | import {
+     | ^
+  21 |   isValidE164,
+  22 |   smsErrorLogLine,
+  23 |   smsErrorMessage,
+ GET /login 200 in 658ms (next.js: 14ms, proxy.ts: 268ms, application-code: 377ms)
+ GET /login 200 in 724ms (next.js: 41ms, proxy.ts: 464ms, application-code: 220ms)
+ GET /me 200 in 1018ms (next.js: 25ms, proxy.ts: 308ms, application-code: 685ms)
+ POST /login 200 in 352ms (next.js: 13ms, proxy.ts: 189ms, application-code: 150ms)
+  └─ ƒ lookupMemberByPhone({"phone":"13015416005"}) in 130ms app/actions/member.ts
+ POST /login 200 in 1335ms (next.js: 21ms, proxy.ts: 180ms, application-code: 1134ms)
+  └─ ƒ signInWithPin({"phone":"+13015416005","pin":"1966"}) in 1057ms app/actions/auth.ts
+ GET /me 200 in 870ms (next.js: 50ms, proxy.ts: 192ms, application-code: 627ms)
+ GET /me 200 in 649ms (next.js: 6ms, proxy.ts: 185ms, application-code: 458ms)
+ GET /me/group 200 in 824ms (next.js: 53ms, proxy.ts: 174ms, application-code: 597ms)
+ GET /me/collections 200 in 796ms (next.js: 33ms, proxy.ts: 177ms, application-code: 586ms)
+ GET /me/security 200 in 457ms (next.js: 29ms, proxy.ts: 165ms, application-code: 262ms)
+ GET /me/schedule 200 in 714ms (next.js: 96ms, proxy.ts: 192ms, application-code: 427ms)
+ GET /me/documents 200 in 584ms (next.js: 64ms, proxy.ts: 176ms, application-code: 344ms)
+ GET /me 200 in 963ms (next.js: 13ms, proxy.ts: 206ms, application-code: 744ms)
+ GET /me/security 200 in 622ms (next.js: 6ms, proxy.ts: 248ms, application-code: 367ms)
+ GET /me 200 in 915ms (next.js: 10ms, proxy.ts: 181ms, application-code: 724ms)
+ GET /me/group 200 in 1171ms (next.js: 112ms, proxy.ts: 215ms, application-code: 845ms)
+ GET /me 200 in 1301ms (next.js: 10ms, proxy.ts: 328ms, application-code: 962ms)
+ GET /me 200 in 1066ms (next.js: 57ms, proxy.ts: 371ms, application-code: 638ms)
+ GET /me/group 200 in 914ms (next.js: 26ms, proxy.ts: 201ms, application-code: 687ms)
+ GET /me/collections 200 in 765ms (next.js: 8ms, proxy.ts: 179ms, application-code: 578ms)
+ GET /me/security 200 in 637ms (next.js: 27ms, proxy.ts: 208ms, application-code: 401ms)
+✓ Compiled in 600ms
+ GET /login 200 in 118ms (next.js: 18ms, proxy.ts: 9ms, application-code: 91ms)
+ GET /me/security 200 in 914ms (next.js: 27ms, proxy.ts: 254ms, application-code: 633ms)
+ GET /login 200 in 980ms (next.js: 16ms, proxy.ts: 850ms, application-code: 114ms)
+ GET /me 200 in 1522ms (next.js: 231ms, proxy.ts: 267ms, application-code: 1023ms)
+ GET /me 200 in 1084ms (next.js: 4ms, proxy.ts: 389ms, application-code: 691ms)
+ GET /me/security 200 in 538ms (next.js: 6ms, proxy.ts: 193ms, application-code: 338ms)
+ GET /me/group 200 in 1368ms (next.js: 21ms, proxy.ts: 320ms, application-code: 1027ms)
+ GET /me/group 200 in 1149ms (next.js: 381ms, proxy.ts: 198ms, application-code: 570ms)
+ GET /me 200 in 878ms (next.js: 6ms, proxy.ts: 203ms, application-code: 670ms)
+ GET /me/group 200 in 683ms (next.js: 5ms, proxy.ts: 207ms, application-code: 471ms)
+ GET /me/group 200 in 824ms (next.js: 6ms, proxy.ts: 303ms, application-code: 515ms)
+ GET /login 200 in 522ms (next.js: 5ms, proxy.ts: 452ms, application-code: 65ms)
+✓ Compiled in 730ms
+ POST /login 200 in 694ms (next.js: 107ms, proxy.ts: 226ms, application-code: 361ms)
+  └─ ƒ lookupMemberByPhone({"phone":"3015416005"}) in 178ms app/actions/member.ts
+ GET /login 200 in 226ms (next.js: 18ms, proxy.ts: 15ms, application-code: 193ms)
+ GET /login 200 in 377ms (next.js: 17ms, proxy.ts: 255ms, application-code: 105ms)
+ GET /login 200 in 1158ms (next.js: 12ms, proxy.ts: 1054ms, application-code: 93ms)
+ GET /me 200 in 1922ms (next.js: 32ms, proxy.ts: 608ms, application-code: 1282ms)
+ GET /me/documents 200 in 518ms (next.js: 27ms, proxy.ts: 171ms, application-code: 320ms)
+ GET /me/schedule 200 in 507ms (next.js: 16ms, proxy.ts: 183ms, application-code: 308ms)
+ GET /me/security 200 in 512ms (next.js: 16ms, proxy.ts: 168ms, application-code: 328ms)
+ GET /me/collections 200 in 784ms (next.js: 43ms, proxy.ts: 190ms, application-code: 552ms)
+ GET /me/group 200 in 549ms (next.js: 15ms, proxy.ts: 181ms, application-code: 353ms)
+ GET /me/group 200 in 986ms (next.js: 8ms, proxy.ts: 479ms, application-code: 499ms)
+ GET /me/group 200 in 963ms (next.js: 5ms, proxy.ts: 402ms, application-code: 555ms)
+ GET /me 200 in 1305ms (next.js: 8ms, proxy.ts: 628ms, application-code: 669ms)
+ GET /me 200 in 894ms (next.js: 6ms, proxy.ts: 181ms, application-code: 707ms)
+ GET /me 200 in 1157ms (next.js: 5ms, proxy.ts: 560ms, application-code: 592ms)
+ GET /me/group 200 in 905ms (next.js: 4ms, proxy.ts: 539ms, application-code: 362ms)
+ GET /me/collections 200 in 930ms (next.js: 7ms, proxy.ts: 202ms, application-code: 720ms)
+ GET /me/security 200 in 571ms (next.js: 6ms, proxy.ts: 199ms, application-code: 366ms)
+ GET /me 200 in 900ms (next.js: 5ms, proxy.ts: 194ms, application-code: 701ms)
+ GET /me/group 200 in 726ms (next.js: 5ms, proxy.ts: 191ms, application-code: 530ms)
+ GET /me/collections 200 in 861ms (next.js: 6ms, proxy.ts: 239ms, application-code: 616ms)
+ GET /me/security 200 in 586ms (next.js: 6ms, proxy.ts: 196ms, application-code: 384ms)
+ GET /me/group 200 in 905ms (next.js: 7ms, proxy.ts: 395ms, application-code: 503ms)
+ GET /me/group 200 in 791ms (next.js: 6ms, proxy.ts: 215ms, application-code: 570ms)
+ GET /me/group 200 in 987ms (next.js: 5ms, proxy.ts: 567ms, application-code: 414ms)
+[browser] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled (components/member/member-tab-bar.tsx:31:34)

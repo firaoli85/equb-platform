@@ -3,83 +3,96 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "@/app/actions/auth";
+import { isNavActive, MEMBER_SECONDARY, MEMBER_TABS, MemberNavIcon, type MemberNavItem } from "./member-nav";
 
-// Desktop navigation (ported pattern). Same three destinations as the tab
-// bar; the tab bar owns mobile.
-const LINKS = [
-  { label: "Home", href: "/me" },
-  { label: "Group", href: "/me/group" },
-  { label: "Collections", href: "/me/collections" },
-] as const;
+// THE DESKTOP SIDEBAR — the same destinations, the same active treatment, the
+// same three signals as the tab bar (surface + icon fill + weight).
+//
+// UI_STANDARDS rule 3: it reads from the shared list in member-nav.tsx rather
+// than keeping its own. It previously listed three of the six member
+// destinations, and inactive icons were gray-400 on white — 2.8:1, well under
+// the 4.5:1 floor.
+//
+// Desktop has room for the secondary destinations that live as tiles on the
+// phone home screen, so they appear here under their own heading rather than
+// being unreachable.
 
-function NavIcon({ href, active }: { href: string; active: boolean }) {
-  const cls = `w-5 h-5 ${active ? "text-indigo-600 dark:text-indigo-400" : "text-gray-400 dark:text-gray-400"}`;
-  switch (href) {
-    case "/me":
-      return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 22V12h6v10" />
-        </svg>
-      );
-    case "/me/group":
-      return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-        </svg>
-      );
-    default:
-      return (
-        <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
-          />
-        </svg>
-      );
-  }
+function NavRow({ item, active }: { item: MemberNavItem; active: boolean }) {
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      className={
+        "flex items-center gap-3 rounded-xl px-3 py-2.5 transition-[background-color,color] duration-150 " +
+        (active
+          ? "bg-[#0F172A] dark:bg-white"
+          : "hover:bg-slate-100 dark:hover:bg-white/[0.06]")
+      }
+      style={{ minHeight: "44px" }}
+    >
+      {/* slate-600/300, matching the tab bar exactly. slate-500 measured
+          4.76:1 here against the tab bar's 7.52:1 — passing, but the same
+          icon should not have two appearances (UI_STANDARDS rule 3). */}
+      <span className={active ? "text-white dark:text-[#0F172A]" : "text-slate-600 dark:text-slate-300"}>
+        <MemberNavIcon href={item.href} solid={active} />
+      </span>
+      <span className="min-w-0">
+        <span
+          className={
+            "block text-sm leading-tight " +
+            (active
+              ? "font-bold text-white dark:text-[#0F172A]"
+              : "font-semibold text-slate-700 dark:text-slate-200")
+          }
+        >
+          {item.label}
+        </span>
+        {item.sidebarHint && (
+          <span
+            className={
+              "block text-[11px] leading-tight " +
+              (active ? "text-white/75 dark:text-[#0F172A]/70" : "text-slate-600 dark:text-slate-400")
+            }
+          >
+            {item.sidebarHint}
+          </span>
+        )}
+      </span>
+    </Link>
+  );
 }
 
 export function MemberSidebar() {
   const pathname = usePathname();
 
-  function isActive(href: string) {
-    return href === "/me" ? pathname === "/me" : pathname.startsWith(href);
-  }
-
   return (
-    <aside className="hidden md:flex fixed top-14 left-0 bottom-0 w-60 z-30 flex-col bg-white dark:bg-[#0a0a0b] border-r border-gray-100 dark:border-gray-800/60 px-3 py-4">
-      <nav className="flex-1 space-y-1" aria-label="Primary navigation">
-        {LINKS.map((link) => {
-          const active = isActive(link.href);
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                active
-                  ? "bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300"
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-              }`}
-            >
-              <NavIcon href={link.href} active={active} />
-              {link.label}
-            </Link>
-          );
-        })}
+    <aside className="hidden md:flex fixed top-14 left-0 bottom-0 w-60 z-30 flex-col border-r border-slate-200 dark:border-gray-800/60 bg-white dark:bg-[#0a0a0b] px-3 py-4">
+      <nav className="flex-1 space-y-4 overflow-y-auto" aria-label="Primary navigation">
+        <div className="space-y-1">
+          {MEMBER_TABS.map((item) => (
+            <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} />
+          ))}
+        </div>
+
+        <div>
+          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">
+            More
+          </p>
+          <div className="space-y-1">
+            {MEMBER_SECONDARY.map((item) => (
+              <NavRow key={item.href} item={item} active={isNavActive(item.href, pathname)} />
+            ))}
+          </div>
+        </div>
       </nav>
+
       <button
         type="button"
         onClick={() => void signOutAction()}
-        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+        className="mt-3 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-700 dark:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/40"
+        style={{ minHeight: "44px" }}
       >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
