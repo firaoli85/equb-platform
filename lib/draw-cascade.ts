@@ -134,12 +134,12 @@ export async function deleteDrawIfEmpty(
     return { ...cleanup, deleted: false, weekNumber: draw.week.weekNumber, planRestored: false };
   }
 
-  const plan = await tx.winnerPlan.findFirst({
-    where: { cycleId: draw.week.cycleId, weekId: draw.weekId, status: "FULFILLED" },
+  // Restored only when it still has numbers to plan with — see
+  // restoreFulfilledPlan below for why an empty one is dangerous.
+  const planResult = await restoreFulfilledPlan(tx, {
+    cycleId: draw.week.cycleId,
+    weekId: draw.weekId,
   });
-  if (plan) {
-    await tx.winnerPlan.update({ where: { id: plan.id }, data: { status: "PLANNED" } });
-  }
 
   await tx.draw.delete({ where: { id: drawId } });
   if (cleanup.deleteSlot) {
@@ -157,7 +157,11 @@ export async function deleteDrawIfEmpty(
     summary:
       `${cleanup.sentence} The draw was removed automatically because its last payout left — ` +
       `a week can never be counted as drawn while holding nothing` +
-      (plan ? "; the fulfilled winner plan is PLANNED again" : "") +
+      (planResult.restored
+        ? "; the fulfilled winner plan is PLANNED again"
+        : planResult.purged
+          ? "; its winner plan was NOT restored — it had no numbers left, and an empty plan decides the next draw by itself"
+          : "") +
       (cleanup.deleteSlot ? "; the emptied wheel slot was released" : ""),
     before: {
       weekNumber: draw.week.weekNumber,
@@ -171,8 +175,63 @@ export async function deleteDrawIfEmpty(
     ...cleanup,
     deleted: true,
     weekNumber: draw.week.weekNumber,
-    planRestored: plan !== null,
+    planRestored: planResult.restored,
   };
+}
+
+/**
+ * Put a FULFILLED winner plan back to PLANNED — but only if it still has
+ * numbers to plan with.
+ *
+ * THIS IS WHERE THE ZERO-NUMBER PLAN IS BORN. Undoing a draw resurrects the
+ * plan it fulfilled, so the organizer's locked intent survives (2.3). Four
+ * paths do it — `undoDraw`, `deleteDrawIfEmpty`, the manual-payout replace,
+ * and the week-winner edits through `deleteDrawIfEmpty` — and every one of
+ * them did `update({ status: "PLANNED" })` unconditionally.
+ *
+ * `WinnerPlanNumber` cascades when a `LuckyNumber` is deleted, so a plan can be
+ * hollowed out without the organizer touching it: remove two members who
+ * shared a TOGETHER plan and it is left FULFILLED with zero rows. Then someone
+ * clicks Undo, and it comes back as PLANNED with nothing in it.
+ *
+ * `selectWinningSlot` matches a plan with `plan.luckyNumberIds.every(...)`, and
+ * **`[].every(...)` is vacuously TRUE** — so that plan matches the FIRST
+ * eligible slot and silently decides the next draw, recorded in the audit log
+ * as an intentional "planned" win rather than a spin. This was found live on
+ * week 11 of Cycle 1.
+ *
+ * `purgeEmptyWinnerPlans` could never catch it: it matches `status: "PLANNED"`,
+ * and an emptied plan sits at FULFILLED until the moment it is resurrected.
+ * The check has to happen at the resurrection, which is here.
+ */
+export async function restoreFulfilledPlan(
+  tx: Prisma.TransactionClient,
+  args: { cycleId: string; weekId: string },
+): Promise<{ restored: boolean; purged: boolean }> {
+  const plan = await tx.winnerPlan.findFirst({
+    where: { cycleId: args.cycleId, weekId: args.weekId, status: "FULFILLED" },
+    include: { numbers: { select: { id: true } }, week: { select: { weekNumber: true } } },
+  });
+  if (!plan) return { restored: false, purged: false };
+
+  if (plan.numbers.length === 0) {
+    await tx.winnerPlan.delete({ where: { id: plan.id } });
+    await logAudit(tx, {
+      entity: "WinnerPlan",
+      entityId: plan.id,
+      action: "delete",
+      summary:
+        `The winner plan for week ${plan.week?.weekNumber ?? "?"} was NOT restored when its ` +
+        `draw was undone: its numbers are gone, so there is nothing left to plan. An empty ` +
+        `plan matches the FIRST eligible slot (an empty .every() is true) and would silently ` +
+        `decide that week's draw while the audit log called it intentional.`,
+      before: { mode: plan.mode, weekNumber: plan.week?.weekNumber ?? null, numbers: 0 },
+    });
+    return { restored: false, purged: true };
+  }
+
+  await tx.winnerPlan.update({ where: { id: plan.id }, data: { status: "PLANNED" } });
+  return { restored: true, purged: false };
 }
 
 /**

@@ -1,5 +1,6 @@
 "use server";
 
+import { restoreFulfilledPlan } from "@/lib/draw-cascade";
 // MANUAL PAYOUT (2.2 organizer discretion): the organizer decides to pay a
 // member out — an emergency, an agreement — with no spin.
 //
@@ -268,12 +269,13 @@ export async function assignPayoutManually(input: {
         const { reversed } = await unsettleDraw(tx, existing.id);
         await tx.payout.deleteMany({ where: { drawId: existing.id } });
         await tx.draw.delete({ where: { id: existing.id } });
-        const plan = await tx.winnerPlan.findFirst({
-          where: { cycleId: week.cycleId, weekId: week.id, status: "FULFILLED" },
+        // Only if it still has numbers — an emptied plan resurrected to
+        // PLANNED matches the FIRST eligible slot and decides the next draw
+        // while the audit log calls it intentional.
+        const planResult = await restoreFulfilledPlan(tx, {
+          cycleId: week.cycleId,
+          weekId: week.id,
         });
-        if (plan) {
-          await tx.winnerPlan.update({ where: { id: plan.id }, data: { status: "PLANNED" } });
-        }
         undone = {
           payoutCount: existing.payouts.length,
           totalNet: existing.payouts.reduce((s, p) => s + p.netAmount, 0),
@@ -282,7 +284,7 @@ export async function assignPayoutManually(input: {
             .map((m) => m.luckyNumber.number)
             .sort((a, b) => a - b),
           reversed,
-          planRestored: plan !== null,
+          planRestored: planResult.restored,
         };
         await logAudit(tx, {
           entity: "Draw",

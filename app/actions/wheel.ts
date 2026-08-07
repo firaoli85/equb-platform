@@ -12,6 +12,7 @@ import { currentWeekFromRows } from "@/lib/commitment";
 import { prisma, serializableTransaction } from "@/lib/prisma";
 import { frozenCycleRefusal } from "@/lib/cycle-close";
 import { SETTLEMENT_EVENT_WHERE, settleWinnerWeeks, unsettleDraw } from "@/lib/draw-settlement";
+import { restoreFulfilledPlan } from "@/lib/draw-cascade";
 import { undoDrawConsequences } from "@/lib/undo-draw";
 import { validateArrangement } from "@/lib/arrangement";
 import { redactProposedSlots, redactWheelState } from "@/lib/presentation";
@@ -807,13 +808,13 @@ export async function undoDraw(input: { drawId: string }) {
       await tx.draw.delete({ where: { id: draw.id } });
 
       // The plan this draw fulfilled goes back to PLANNED — undoing the draw
-      // never silently discards the organizer's locked intent (2.3).
-      const plan = await tx.winnerPlan.findFirst({
-        where: { cycleId: draw.week.cycleId, weekId: draw.weekId, status: "FULFILLED" },
+      // never silently discards the organizer's locked intent (2.3). Unless it
+      // has been hollowed out, in which case restoring it would arm an EMPTY
+      // plan that decides the next draw by itself (lib/draw-cascade.ts).
+      const planResult = await restoreFulfilledPlan(tx, {
+        cycleId: draw.week.cycleId,
+        weekId: draw.weekId,
       });
-      if (plan) {
-        await tx.winnerPlan.update({ where: { id: plan.id }, data: { status: "PLANNED" } });
-      }
 
       await logAudit(tx, {
         entity: "Draw",
@@ -827,7 +828,11 @@ export async function undoDraw(input: { drawId: string }) {
             : "") +
           (count > 0 ? `; ${count} week-settlement(s) reversed (${formatMoney(reversed)} owed again)` : "") +
           carryReversalClause({ restored: carryRestored, entries: carryRestored > 0 ? 1 : 0 }) +
-          (plan ? "; the fulfilled winner plan is PLANNED again" : ""),
+          (planResult.restored
+            ? "; the fulfilled winner plan is PLANNED again"
+            : planResult.purged
+              ? "; its winner plan was NOT restored — it had no numbers left"
+              : ""),
         before: {
           weekNumber: draw.week.weekNumber,
           slotId: draw.slotId,

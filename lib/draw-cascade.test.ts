@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyDrawCleanup, freedWeekClause } from "./draw-cascade";
 
@@ -93,5 +95,76 @@ describe("freedWeekClause — what the organizer's audit entry gains", () => {
     const cleanup = emptyDrawCleanup({ weekNumber: 6, payoutsRemaining: 0, slotNumbers: [] });
     expect(freedWeekClause(cleanup, 6)).toContain("UNDRAWN again");
     expect(freedWeekClause(cleanup, 6)).not.toContain("(");
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// GUARD — no path resurrects a winner plan without checking it has numbers.
+//
+// This is where the zero-number plan found on live week 11 was born. Four
+// paths put a FULFILLED plan back to PLANNED so the organizer's locked intent
+// survives an undo (2.3), and every one of them did it unconditionally.
+//
+// WinnerPlanNumber cascades when a LuckyNumber is deleted, so a plan can be
+// hollowed out without the organizer touching it — remove two members who
+// shared a TOGETHER plan and it sits FULFILLED with zero rows. Click Undo and
+// it comes back PLANNED with nothing in it. selectWinningSlot matches with
+// `plan.luckyNumberIds.every(...)`, and [].every(...) is VACUOUSLY TRUE, so it
+// matches the FIRST eligible slot and decides that week's draw while the audit
+// log records it as an intentional "planned" win.
+//
+// purgeEmptyWinnerPlans could never catch it: it matches status PLANNED, and
+// an emptied plan sits at FULFILLED until the instant it is resurrected. The
+// check has to be AT the resurrection.
+// ————————————————————————————————————————————————————————————————
+
+const GUARD_ROOT = join(import.meta.dirname, "..");
+
+describe("GUARD — a plan is never resurrected empty", () => {
+  const FILES = [
+    "app/actions/wheel.ts",
+    "app/actions/manual-payout.ts",
+    "lib/draw-cascade.ts",
+    "app/actions/week-winners.ts",
+    "app/actions/edits.ts",
+  ];
+
+  it("nothing writes status PLANNED on a winnerPlan by hand", () => {
+    const offenders: string[] = [];
+    // The one legitimate writer is restoreFulfilledPlan itself.
+    // No /s flag (the tsconfig target predates it) and no [\s\S] either: a
+    // lazy any-character scan runs past the closing paren and matches a
+    // "PLANNED" hundreds of lines later, flagging files that set CANCELLED.
+    // `[^)]` already spans newlines and stops at the end of the call.
+    const byHand = /winnerPlan\.update\([^)]*status:\s*"PLANNED"/;
+    for (const file of FILES) {
+      const source = readFileSync(join(GUARD_ROOT, file), "utf8");
+      if (file === "lib/draw-cascade.ts") continue;
+      if (byHand.test(source)) offenders.push(file);
+    }
+    expect(
+      offenders,
+      "These files resurrect a winner plan directly instead of through " +
+        "restoreFulfilledPlan, so they cannot tell an emptied plan from a real " +
+        "one. An empty plan matches the first eligible slot and decides the " +
+        "next draw by itself.\n" + offenders.join("\n"),
+    ).toEqual([]);
+  });
+
+  it("restoreFulfilledPlan really counts the numbers before restoring", () => {
+    // Accepting it above is only safe while it actually checks. If this is
+    // ever gutted, the test notices rather than a rigged draw.
+    const source = readFileSync(join(GUARD_ROOT, "lib/draw-cascade.ts"), "utf8");
+    expect(source).toMatch(/numbers\.length === 0/);
+    expect(source).toMatch(/winnerPlan\.delete/);
+    // And it must say WHY in the audit, not just delete quietly.
+    expect(source).toContain("empty .every()");
+  });
+
+  it("every resurrection path goes through it", () => {
+    for (const file of ["app/actions/wheel.ts", "app/actions/manual-payout.ts"]) {
+      const source = readFileSync(join(GUARD_ROOT, file), "utf8");
+      expect(source, file).toMatch(/restoreFulfilledPlan\(/);
+    }
   });
 });
