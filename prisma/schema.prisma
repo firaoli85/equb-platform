@@ -182,6 +182,20 @@ model Participation {
   weeksCommitted Int
   status         ParticipationStatus @default(ACTIVE)
   closedAtWeek   Int?
+  // D-23 / 2.18: what the organizer decided about this person's CARRIED
+  // BALANCE when adding them to this cycle — "leave", "deduct" or
+  // "settle-now". An INTENTION and nothing more: it decides only whether the
+  // deduction offer arrives pre-ticked at payout time. Applying it always
+  // needs a fresh confirmation (lib/carry-balance.ts).
+  //
+  // It lives on the participation because the decision is per person PER
+  // CYCLE — the same member can carry a balance into two cycles and be
+  // treated differently in each.
+  carryIntent       String?
+  carryIntentAt     DateTime?
+  /** The balance at the moment of the choice. The live balance may differ,
+   *  and the LIVE one is what may be offered. Kept for the record only. */
+  carryIntentAmount Int?
   createdAt      DateTime @default(now())
   cycle          Cycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   person         Person   @relation(fields: [personId], references: [id])

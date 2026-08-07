@@ -5370,3 +5370,3412 @@ https://nextjs.org/docs/messages/module-not-found
  GET /admin/cycles/new 200 in 802ms (next.js: 10ms, proxy.ts: 525ms, application-code: 267ms)
  GET /login 200 in 44ms (next.js: 8ms, proxy.ts: 9ms, application-code: 28ms)
  GET /admin/cycles/new 200 in 1020ms (next.js: 9ms, proxy.ts: 652ms, application-code: 359ms)
+ GET /login 200 in 55ms (next.js: 8ms, proxy.ts: 12ms, application-code: 35ms)
+ GET /admin/cycles/new 200 in 672ms (next.js: 11ms, proxy.ts: 405ms, application-code: 256ms)
+✓ Compiled in 554ms
+ GET /admin/login?expired=idle 200 in 91ms (next.js: 22ms, proxy.ts: 5ms, application-code: 65ms)
+ GET /login 200 in 87ms (next.js: 17ms, proxy.ts: 10ms, application-code: 60ms)
+ POST /login 200 in 463ms (next.js: 8ms, proxy.ts: 4ms, application-code: 451ms)
+  └─ ƒ lookupMemberByPhone({"phone":"13015416005"}) in 439ms app/actions/member.ts
+ GET /login 200 in 450ms (next.js: 301ms, proxy.ts: 37ms, application-code: 111ms)
+ GET /admin/login 307 in 160ms (proxy.ts: 23ms)
+ GET /admin/login 200 in 91ms (next.js: 8ms, proxy.ts: 5ms, application-code: 79ms)
+ GET /login 200 in 1644ms (next.js: 189ms, proxy.ts: 1381ms, application-code: 74ms)
+ POST /admin/login 200 in 888ms (next.js: 12ms, proxy.ts: 14ms, application-code: 863ms)
+  └─ ƒ signInAdmin({"email":"firaoliseboka@gmail.com","password":"F248308966s$"}) in 762ms app/actions/auth.ts
+ GET /admin/cycle 200 in 899ms (next.js: 119ms, proxy.ts: 200ms, application-code: 580ms)
+ GET /admin/cycle 200 in 856ms (next.js: 16ms, proxy.ts: 360ms, application-code: 480ms)
+ GET /admin/cycle 200 in 453ms (next.js: 8ms, proxy.ts: 167ms, application-code: 278ms)
+ GET /admin/cycles/new 200 in 373ms (next.js: 29ms, proxy.ts: 196ms, application-code: 148ms)
+✓ Compiled in 483ms
+ GET /login 200 in 88ms (next.js: 17ms, proxy.ts: 23ms, application-code: 48ms)
+ GET /login 200 in 701ms (next.js: 38ms, proxy.ts: 588ms, application-code: 75ms)
+ GET /admin/cycles/new 200 in 948ms (next.js: 29ms, proxy.ts: 700ms, application-code: 219ms)
+✓ Compiled in 469ms
+ GET /login 200 in 128ms (next.js: 31ms, proxy.ts: 23ms, application-code: 75ms)
+ GET /login 200 in 567ms (next.js: 18ms, proxy.ts: 493ms, application-code: 56ms)
+ GET /admin/cycles/new 200 in 715ms (next.js: 13ms, proxy.ts: 506ms, application-code: 197ms)
+✓ Compiled in 401ms
+ GET /login 200 in 85ms (next.js: 23ms, proxy.ts: 23ms, application-code: 40ms)
+ GET /login 200 in 319ms (next.js: 55ms, proxy.ts: 228ms, application-code: 36ms)
+ GET /admin/cycles/new 200 in 391ms (next.js: 10ms, proxy.ts: 222ms, application-code: 160ms)
+✓ Compiled in 520ms
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+ GET /login 200 in 101ms (next.js: 27ms, proxy.ts: 19ms, application-code: 54ms)
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export RECAPTCHA_CONTAINER_ID doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export RECAPTCHA_CONTAINER_ID was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-client] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+[browser] ./components/member/login-flow.tsx:14:1
+Error: Export firebaseMissingClientConfig doesn't exist in target module
+  12 |   signInWithWhatsAppCode,
+  13 | } from "@/app/actions/auth";
+> 14 | import {
+     | ^^^^^^^
+> 15 |   firebaseAuth,
+     | ^^^^^^^^^^^^^^^
+> 16 |   firebaseMissingClientConfig,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 17 |   RECAPTCHA_CONTAINER_ID,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^
+> 18 | } from "@/lib/firebase/client";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  19 | import { motionTokens } from "@/lib/motion-tokens";
+  20 |
+  21 | // The two-step member login, in the portal's own visual system so entry
+
+The export firebaseMissingClientConfig was not found in module [project]/lib/firebase/client.ts [app-ssr] (ecmascript).
+Did you mean to import firebaseClientConfigured?
+All exports of the module are statically known (It doesn't have dynamic exports). So it's known statically that the requested export doesn't exist.
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx 
+ GET /login 200 in 525ms (next.js: 9ms, proxy.ts: 431ms, application-code: 84ms)
+ GET /admin/cycles/new 200 in 679ms (next.js: 42ms, proxy.ts: 464ms, application-code: 172ms)
+✓ Compiled in 427ms
+ GET /login 200 in 79ms (next.js: 18ms, proxy.ts: 7ms, application-code: 54ms)
+ GET /login 200 in 388ms (next.js: 44ms, proxy.ts: 283ms, application-code: 61ms)
+ GET /admin/cycles/new 200 in 830ms (next.js: 39ms, proxy.ts: 230ms, application-code: 561ms)
+ GET /login 200 in 406ms (next.js: 14ms, proxy.ts: 9ms, application-code: 383ms)
+ GET /login 200 in 99ms (next.js: 10ms, proxy.ts: 8ms, application-code: 80ms)
+✓ Compiled in 1568ms
+ GET /login 200 in 542ms (next.js: 50ms, proxy.ts: 331ms, application-code: 160ms)
+ GET /login 200 in 1447ms (next.js: 52ms, proxy.ts: 1161ms, application-code: 234ms)
+ GET /admin/cycles/new 200 in 2.3s (next.js: 36ms, proxy.ts: 1724ms, application-code: 551ms)
+ GET /login 200 in 174ms (next.js: 42ms, proxy.ts: 53ms, application-code: 80ms)
+ GET /login 200 in 946ms (next.js: 162ms, proxy.ts: 697ms, application-code: 87ms)
+ GET /admin/cycles/new 200 in 971ms (next.js: 24ms, proxy.ts: 680ms, application-code: 267ms)
+ GET /login 200 in 143ms (next.js: 31ms, proxy.ts: 36ms, application-code: 76ms)
+ GET /login 200 in 606ms (next.js: 110ms, proxy.ts: 417ms, application-code: 79ms)
+ GET /admin/cycles/new 200 in 695ms (next.js: 15ms, proxy.ts: 425ms, application-code: 256ms)
+ GET /login 200 in 207ms (next.js: 23ms, proxy.ts: 18ms, application-code: 165ms)
+ GET /admin/cycles/new 200 in 1278ms (next.js: 18ms, proxy.ts: 781ms, application-code: 478ms)
+ GET /login 200 in 745ms (next.js: 61ms, proxy.ts: 83ms, application-code: 601ms)
+✓ Compiled in 822ms
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 
+ GET /login 200 in 137ms (next.js: 21ms, proxy.ts: 31ms, application-code: 85ms)
+ GET /login 200 in 124ms (next.js: 46ms, proxy.ts: 25ms, application-code: 53ms)
+ GET /login 200 in 759ms (next.js: 10ms, proxy.ts: 706ms, application-code: 43ms)
+ GET /admin/cycles/new 200 in 858ms (next.js: 7ms, proxy.ts: 653ms, application-code: 198ms)
+[browser] ./app/admin/(protected)/collections/collections-view.tsx:463:8
+Error: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
+  461 |           </button>
+  462 |         </div>
+> 463 |       )}
+      |        ^
+  464 |
+  465 |       {open === "edit" && (
+  466 |         <div className="mt-3 space-y-3 rounded-xl border border-gray-200 dark:border-gray...
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./app/admin/(protected)/collections/collections-view.tsx
+    ./app/admin/(protected)/collections/page.tsx 

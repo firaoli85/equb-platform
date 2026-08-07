@@ -11,7 +11,11 @@ import {
   signInWithPin,
   signInWithWhatsAppCode,
 } from "@/app/actions/auth";
-import { firebaseAuth } from "@/lib/firebase/client";
+import {
+  firebaseAuth,
+  firebaseMissingClientConfig,
+  RECAPTCHA_CONTAINER_ID,
+} from "@/lib/firebase/client";
 import { motionTokens } from "@/lib/motion-tokens";
 
 // The two-step member login, in the portal's own visual system so entry
@@ -306,14 +310,48 @@ export function LoginFlow() {
   // to the server, which verifies it with Google before minting a session.
   // The server never trusts a bare phone number here.
 
-  function friendlySmsError(error: unknown): string {
-    const code = (error as { code?: string })?.code ?? "";
+  /**
+   * NEVER SWALLOW THE REASON.
+   *
+   * This used to be a bare `catch { setSmsError(generic) }`: the Firebase
+   * error object was discarded, nothing reached the console, and every
+   * distinct failure — bad container, unauthorised domain, blocked reCAPTCHA,
+   * malformed number — arrived as the same sentence. A silent failure with a
+   * generic message is undiagnosable, which is exactly how this bug survived.
+   *
+   * Every failure now logs the real error FIRST (name, code, message, and the
+   * whole object so the stack is expandable), and the user-facing text names
+   * the Firebase code when we do not have a friendlier translation for it.
+   */
+  function reportSmsError(stage: "send" | "verify", error: unknown): string {
+    const err = error as { code?: string; message?: string; name?: string } | null;
+    const code = err?.code ?? "";
+    const message = err?.message ?? String(error);
+
+    console.error(
+      `[SMS ${stage}] Firebase Phone Auth failed\n` +
+        `  code   : ${code || "(none — not a Firebase AuthError)"}\n` +
+        `  name   : ${err?.name ?? "(none)"}\n` +
+        `  message: ${message}`,
+      error,
+    );
+
     if (code === "auth/too-many-requests") return "Too many attempts. Wait a few minutes and try again.";
     if (code === "auth/invalid-verification-code") return "That code is not right.";
     if (code === "auth/code-expired") return "That code expired — request a new one.";
     if (code === "auth/invalid-phone-number") return "That phone number is not in a valid format.";
     if (code === "auth/quota-exceeded") return "SMS is temporarily unavailable. Try WhatsApp or your PIN.";
-    return "Could not send the code. Try again, or use another method.";
+    if (code === "auth/captcha-check-failed") return "The reCAPTCHA check failed. Reload the page and try again.";
+    if (code === "auth/unauthorized-domain") return "This site is not authorised for SMS sign-in. Contact the organizer.";
+    if (code === "auth/argument-error") return "SMS sign-in could not start on this page. Reload and try again.";
+    if (code === "auth/operation-not-allowed") return "SMS sign-in is not enabled for this project. Contact the organizer.";
+    if (code === "auth/network-request-failed") return "Could not reach the network. Check your connection and try again.";
+    if (code === "auth/internal-error") return "The sign-in service returned an error. Try again, or use another method.";
+    // No translation? Say WHAT went wrong rather than hiding it — the member
+    // can read it out to the organizer, and it appears in the console too.
+    return code
+      ? `Could not send the code (${code}). Try again, or use another method.`
+      : `Could not send the code: ${message}. Try again, or use another method.`;
   }
 
   async function sendSms(l: Lookup) {
@@ -322,24 +360,74 @@ export function LoginFlow() {
     setSmsError(null);
     setSmsCode("");
     try {
-      const auth = firebaseAuth();
-      if (!auth) {
+      // 1. Is the client actually configured? Say WHICH value is missing —
+      //    "not available" with no detail is another silent failure.
+      const missing = firebaseMissingClientConfig();
+      if (missing.length > 0) {
+        console.error(
+          `[SMS send] Firebase is not configured in the browser bundle. Missing: ${missing.join(", ")}. ` +
+            `NEXT_PUBLIC_ values are inlined at BUILD time — restart the dev server after editing .env.local.`,
+        );
         setSmsError("Text-message codes aren't available. Use WhatsApp or your PIN.");
         setSmsStep("idle");
         return;
       }
-      // A fresh verifier per send — a reused one throws after its token burns.
+
+      const auth = firebaseAuth();
+      if (!auth) {
+        console.error("[SMS send] firebaseAuth() returned null despite a complete config.");
+        setSmsError("Text-message codes aren't available. Use WhatsApp or your PIN.");
+        setSmsStep("idle");
+        return;
+      }
+
+      // 2. The number must be E.164 before Firebase sees it. An invalid value
+      //    is rejected client-side with no network call — indistinguishable
+      //    from every other silent failure unless it is named here.
+      if (!/^\+[1-9]\d{7,14}$/.test(l.phone)) {
+        console.error(
+          `[SMS send] Phone number is not valid E.164: ${JSON.stringify(l.phone)}. ` +
+            `Firebase rejects this before making any request.`,
+        );
+        setSmsError("That phone number is not in a valid format. Contact the organizer.");
+        setSmsStep("idle");
+        return;
+      }
+
+      // 3. The verifier. It is created ONCE and reused: the container is a
+      //    single node that lives outside the animated tree, and constructing
+      //    a second verifier against a container that already holds a
+      //    rendered widget is a documented way to get an argument-error. The
+      //    SDK calls verifier._reset() itself after each attempt, which is
+      //    what makes reuse the supported path.
+      if (!document.getElementById(RECAPTCHA_CONTAINER_ID)) {
+        console.error(
+          `[SMS send] #${RECAPTCHA_CONTAINER_ID} is not in the DOM — RecaptchaVerifier cannot mount.`,
+        );
+        setSmsError("SMS sign-in could not start on this page. Reload and try again.");
+        setSmsStep("idle");
+        return;
+      }
+      if (!recaptcha.current) {
+        recaptcha.current = new RecaptchaVerifier(auth, RECAPTCHA_CONTAINER_ID, {
+          size: "invisible",
+        });
+      }
+
+      console.info(`[SMS send] requesting a code for ${l.phone}…`);
+      confirmation.current = await signInWithPhoneNumber(auth, l.phone, recaptcha.current);
+      console.info("[SMS send] code request accepted by Firebase.");
+      setSmsStep("sent");
+    } catch (err) {
+      // A verifier that failed mid-flow cannot be trusted again; drop it so
+      // the next attempt builds a clean one.
       try {
         recaptcha.current?.clear();
       } catch {
-        // never rendered; nothing to clear
+        // already cleared or never rendered
       }
-      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
-      recaptcha.current = verifier;
-      confirmation.current = await signInWithPhoneNumber(auth, l.phone, verifier);
-      setSmsStep("sent");
-    } catch (err) {
-      setSmsError(friendlySmsError(err));
+      recaptcha.current = null;
+      setSmsError(reportSmsError("send", err));
       setSmsStep("idle");
     }
   }
@@ -366,7 +454,7 @@ export function LoginFlow() {
       }
       goToPortal();
     } catch (err) {
-      setSmsError(friendlySmsError(err));
+      setSmsError(reportSmsError("verify", err));
       setSmsStep("sent");
       setSmsCode("");
     }
@@ -869,7 +957,7 @@ export function LoginFlow() {
         by step, so anything inside it unmounts on every transition — and a
         verifier whose container disappeared mid-flow throws. Here the node is
         mounted once, from first paint, and never moves. */}
-    <div id="recaptcha-container" />
+    <div id={RECAPTCHA_CONTAINER_ID} />
     </>
   );
 }

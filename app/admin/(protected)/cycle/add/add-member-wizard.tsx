@@ -294,6 +294,9 @@ export function AddMemberWizard({
       if (mode === "existing" && selectedPerson && carried > 0 && carryChoice) {
         await recordCarryDecision({
           personId: selectedPerson.id,
+          // D-2: the intention is stored against THIS participation, so it
+          // resurfaces as a pre-ticked offer when they are paid out.
+          participationId: result.data.id,
           cycleName: cycle.name,
           choice: carryChoice,
           balance: carried,

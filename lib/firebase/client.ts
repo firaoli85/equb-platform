@@ -16,6 +16,14 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 
+/** The single DOM node the reCAPTCHA widget mounts into. */
+export const RECAPTCHA_CONTAINER_ID = "recaptcha-container";
+
+// NEXT_PUBLIC_ values are inlined at BUILD time. Writing them into .env.local
+// while the dev server is running does NOT put them in the browser bundle —
+// the server must be restarted. That is why each one is read as a whole
+// literal here rather than through a computed key: Next can only substitute
+// the full `process.env.NEXT_PUBLIC_X` expression.
 function config() {
   return {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -24,6 +32,25 @@ function config() {
     messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   };
+}
+
+/**
+ * Which public Firebase values did NOT reach the browser bundle. Named so a
+ * failure can say WHICH one is missing instead of "not available".
+ */
+export function firebaseMissingClientConfig(): string[] {
+  const c = config();
+  return (
+    [
+      ["NEXT_PUBLIC_FIREBASE_API_KEY", c.apiKey],
+      ["NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", c.authDomain],
+      ["NEXT_PUBLIC_FIREBASE_PROJECT_ID", c.projectId],
+      ["NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID", c.messagingSenderId],
+      ["NEXT_PUBLIC_FIREBASE_APP_ID", c.appId],
+    ] as const
+  )
+    .filter(([, value]) => !value?.trim())
+    .map(([name]) => name);
 }
 
 /** True when every public Firebase value reached the browser bundle. */

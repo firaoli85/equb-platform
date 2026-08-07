@@ -5,6 +5,7 @@ import { useState } from "react";
 import { deletePayout, updatePayout } from "@/app/actions/edits";
 import { undoDraw } from "@/app/actions/wheel";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
+import { CarryDeductionOffer } from "@/components/admin/carry-deduction-offer";
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { AmountInput, Select } from "@/components/ui/controls";
@@ -384,7 +385,11 @@ function PayoutLine({
       </div>
 
       {open === "collect" && (
-        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3">
+        <>
+        {/* D-2: the remembered "deduct from payout" choice resurfaces HERE,
+            pre-ticked but never applied without this button being pressed. */}
+        <CarryDeductionOffer payoutId={p.id} />
+        <div className="mt-2 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-3">
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">Method</span>
             <Select<Exclude<Method, null>>
@@ -455,6 +460,7 @@ function PayoutLine({
             Mark collected
           </button>
         </div>
+        </>
       )}
 
       {open === "edit" && (

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { carryChoiceSummary, isCarryChoice, type CarryChoice } from "@/lib/carry-balance";
 import { forgivenessRefusal, ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { formatMoney } from "@/lib/format";
 import { parseDateInput } from "@/lib/format";
@@ -224,36 +225,51 @@ export async function listCarriedBalances() {
  */
 export async function recordCarryDecision(input: {
   personId: string;
+  /** The participation the decision belongs to — the intention is per cycle. */
+  participationId: string;
   cycleName: string;
-  choice: "leave" | "deduct" | "settle-now";
+  choice: CarryChoice;
   balance: number;
 }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
+    if (!isCarryChoice(input.choice)) {
+      return { ok: false as const, error: "Choose what happens to the carried balance." };
+    }
     const person = await prisma.person.findUnique({
       where: { id: input.personId },
       select: { id: true, nameEnglishFirst: true },
     });
     if (!person) return { ok: false as const, error: "Person not found." };
 
-    const said = {
-      leave: "left on the ledger — the balance stands unchanged",
-      deduct:
-        "to be DEDUCTED from their payout in this cycle — an intention only; the deduction is still offered, never automatic (D-23)",
-      "settle-now": "to be settled now — the organizer records a payment or a write-off separately",
-    }[input.choice];
-
+    // D-2: PERSISTED, not just audited. Previously this wrote a log line and
+    // nothing else, so "deduct it from their payout" could be chosen and then
+    // never resurface — the decision was made and silently lost.
+    //
+    // D-23 still holds: these columns only pre-tick the offer. Nothing reads
+    // them as permission to deduct (lib/carry-balance.ts owns that, and a
+    // guard test fails if any other path tries).
     await serializableTransaction(async (tx) => {
+      await tx.participation.update({
+        where: { id: input.participationId },
+        data: {
+          carryIntent: input.choice,
+          carryIntentAt: new Date(),
+          carryIntentAmount: input.balance,
+        },
+      });
       await logAudit(tx, {
         entity: "Person",
         entityId: person.id,
         action: "update",
         summary:
           `${person.nameEnglishFirst} added to ${input.cycleName} carrying ` +
-          `${formatMoney(input.balance)}: ${said}.`,
+          `${formatMoney(input.balance)}: ${carryChoiceSummary(input.choice)}.`,
       });
     });
+    revalidatePath("/admin/collections");
+    revalidatePath(`/admin/people/${person.id}`);
     return { ok: true as const };
   } catch (e) {
     console.error("recordCarryDecision failed:", e);
