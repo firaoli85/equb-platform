@@ -20,6 +20,35 @@ export type ConfirmSpec = {
   destructive?: boolean;
   /** HIGH-STAKES: the organizer must type this exact phrase to enable. */
   requirePhrase?: string;
+  /**
+   * THE CONSEQUENCE THE ORGANIZER MAY HAVE MISSED — stated loudly, above the
+   * body, in its own amber panel rather than as one paragraph among four.
+   *
+   * Use it when the action's most surprising effect is something it does NOT
+   * do. Deleting a payout removes the money record but leaves the number
+   * drawn; that is correct behaviour and completely invisible until it is
+   * said in those words.
+   */
+  consequence?: React.ReactNode;
+  /**
+   * THE ACTION HE PROBABLY MEANT, offered in the same place.
+   *
+   * When two similar actions exist and one of them is almost certainly the
+   * intent behind opening this dialog, the other must be reachable HERE. The
+   * organizer deleted a payout expecting the number to return to the wheel;
+   * "undo the draw" was on a different page, and nothing connected them.
+   *
+   * The organizer must never have to know which of two similar actions does
+   * what — the dialog tells him, and offers both.
+   */
+  alternative?: {
+    /** The button, e.g. "Undo the draw for week 1". */
+    label: string;
+    /** One line: when this is the right choice instead. */
+    description: React.ReactNode;
+    /** Runs instead of the destructive action; the dialog closes first. */
+    onChoose: () => void;
+  };
 };
 
 export function ConfirmDialog({
@@ -40,6 +69,14 @@ export function ConfirmDialog({
 
   const open = spec !== null;
   const phraseOk = !spec?.requirePhrase || typed.trim() === spec.requirePhrase;
+
+  // Choosing the ALTERNATIVE swaps the spec without closing the dialog, so
+  // anything already typed must not carry over into a different action's
+  // confirmation — that would let a phrase typed for one destructive action
+  // arm another.
+  useEffect(() => {
+    setTyped("");
+  }, [spec?.title]);
 
   useEffect(() => {
     if (!open) {
@@ -113,7 +150,52 @@ export function ConfirmDialog({
               className="pointer-events-auto w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] p-5 shadow-xl shadow-black/20 dark:shadow-black/60"
             >
               <h2 className="text-base font-black text-gray-900 dark:text-white">{spec.title}</h2>
+
+              {/* The surprising consequence goes ABOVE the body and in its own
+                  panel. Buried as the third paragraph it reads as background;
+                  here it reads as the point. */}
+              {spec.consequence && (
+                <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3.5 py-3">
+                  <svg
+                    className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 9v3.75m-9.3 3.38c-.87 1.5.22 3.37 1.95 3.37h14.7c1.73 0 2.82-1.87 1.95-3.37L13.95 3.38c-.87-1.5-3.03-1.5-3.9 0L2.7 16.13zM12 15.75h.01v.01H12v-.01z"
+                    />
+                  </svg>
+                  <div className="min-w-0 text-sm text-amber-900 dark:text-amber-200 [&_strong]:font-bold">
+                    {spec.consequence}
+                  </div>
+                </div>
+              )}
+
               <div className="mt-2 space-y-2 text-sm text-gray-700 dark:text-gray-300">{spec.body}</div>
+
+              {/* The other action, reachable from here. Sitting between the
+                  body and the buttons on purpose: it is read after the
+                  consequence and before the decision. */}
+              {spec.alternative && (
+                <div className="mt-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-950/25 px-3.5 py-3">
+                  <p className="text-sm text-indigo-950 dark:text-indigo-100">
+                    {spec.alternative.description}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={spec.alternative.onChoose}
+                    className="mt-2.5 inline-flex min-h-11 md:min-h-9 items-center justify-center rounded-xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-[#141414] px-4 py-2 text-sm font-bold text-indigo-800 dark:text-indigo-200 transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-50 dark:hover:bg-indigo-950/40 active:scale-[0.97] disabled:opacity-40"
+                  >
+                    {spec.alternative.label}
+                  </button>
+                </div>
+              )}
 
               {spec.requirePhrase && (
                 <div className="mt-3">

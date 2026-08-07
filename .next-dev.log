@@ -10078,3 +10078,1235 @@ To fix this, make sure your Cache-Control headers allow revalidation of chunks a
  GET /admin/balances 200 in 483ms (next.js: 6ms, proxy.ts: 202ms, application-code: 275ms)
  GET /admin/waiting 200 in 1700ms (next.js: 6ms, proxy.ts: 553ms, application-code: 1141ms)
  GET /admin/payments 200 in 898ms (next.js: 6ms, proxy.ts: 185ms, application-code: 707ms)
+ GET /admin/login 200 in 67ms (next.js: 18ms, proxy.ts: 4ms, application-code: 44ms)
+ POST /admin 200 in 1082ms (next.js: 6ms, proxy.ts: 549ms, application-code: 527ms)
+  └─ ƒ signOutAction() in 434ms app/actions/auth.ts
+ GET /login 200 in 92ms (next.js: 15ms, proxy.ts: 11ms, application-code: 65ms)
+ POST /login 200 in 171ms (next.js: 5ms, proxy.ts: 7ms, application-code: 159ms)
+  └─ ƒ lookupMemberByPhone({"phone":"12024092970"}) in 147ms app/actions/member.ts
+[browser] [SMS send] Firebase Phone Auth failed
+  code   : auth/invalid-app-credential
+  name   : FirebaseError
+  message: Firebase: Error (auth/invalid-app-credential). FirebaseError: Firebase: Error (auth/invalid-app-credential). (components/member/login-flow.tsx:326:13)
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:16:1
+Error: Module not found: Can't resolve 'firebase/app'
+  [90m14 |[0m [90m// when it is.[0m
+  [90m15 |[0m
+[31m[1m>[0m [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./components/member/login-flow.tsx:5:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m3 |[0m ...[36mt[0m { useRef, useState, useTransition } [36mfrom[0m [32m"react"[0m;
+  [90m4 |[0m ...[36mt[0m { [33mAnimatePresence[0m, motion, useReducedMotion } [36mfrom[0m [32m"motion/react"[0m;
+[31m[1m>[0m [90m5 |[0m ...[36mt[0m { [33mRecaptchaVerifier[0m, signInWithPhoneNumber, [36mtype[0m [33mConfirmationResult[0m } [36mfrom[0m [32m"firebase/a...[0m
+  [90m  |[0m    [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m6 |[0m ...[36mt[0m { lookupMemberByPhone } [36mfrom[0m [32m"@/app/actions/member"[0m;
+  [90m7 |[0m ...[36mt[0m {
+  [90m8 |[0m ...uestWhatsAppCode,
+
+
+
+Import trace:
+  Server Component:
+    ./components/member/login-flow.tsx
+    ./app/login/page.tsx
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+⨯ ./lib/firebase/client.ts:17:1
+Error: Module not found: Can't resolve 'firebase/auth'
+  [90m15 |[0m
+  [90m16 |[0m [36mimport[0m { initializeApp, getApps, [36mtype[0m [33mFirebaseApp[0m } [36mfrom[0m [32m"firebase/app"[0m;
+[31m[1m>[0m [90m17 |[0m [36mimport[0m { getAuth, [36mtype[0m [33mAuth[0m } [36mfrom[0m [32m"firebase/auth"[0m;
+  [90m   |[0m [31m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m18 |[0m
+  [90m19 |[0m [90m/** The single DOM node the reCAPTCHA widget mounts into. */[0m
+  [90m20 |[0m [36mexport[0m [36mconst[0m [33mRECAPTCHA_CONTAINER_ID[0m = [32m"recaptcha-container"[0m;
+
+
+
+Import traces:
+  Client Component Browser:
+    ./lib/firebase/client.ts [Client Component Browser]
+    ./components/member/login-flow.tsx [Client Component Browser]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./lib/firebase/client.ts [Client Component SSR]
+    ./components/member/login-flow.tsx [Client Component SSR]
+    ./components/member/login-flow.tsx [Server Component]
+    ./app/login/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+✓ Compiled in 9s
+ GET /login 200 in 311ms (next.js: 34ms, proxy.ts: 11ms, application-code: 265ms)
+ GET /login 200 in 155ms (next.js: 17ms, proxy.ts: 36ms, application-code: 101ms)
+Error [AuthApiError]: Invalid Refresh Token: Refresh Token Not Found
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: 'refresh_token_not_found'
+}
+Error [AuthApiError]: Invalid Refresh Token: Refresh Token Not Found
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: 'refresh_token_not_found'
+}
+ GET /login 200 in 895ms (next.js: 18ms, proxy.ts: 760ms, application-code: 117ms)
+✓ Compiled in 2.9s
+ GET /login 200 in 550ms (next.js: 115ms, proxy.ts: 12ms, application-code: 423ms)
+ GET /login 200 in 553ms (next.js: 256ms, proxy.ts: 108ms, application-code: 188ms)
+ GET /login 200 in 2.8s (next.js: 2.5s, proxy.ts: 191ms, application-code: 56ms)
+ GET /login 200 in 58ms (next.js: 4ms, proxy.ts: 3ms, application-code: 51ms)
+[?25h

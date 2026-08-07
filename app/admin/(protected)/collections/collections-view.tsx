@@ -80,6 +80,73 @@ export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cy
     });
   }
 
+  /**
+   * THE UNDO FLOW, in one place.
+   *
+   * Reachable from the week's own button AND from inside the delete-payout
+   * dialog. The organizer deleted #78's payout expecting the number back on
+   * the wheel; that is what THIS action does, and it used to live only on a
+   * different control with nothing connecting them. One definition means the
+   * two entry points can never describe the same action differently.
+   */
+  function askUndoDraw(group: WeekGroup) {
+    const u = group.undo;
+    if (!u || !group.drawId) return;
+    ask(
+      {
+        title: `Undo the draw for week ${u.weekNumber}?`,
+        consequence: (
+          <>
+            Number{u.numbersReturning.length === 1 ? "" : "s"}{" "}
+            <strong>{u.numbersReturning.map((n) => `#${n}`).join(", ")}</strong>{" "}
+            {u.numbersReturning.length === 1 ? "RETURNS" : "RETURN"} TO THE WHEEL POOL and week{" "}
+            {u.weekNumber} can be drawn again.
+          </>
+        ),
+        body: (
+          <>
+            <p>
+              This says week {u.weekNumber} was NOT drawn. The draw and its{" "}
+              <strong>{u.payoutCount}</strong> payout record{u.payoutCount === 1 ? "" : "s"}{" "}
+              totalling <strong className="tabular-nums">{formatMoney(u.totalNet)}</strong> are
+              removed
+              {u.collectedCount > 0 && (
+                <>
+                  {" "}
+                  — including{" "}
+                  <strong className="tabular-nums">{formatMoney(u.collectedNet)}</strong> already
+                  handed over ({u.collectedCount} collected)
+                </>
+              )}
+              .
+            </p>
+            {u.unsettled.length > 0 && (
+              <p>
+                {u.unsettled
+                  .map(
+                    (s) =>
+                      `#${s.number}'s week-${u.weekNumber} contribution of ${formatMoney(s.amount)}`,
+                  )
+                  .join(" and ")}{" "}
+                was settled from the payout — it becomes owed again.
+              </p>
+            )}
+            <p>
+              The cash position and every standing recalculate immediately. An audit entry keeps
+              the full record.
+            </p>
+          </>
+        ),
+        confirmLabel: `Undo the draw for week ${u.weekNumber}`,
+        requirePhrase: u.highStakes ? cycleName : undefined,
+      },
+      () => undoDraw({ drawId: group.drawId! }),
+      `✓ Week ${u.weekNumber}'s draw undone — ${u.numbersReturning
+        .map((n) => `#${n}`)
+        .join(", ")} returned to the wheel.`,
+    );
+  }
+
   if (groups.length === 0) {
     return (
       <Card className="px-6 py-10 text-center">
@@ -129,57 +196,7 @@ export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cy
               <button
                 type="button"
                 className={buttonCls.dangerQuiet + " !text-xs"}
-                onClick={() => {
-                  const u = group.undo!;
-                  ask(
-                    {
-                      title: `Undo the draw for week ${u.weekNumber}?`,
-                      body: (
-                        <>
-                          <p>
-                            This says week {u.weekNumber} was NOT drawn. The draw and its{" "}
-                            <strong>{u.payoutCount}</strong> payout record
-                            {u.payoutCount === 1 ? "" : "s"} totalling{" "}
-                            <strong className="tabular-nums">{formatMoney(u.totalNet)}</strong> are
-                            removed
-                            {u.collectedCount > 0 && (
-                              <>
-                                {" "}
-                                — including{" "}
-                                <strong className="tabular-nums">
-                                  {formatMoney(u.collectedNet)}
-                                </strong>{" "}
-                                already handed over ({u.collectedCount} collected)
-                              </>
-                            )}
-                            .
-                          </p>
-                          <p>
-                            Number{u.numbersReturning.length === 1 ? "" : "s"}{" "}
-                            <strong>{u.numbersReturning.map((n) => `#${n}`).join(", ")}</strong>{" "}
-                            RETURN TO THE WHEEL POOL.
-                          </p>
-                          {u.unsettled.length > 0 && (
-                            <p>
-                              {u.unsettled
-                                .map(
-                                  (s) =>
-                                    `#${s.number}'s week-${u.weekNumber} contribution of ${formatMoney(s.amount)}`,
-                                )
-                                .join(" and ")}{" "}
-                              was settled from the payout — it becomes owed again.
-                            </p>
-                          )}
-                          <p>The cash position and every standing recalculate immediately. An audit entry keeps the full record.</p>
-                        </>
-                      ),
-                      confirmLabel: `Undo the draw for week ${u.weekNumber}`,
-                      requirePhrase: u.highStakes ? cycleName : undefined,
-                    },
-                    () => undoDraw({ drawId: group.drawId! }),
-                    `✓ Week ${u.weekNumber}'s draw undone — ${u.numbersReturning.map((n) => `#${n}`).join(", ")} returned to the wheel.`,
-                  );
-                }}
+                onClick={() => askUndoDraw(group)}
               >
                 Undo the draw for week {group.weekNumber}
               </button>
@@ -197,6 +214,7 @@ export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cy
                 setOpen={(mode) => setOpenRow(mode ? { id: p.id, mode } : null)}
                 busy={busy}
                 ask={ask}
+                onUndoDraw={group.undo && group.drawId ? () => askUndoDraw(group) : null}
               />
             ))}
           </ul>
@@ -224,6 +242,7 @@ function PayoutLine({
   setOpen,
   busy,
   ask,
+  onUndoDraw,
 }: {
   payout: PayoutRow;
   weekNumber: number | null;
@@ -236,6 +255,8 @@ function PayoutLine({
     action: () => Promise<{ ok: boolean; error?: string } | { ok: boolean }>,
     okText: string,
   ) => void;
+  /** The alternative action, when this payout came from a real draw. */
+  onUndoDraw: (() => void) | null;
 }) {
   const [method, setMethod] = useState<Exclude<Method, null>>(p.method ?? "ZELLE");
   const [date, setDate] = useState(p.paidAt ?? new Date().toISOString().slice(0, 10));
@@ -348,6 +369,32 @@ function PayoutLine({
               ask(
                 {
                   title: `Delete #${p.number} ${p.who}'s payout?`,
+                  // THE MISS THAT PROMPTED THIS. The organizer deleted a
+                  // payout because the member never received the money, and
+                  // expected the number back on the wheel. It is not — by
+                  // design — and nothing said so loudly enough.
+                  consequence: (
+                    <>
+                      <strong>The draw stands.</strong> #{p.number} stays drawn and does{" "}
+                      <strong>NOT</strong> return to the wheel
+                      {weekNumber !== null ? ` — week ${weekNumber} remains drawn` : ""}. Only the
+                      money record is removed.
+                    </>
+                  ),
+                  // The action he probably meant, right here.
+                  alternative: onUndoDraw
+                    ? {
+                        description: (
+                          <>
+                            If {p.who} never received the money and week {weekNumber} should be
+                            drawn again, undo the draw instead — that returns the number
+                            {weekNumber !== null ? "" : ""} to the wheel.
+                          </>
+                        ),
+                        label: `Undo the draw for week ${weekNumber}`,
+                        onChoose: onUndoDraw,
+                      }
+                    : undefined,
                   body: (
                     <>
                       <p>
@@ -355,10 +402,6 @@ function PayoutLine({
                         <strong className="tabular-nums">{formatMoney(p.netAmount)}</strong> going
                         out ({p.status.toLowerCase()}) disappears and the cash position
                         recalculates.
-                      </p>
-                      <p>
-                        <strong>The draw stands.</strong> #{p.number} stays drawn and does NOT
-                        return to the wheel{weekNumber !== null ? ` — week ${weekNumber} remains drawn` : ""}.
                       </p>
                       {p.settlementAmount > 0 && weekNumber !== null && (
                         <p>
