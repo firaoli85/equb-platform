@@ -40,7 +40,58 @@ model Person {
   participations   Participation[]
   ledgerEntries    LedgerEntry[]
   messageLogs      MessageLog[]
+  signInSessions   SignInSession[]
   @@map("people")
+}
+
+// EVERY SIGN-IN, AND WHAT IT IS STILL DOING.
+//
+// The organizer's ruling removed the second factor from the phone-digit
+// default PIN — members sign in directly. The protection moved here: a row
+// per sign-in, so a session can be bounded (lib/session-policy.ts), shown to
+// the person it belongs to, and ended by them.
+//
+// AWARENESS, NEVER BLOCKING. Nothing in this table may refuse a login.
+// Fingerprints change on browser updates and IPs change on networks; both are
+// recorded so a member can recognise their own history, not so the system can
+// judge it.
+model SignInSession {
+  id           String  @id @default(cuid())
+  // The Supabase auth user behind the session. Set for members AND for the
+  // organizer; personId is set only for members, so the organizer's own
+  // sessions are still listable without a directory row.
+  authUserId   String  @db.Uuid
+  personId     String?
+  role         String  // MEMBER | ADMIN — see SessionRole in lib/session-policy
+  method       String  // PIN | WHATSAPP | SMS | PASSWORD
+  // The cookie is the only copy of the token; this is its SHA-256. A database
+  // reader must not come away able to impersonate a live session.
+  tokenHash    String  @unique
+  // Awareness, in the words the UI shows (lib/device.ts).
+  fingerprint  String
+  userAgent    String
+  browser      String
+  os           String
+  deviceType   String
+  ip           String
+  location     String?
+  // True when this device/IP combination had never been seen for this person.
+  // Cleared by noticeSeenAt once they have actually read the notice, so it
+  // shows once and prominently rather than nagging forever.
+  isNewDevice  Boolean   @default(false)
+  noticeSeenAt DateTime?
+  createdAt    DateTime  @default(now())
+  // The sliding idle clock reads this. Written at most once a heartbeat.
+  lastSeenAt   DateTime  @default(now())
+  // Set by "Sign out everywhere else" and by ordinary sign-out. A revoked row
+  // is KEPT, not deleted — the history is the point (2.14).
+  revokedAt    DateTime?
+  revokedReason String?
+  person       Person?  @relation(fields: [personId], references: [id], onDelete: Cascade)
+  // The proxy's hot path: one lookup by tokenHash on every request.
+  @@index([authUserId, revokedAt])
+  @@index([personId, createdAt])
+  @@map("sign_in_sessions")
 }
 
 // Organizer-editable message wording (2.20/D-27): one row per message type,
@@ -350,6 +401,10 @@ model LedgerEntry {
   amount      Int
   description String
   notes       String?
+  /** How the money arrived. Null for DEBT and FORGIVEN — nothing moved. */
+  method      PaymentMethod?
+  /** The day it HAPPENED, which is not always the day it was typed in. */
+  occurredAt  DateTime        @default(now())
   createdAt   DateTime        @default(now())
   person      Person          @relation(fields: [personId], references: [id])
   @@map("ledger_entries")
@@ -397,7 +452,14 @@ enum WinnerPlanStatus {
 
 enum LedgerEntryType {
   DEBT
+  /** Money actually received against the balance. */
   PAYMENT
+  /**
+   * The organizer WROTE IT OFF (2.2 organizer discretion). It clears the
+   * balance exactly like a payment, but it is a different fact and the
+   * history must never blur the two — nobody paid this.
+   */
+  FORGIVEN
 }
 
 enum MessageTrigger {

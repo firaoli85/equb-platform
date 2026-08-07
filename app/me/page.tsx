@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMyPortal } from "@/app/actions/member";
+import { myNewDeviceNotice } from "@/app/actions/sessions";
+import { NewDeviceNotice } from "@/components/member/new-device-notice";
 import { MemberPayoutCard } from "@/components/member/member-payout-card";
 import { MemberPersonalSummary } from "@/components/member/member-personal-summary";
 import { SavedCard } from "@/components/member/saved-card";
@@ -14,6 +16,10 @@ export const dynamic = "force-dynamic";
 // late joiner's start are simply not theirs and never rendered.
 export default async function MePage() {
   const result = await getMyPortal();
+  // Ruling 5: this goes ABOVE the money. A member who signed in with four
+  // digits anyone could guess finds out here if someone else did.
+  const notice = await myNewDeviceNotice();
+  const newDevice = notice.ok ? notice.data : null;
   if (!result.ok) {
     // Only a missing session goes to login — a transient error must never
     // bounce a signed-in member into a silent login loop.
@@ -29,6 +35,9 @@ export default async function MePage() {
   if (!participation) {
     return (
       <div className="space-y-4">
+        {newDevice && (
+          <NewDeviceNotice sessionId={newDevice.sessionId} message={newDevice.message} />
+        )}
         <MemberPersonalSummary
           displayName={displayName}
           paidCount={0}
@@ -73,8 +82,14 @@ export default async function MePage() {
 
   return (
     <div className="space-y-4">
-      {/* 2.1: a savings group leads with what you have SAVED. Nothing on the
-          page may be more prominent than this figure. */}
+      {/* Ruling 5. The ONE thing allowed above the savings figure — and only
+          when it is actually there, which lib/device.ts keeps rare. */}
+      {newDevice && (
+        <NewDeviceNotice sessionId={newDevice.sessionId} message={newDevice.message} />
+      )}
+
+      {/* 2.1: a savings group leads with what you have SAVED. Nothing else on
+          the page may be more prominent than this figure. */}
       <SavedCard
         contribution={p.contribution}
         weeklyAmount={p.weeklyAmount}
@@ -134,6 +149,25 @@ export default async function MePage() {
             />
           </svg>
           Documents
+        </Link>
+
+        {/* Ruling 4. Full width rather than a third tile in a two-up grid:
+            the tab bar stays at three items (a bottom nav past five stops
+            being navigable), so this is the only route to it on a phone and
+            it must not read as an afterthought. */}
+        <Link
+          href="/me/security"
+          className="col-span-2 flex items-center gap-2.5 px-4 py-3.5 rounded-2xl bg-white dark:bg-[#141414] border border-gray-100 dark:border-gray-800 shadow-sm text-sm font-semibold text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.98] transition-colors"
+          style={{ touchAction: "manipulation", minHeight: "44px" }}
+        >
+          <svg className="w-5 h-5 text-indigo-500 dark:text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.746 3.746 0 0121 12z"
+            />
+          </svg>
+          Where you are signed in
         </Link>
       </div>
     </div>

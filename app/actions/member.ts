@@ -8,7 +8,9 @@ import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { contribution } from "@/lib/contribution";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { findPeopleByPhone } from "@/lib/people-lookup";
+import { firebaseConfigured } from "@/lib/firebase-verify";
 import { toE164 } from "@/lib/phone";
+import { whatsAppMissingConfig } from "@/lib/whatsapp";
 import { defaultPinForPhone } from "@/lib/pin";
 import { computeStanding, pinnedMapFromEvents } from "@/lib/standing";
 import { calculatePayout } from "@/lib/wheel";
@@ -422,6 +424,15 @@ export async function lookupMemberByPhone(input: { phone: string }) {
         nameEnglishFirst: person.nameEnglishFirst,
         nameAmharic: person.nameAmharic,
         pinAvailable: pinAllowed,
+        // 2.28 — offer ONLY doors that actually work. These say whether the
+        // CHANNEL is configured on this deployment, nothing about this member,
+        // so they leak no per-person fact.
+        // Configured AND switched on. While Meta has the Business Account
+        // disabled the switch is off, so the door disappears rather than
+        // handing out codes that never arrive.
+        whatsAppAvailable:
+          whatsAppMissingConfig().length === 0 && (await getSetting("whatsappEnabled")),
+        smsAvailable: firebaseConfigured(),
         // SECURITY (audit C2): `hasOwnPin` used to be returned here. This
         // endpoint is UNAUTHENTICATED, so that published a list of exactly
         // which members were still signable-in with their own phone digits —

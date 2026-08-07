@@ -14,7 +14,11 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: securityHeaders({
           isDev: process.env.NODE_ENV === "development",
+          // Both are NEXT_PUBLIC_ values, so they are read from the same build
+          // that inlines them into the browser bundle — the policy and the
+          // code it governs can never disagree about which project is in use.
           supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          firebaseAuthDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
         }),
       },
     ];

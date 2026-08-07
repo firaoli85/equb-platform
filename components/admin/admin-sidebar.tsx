@@ -21,6 +21,7 @@ const GROUPS: NavGroup[] = [
       { label: "Payments", href: "/admin/payments" },
       { label: "Collections", href: "/admin/collections" },
       { label: "Who is waiting", href: "/admin/waiting" },
+      { label: "Carried balances", href: "/admin/balances" },
     ],
   },
   {
@@ -84,6 +85,14 @@ function NavIcon({ href }: { href: string }) {
             strokeLinejoin="round"
             d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
           />
+        </svg>
+      );
+    case "/admin/balances":
+      // A ledger book: what members still owe from earlier cycles.
+      return (
+        <svg {...common}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a2 2 0 012-2h11a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h7M8 11h7M8 15h4" />
         </svg>
       );
     case "/admin/waiting":

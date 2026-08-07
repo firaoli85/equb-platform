@@ -2,18 +2,21 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCatchUpWeeks } from "@/app/actions/payments-view";
 import { getMemberStanding } from "@/app/actions/payments";
+import { listMemberSignIns } from "@/app/actions/sessions";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
 import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
-import { ledgerBalance } from "@/lib/ledger";
+import { ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { calculateFinishWeek } from "@/lib/money";
 import { defaultPinForPhone } from "@/lib/pin";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { calculatePayout } from "@/lib/wheel";
 import { AssignPayout } from "./assign-payout";
+import { CarriedBalance } from "./carried-balance";
 import { MemberPayments } from "./member-payments";
+import { MemberSignIns } from "./member-sign-ins";
 import { MemberTabBar, parseTab } from "./member-tabs";
 import { MessagesOptOut } from "./messages-opt-out";
 import { ParticipationEditor } from "./participation-editor";
@@ -49,7 +52,9 @@ export default async function PersonPage({
   const person = await prisma.person.findUnique({
     where: { id },
     include: {
-      ledgerEntries: { orderBy: { createdAt: "asc" } },
+      // Oldest first: the running total only makes sense in the order the
+      // events actually happened.
+      ledgerEntries: { orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }] },
       participations: {
         include: {
           cycle: {
@@ -89,6 +94,13 @@ export default async function PersonPage({
     ? await Promise.all([getMemberStanding(active.id), getCatchUpWeeks(active.id)])
     : [null, null];
 
+  // Ruling 6. Fetched only for the tab that shows it — the sign-in history is
+  // never needed to render Payments or Payout.
+  const signIns =
+    tab === "settings"
+      ? await listMemberSignIns({ personId: person.id })
+      : ({ ok: true as const, data: [] });
+
   // The one finish preview this page shows (2.22) — same pure module as every
   // editable surface, so the card, the editor and the wizard all agree.
   const payoutFinish = active
@@ -102,6 +114,9 @@ export default async function PersonPage({
     : null;
 
   const carried = ledgerBalance(person.ledgerEntries);
+  // The STORY, not just the number: where each debt came from, every payment
+  // and write-off against it, and the running total after each (2.18).
+  const balanceStory = ledgerStory(person.ledgerEntries);
   // Lock state (2.23), computed once server-side — the client renders labels.
   const now = new Date();
   const isLocked = person.pinLockedUntil !== null && person.pinLockedUntil > now;
@@ -321,12 +336,43 @@ export default async function PersonPage({
       {/* ————— TAB 2: PAYOUT ————— */}
       {tab === "payout" && (
         <div className="space-y-4">
-          {carried > 0 && (
-            <div className="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-300">
-              Carried balance from earlier cycles:{" "}
-              <strong className="tabular-nums">{formatMoney(carried)}</strong> still owed (2.18 —
-              remembered, never enforced). Record against it on the Payments tab.
-            </div>
+          {(carried > 0 || person.ledgerEntries.length > 0) && (
+            <Card>
+              <CardHeader
+                title="Carried balance"
+                sub="From earlier cycles — it belongs to them, not to a cycle, and can be settled or written off at any time (2.18)."
+                right={
+                  <Link
+                    href="/admin/balances"
+                    className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:underline"
+                  >
+                    All balances →
+                  </Link>
+                }
+              />
+              <div className="px-5 pb-4">
+                <CarriedBalance
+                  personId={person.id}
+                  personName={person.nameEnglishFirst}
+                  story={{
+                    balance: balanceStory.balance,
+                    raised: balanceStory.raised,
+                    repaid: balanceStory.repaid,
+                    forgiven: balanceStory.forgiven,
+                    entries: balanceStory.entries.map((e) => ({
+                      id: e.id,
+                      type: e.type,
+                      amount: e.amount,
+                      description: e.description,
+                      notes: e.notes,
+                      method: e.method,
+                      occurredAt: e.occurredAt.toISOString(),
+                      balanceAfter: e.balanceAfter,
+                    })),
+                  }}
+                />
+              </div>
+            </Card>
           )}
           {active === null ? (
             <Card className="px-5 py-4">
@@ -567,12 +613,16 @@ export default async function PersonPage({
                       They set their own PIN.
                     </span>
                   ) : pinState === "default" ? (
+                    // The badge the ruling keeps. The wording changed with it:
+                    // the default now signs in on its own, so this is a
+                    // standing risk to nudge, not a half-open door.
                     <span className="rounded bg-amber-100 dark:bg-amber-950/50 px-1.5 py-0.5 text-amber-900 dark:text-amber-300">
-                      Still on the default — the last 4 digits of their phone, plus a WhatsApp code.
+                      Still on the default — the last 4 digits of their phone sign them in. Anyone
+                      who has their number could use it.
                     </span>
                   ) : (
                     <span className="text-gray-600 dark:text-gray-400">
-                      No PIN — they sign in with a WhatsApp code, or set a PIN below.
+                      No PIN — they sign in with a code, or set a PIN below.
                     </span>
                   )}
                 </p>
@@ -592,6 +642,24 @@ export default async function PersonPage({
                   <MessagesOptOut personId={person.id} noMessages={person.noMessages} />
                 </div>
               </div>
+            </div>
+          </Card>
+
+          {/* Ruling 6: "was that you?", answerable. Sits under Settings
+              beside the PIN controls, because reset-their-PIN is the action
+              this evidence usually leads to. */}
+          <Card>
+            <CardHeader
+              title="Recent sign-ins"
+              sub="Device, network and time for this member's last sign-ins — so you can answer “was that you?”"
+            />
+            <div className="px-5 pb-4">
+              <MemberSignIns rows={signIns.ok ? signIns.data : []} />
+              {!signIns.ok && (
+                <p role="alert" className="mt-2 text-sm text-red-800 dark:text-red-400">
+                  {signIns.error}
+                </p>
+              )}
             </div>
           </Card>
         </div>

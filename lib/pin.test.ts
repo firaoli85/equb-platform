@@ -6,6 +6,7 @@ import {
   isPinLocked,
   isValidPinFormat,
   lockoutAfterFailure,
+  requiresSecondFactor,
   verifyPin,
   PIN_LOCKOUT_MINUTES,
   PIN_MAX_ATTEMPTS,
@@ -351,5 +352,72 @@ describe("verifyPin — comparison only; the counter is the caller's business", 
         allowDefaultFromPhone: true,
       }),
     ).toEqual({ result: "wrong" });
+  });
+});
+
+// THE ORGANIZER'S RULING (Aug 2026) replaced audit C2's door.
+//
+// These tests used to assert the opposite of what they assert now: that the
+// phone-digit default REQUIRED a second factor. That door held so well that
+// 26 of 27 members could not get in — the code channel could not deliver, so
+// the only person who could sign in was the one who had set her own PIN.
+//
+// The ruling: the default signs a member in directly, and the risk C2 named
+// (which is real, and unchanged) is answered by the session layer instead —
+// bounded lifetimes, recorded devices, a visible session list, and a
+// new-device notice. See lib/session-policy.ts and lib/session-record.ts.
+describe("requiresSecondFactor — nobody is stopped at the door", () => {
+  it("an OWN PIN signs in directly", () => {
+    expect(requiresSecondFactor({ usedDefault: false })).toBe(false);
+  });
+
+  it("the phone-digit DEFAULT signs in directly TOO — this is the ruling", () => {
+    expect(requiresSecondFactor({ usedDefault: true })).toBe(false);
+  });
+
+  it("no member is ever refused, whichever way they matched", () => {
+    for (const usedDefault of [true, false]) {
+      expect(requiresSecondFactor({ usedDefault })).toBe(false);
+    }
+  });
+
+  it("verifyPin still reports usedDefault — the FACT survives, only the gate went", async () => {
+    // The signal is what the "set your own PIN" prompt and the organizer's
+    // amber badges are built on, so it must keep working even though nothing
+    // blocks on it any more.
+    const viaDefault = await verifyPin({ pinHash: null, phone: "+1 240 555 0187" }, "0187", {
+      allowDefaultFromPhone: true,
+    });
+    expect(viaDefault).toEqual({ result: "match", usedDefault: true });
+    expect(requiresSecondFactor({ usedDefault: true })).toBe(false);
+  });
+
+  it("usedDefault is still impossible once a member owns a PIN", async () => {
+    // Unchanged by the ruling: the branch that sets usedDefault is
+    // unreachable when a hash exists, so "own PIN" can never be mislabelled
+    // as still-on-the-default in the admin's badges.
+    const pinHash = await hashPin("4321");
+    expect(
+      await verifyPin({ pinHash, phone: "+1 240 555 0187" }, "4321", {
+        allowDefaultFromPhone: true,
+      }),
+    ).toEqual({ result: "match", usedDefault: false });
+
+    // And the phone digits do NOT open the door once they own a PIN.
+    const viaDigits = await verifyPin({ pinHash, phone: "+1 240 555 0187" }, "0187", {
+      allowDefaultFromPhone: true,
+    });
+    expect(viaDigits.result).toBe("wrong");
+  });
+
+  it("every own-PIN member signs in one-factor, for any PIN length we allow", async () => {
+    for (const secret of ["4321", "90210", "12345678"]) {
+      const hash = await hashPin(secret);
+      const v = await verifyPin({ pinHash: hash, phone: "+1 240 555 0187" }, secret, {
+        allowDefaultFromPhone: true,
+      });
+      expect(v).toEqual({ result: "match", usedDefault: false });
+      if (v.result === "match") expect(requiresSecondFactor(v)).toBe(false);
+    }
   });
 });

@@ -161,7 +161,11 @@ export function settlementDescriptionPrefix(cycleName: string): string {
  * a repeated edit charge only the DIFFERENCE, and a reversal self-cancels.
  */
 export function settledSoFarFromLedger(
-  entries: readonly { type: "DEBT" | "PAYMENT"; amount: number; notes: string | null }[],
+  entries: readonly {
+    type: "DEBT" | "PAYMENT" | "FORGIVEN";
+    amount: number;
+    notes: string | null;
+  }[],
   cycleId: string,
 ): number {
   const debt = settlementLedgerTag(cycleId, "debt");

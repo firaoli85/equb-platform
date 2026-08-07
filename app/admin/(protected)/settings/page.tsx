@@ -1,11 +1,17 @@
 import { getPlatformSettings } from "@/app/actions/settings";
+import { listMySessions } from "@/app/actions/sessions";
 import { PresentationToggle } from "@/components/presentation-toggle";
+import { SessionList } from "@/components/session-list";
+import { SessionPolicyForm } from "./session-policy-form";
 import { SettingsForm } from "./settings-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const result = await getPlatformSettings();
+  // Ruling 4: the organizer gets the same view of his own sessions that a
+  // member gets of theirs — same component, same "sign out everywhere else".
+  const sessions = await listMySessions();
 
   return (
     <main>
@@ -35,6 +41,24 @@ export default async function SettingsPage() {
           </section>
 
           <SettingsForm initial={result.data} />
+
+          <SessionPolicyForm initial={result.data} />
+
+          <section className="rounded border border-gray-300 dark:border-gray-700 p-4">
+            <h2 className="text-base font-semibold">Where you are signed in</h2>
+            <p className="mb-3 mt-1 text-sm text-gray-700 dark:text-gray-300">
+              Every device currently signed in as the organizer. If you see one you do not
+              recognise — an old laptop, a borrowed machine — sign it out here and change your
+              password.
+            </p>
+            {!sessions.ok ? (
+              <p role="alert" className="text-sm text-red-800 dark:text-red-400">
+                {sessions.error}
+              </p>
+            ) : (
+              <SessionList sessions={sessions.data} now={Date.now()} />
+            )}
+          </section>
         </div>
       )}
     </main>

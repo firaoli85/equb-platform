@@ -23,7 +23,7 @@ import {
 } from "@/lib/messaging-engine";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
-import { getSetting } from "@/lib/settings";
+import { getSetting, WHATSAPP_DISABLED_REASON } from "@/lib/settings";
 import { calculatePayout } from "@/lib/wheel";
 import { whatsAppMissingConfig } from "@/lib/whatsapp";
 
@@ -118,6 +118,10 @@ export async function getMessagingOverview() {
       ok: true as const,
       data: {
         whatsAppMissingConfig: whatsAppMissingConfig(),
+        // The channel switch and its reason, so the page states the truth
+        // rather than letting the organizer discover it in the log.
+        whatsappEnabled: await getSetting("whatsappEnabled"),
+        whatsappDisabledReason: WHATSAPP_DISABLED_REASON,
         templates: MESSAGE_KEYS.map((key) => {
           const row = templates.get(key)!;
           return {

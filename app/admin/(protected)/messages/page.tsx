@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getMessagingOverview } from "@/app/actions/messages";
 import { Alert, Card, CardHeader, Pill, Table, Td, Th, trHoverCls } from "@/components/ui/primitives";
 import { ComposeSend } from "./compose-send";
@@ -22,7 +23,8 @@ export default async function MessagesPage() {
       </main>
     );
   }
-  const { whatsAppMissingConfig, templates, members, log } = result.data;
+  const { whatsAppMissingConfig, whatsappEnabled, whatsappDisabledReason, templates, members, log } =
+    result.data;
 
   return (
     <main className="space-y-8">
@@ -36,7 +38,20 @@ export default async function MessagesPage() {
         </p>
       </div>
 
-      {whatsAppMissingConfig.length > 0 && (
+      {!whatsappEnabled && (
+        <Alert kind="err">
+          <strong>{whatsappDisabledReason}</strong> No message is being sent — every send is
+          refused before it reaches Twilio, so nothing is attempted and nothing is billed.
+          Preparing and previewing still work, and everything you prepare is shown exactly as
+          it would go out. The switch is on{" "}
+          <Link href="/admin/settings" className="font-semibold underline">
+            Settings
+          </Link>
+          .
+        </Alert>
+      )}
+
+      {whatsappEnabled && whatsAppMissingConfig.length > 0 && (
         <Alert kind="err">
           WhatsApp sending is not configured on this machine — missing{" "}
           {whatsAppMissingConfig.join(", ")} in .env.local. Prepares and previews work;

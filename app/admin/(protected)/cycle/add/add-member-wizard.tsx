@@ -7,6 +7,8 @@ import {
   addToCycle,
   type SavedParticipation,
 } from "@/app/actions/participations";
+import { recordCarryDecision } from "@/app/actions/ledger";
+import { Radio } from "@/components/ui/controls";
 import {
   commitmentCap,
   finishLine,
@@ -43,7 +45,18 @@ type WizardPerson = {
   nameEnglishLast: string | null;
   phone: string | null;
   inActiveCycle: boolean;
+  /** Cents still carried from earlier cycles (2.18). */
+  carriedBalance: number;
+  /** Where that balance came from — the DEBT entries descriptions. */
+  carriedFrom: string[];
 };
+
+/**
+ * What the organizer decides to do about a carried balance when adding
+ * someone to a NEW cycle. There is no default and no silent behaviour: the
+ * balance is SURFACED and one of these is chosen every time (2.18).
+ */
+type CarryChoice = "leave" | "deduct" | "settle-now";
 
 const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six"];
 
@@ -109,6 +122,8 @@ export function AddMemberWizard({
   // week — the organizer never does the arithmetic. Turning it off (or typing
   // a weeks figure) hands control back; the cap and its override are unchanged.
   const [finishWithGroup, setFinishWithGroup] = useState(true);
+  // 2.18: never silently carry, deduct or ignore. Null until chosen.
+  const [carryChoice, setCarryChoice] = useState<CarryChoice | null>(null);
 
   function chooseStartWeek(value: string) {
     setStartWeekStr(value);
@@ -226,9 +241,13 @@ export function AddMemberWizard({
   const finishWeek = preview?.finishWeek ?? null;
   const finishDate = preview?.finishDate ?? null;
 
+  const carried = mode === "existing" ? (selectedPerson?.carriedBalance ?? 0) : 0;
   const step1Valid =
     mode === "existing"
-      ? selectedPerson !== null && !selectedPerson.inActiveCycle
+      ? selectedPerson !== null &&
+        !selectedPerson.inActiveCycle &&
+        // 2.18: a carried balance must be DECIDED, not stepped past.
+        (carried === 0 || carryChoice !== null)
       : newPerson.nameAmharic.trim() !== "" && newPerson.nameEnglishFirst.trim() !== "";
   const step2Valid = luckyAmounts !== null && (!manualNumbers || manualError === null);
   const step3Valid = startWeekValid && weeksValid;
@@ -268,6 +287,17 @@ export function AddMemberWizard({
       if (!result.ok) {
         setError(result.error);
         return;
+      }
+      // 2.18: the decision about their carried balance goes into the record.
+      // Nothing about the balance changes — "deduct" is an intention, and the
+      // deduction itself is still OFFERED at payout time, never automatic.
+      if (mode === "existing" && selectedPerson && carried > 0 && carryChoice) {
+        await recordCarryDecision({
+          personId: selectedPerson.id,
+          cycleName: cycle.name,
+          choice: carryChoice,
+          balance: carried,
+        });
       }
       setSaved(result.data);
       router.refresh();
@@ -434,6 +464,58 @@ export function AddMemberWizard({
             </div>
           )}
 
+          {/* 2.18: THE CARRIED BALANCE, SURFACED. Never silently carried,
+              deducted or ignored — the organizer decides every time. */}
+          {carried > 0 && selectedPerson && (
+            <div
+              className="space-y-3 rounded-2xl border-2 border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4"
+              data-testid="carried-balance-choice"
+            >
+              <p className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                {selectedPerson.nameEnglishFirst} carries {formatMoney(carried)} outstanding
+                {selectedPerson.carriedFrom.length > 0 &&
+                  ` from ${selectedPerson.carriedFrom.join(", ")}`}
+                .
+              </p>
+              <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
+                Nothing happens to it automatically. Choose what to do — you can change it
+                later on their page.
+              </p>
+              <div className="space-y-1.5">
+                <Radio
+                  checked={carryChoice === "leave"}
+                  onSelect={() => setCarryChoice("leave")}
+                  name="carry"
+                  label="Leave it on the ledger — add them normally, the balance stays as it is"
+                />
+                <Radio
+                  checked={carryChoice === "deduct"}
+                  onSelect={() => setCarryChoice("deduct")}
+                  name="carry"
+                  label="Deduct it from their payout in this cycle — recorded as an intention and OFFERED when they are paid out, never applied automatically (D-23)"
+                />
+                <Radio
+                  checked={carryChoice === "settle-now"}
+                  onSelect={() => setCarryChoice("settle-now")}
+                  name="carry"
+                  label="Settle it now — I will record a payment or write it off on their page first"
+                />
+              </div>
+              {carryChoice === "settle-now" && (
+                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  Open{" "}
+                  <a
+                    href={`/admin/people/${selectedPerson.id}?tab=payout`}
+                    className="underline"
+                  >
+                    {selectedPerson.nameEnglishFirst}&apos;s carried balance
+                  </a>{" "}
+                  to record it, then come back. Adding them here settles nothing.
+                </p>
+              )}
+            </div>
+          )}
+
           <button
             type="button"
             disabled={!step1Valid}
@@ -442,6 +524,11 @@ export function AddMemberWizard({
           >
             Continue
           </button>
+          {carried > 0 && carryChoice === null && (
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              Choose what happens to the {formatMoney(carried)} before continuing.
+            </p>
+          )}
         </section>
       )}
 

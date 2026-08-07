@@ -23,7 +23,7 @@ import { resolveWeekDate, storedWeekDates } from "./commitment";
 import { calculateFinishWeek, currentWeekNumber } from "./money";
 import { toE164 } from "./phone";
 import { prisma } from "./prisma";
-import { getSetting } from "./settings";
+import { getSetting, WHATSAPP_DISABLED_REASON } from "./settings";
 import { computeStanding, pinnedMapFromEvents, type Standing } from "./standing";
 import { sendWhatsAppMessage } from "./whatsapp";
 
@@ -171,6 +171,16 @@ async function deliver(input: {
     weeks: input.facts.weeks,
   });
   if (!decision.send) return { status: "SKIPPED", reason: decision.reason };
+
+  // The channel switch. lib/whatsapp.ts refuses too — that is the
+  // un-bypassable backstop — but stopping HERE keeps the semantics honest:
+  // a message that was never attempted did not FAIL at the provider, so it
+  // is a skip like hardship or no-phone, and it writes no MessageLog row.
+  // Otherwise a dead channel would bury the real log under failures that
+  // never happened.
+  if (!(await getSetting("whatsappEnabled"))) {
+    return { status: "SKIPPED", reason: WHATSAPP_DISABLED_REASON };
+  }
 
   const templates = await loadTemplates();
   const template = templates.get(input.key) ?? null;

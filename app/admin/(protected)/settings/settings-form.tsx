@@ -7,7 +7,12 @@ import {
   updateNotifyOnLockout,
   updatePinLockoutPolicy,
   updatePinLoginEnabled,
+  updateWhatsappEnabled,
 } from "@/app/actions/settings";
+// From setting-defaults, NOT lib/settings: the latter imports Prisma, which
+// imports `pg`, which imports node:dns — pulling that into a client bundle is
+// a hard build failure that takes this whole page down.
+import { WHATSAPP_DISABLED_REASON } from "@/lib/setting-defaults";
 
 export function SettingsForm({
   initial,
@@ -18,6 +23,7 @@ export function SettingsForm({
     pinMaxAttempts: number;
     pinLockMinutes: number;
     notifyOnLockout: boolean;
+    whatsappEnabled: boolean;
   };
 }) {
   const router = useRouter();
@@ -26,6 +32,7 @@ export function SettingsForm({
   const [maxAttempts, setMaxAttempts] = useState(String(initial.pinMaxAttempts));
   const [lockMinutes, setLockMinutes] = useState(String(initial.pinLockMinutes));
   const [notifyOnLockout, setNotifyOnLockout] = useState(initial.notifyOnLockout);
+  const [whatsappEnabled, setWhatsappEnabled] = useState(initial.whatsappEnabled);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -35,7 +42,8 @@ export function SettingsForm({
     defaultPinFromPhone !== initial.defaultPinFromPhone ||
     maxAttempts !== String(initial.pinMaxAttempts) ||
     lockMinutes !== String(initial.pinLockMinutes) ||
-    notifyOnLockout !== initial.notifyOnLockout;
+    notifyOnLockout !== initial.notifyOnLockout ||
+    whatsappEnabled !== initial.whatsappEnabled;
 
   function clearFeedback() {
     setError(null);
@@ -81,6 +89,13 @@ export function SettingsForm({
           return;
         }
       }
+      if (whatsappEnabled !== initial.whatsappEnabled) {
+        const result = await updateWhatsappEnabled({ enabled: whatsappEnabled });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+      }
       setSaved(true);
       router.refresh();
     } catch {
@@ -92,6 +107,47 @@ export function SettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+      {/* The channel switch sits FIRST while it is off: it explains at a
+          glance why no message is leaving the platform. */}
+      <div
+        className={`rounded border p-3 text-sm ${
+          whatsappEnabled
+            ? "border-gray-300 dark:border-gray-700"
+            : "border-red-400 bg-red-50 dark:border-red-800 dark:bg-red-950/30"
+        }`}
+      >
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={whatsappEnabled}
+            onChange={(e) => {
+              setWhatsappEnabled(e.target.checked);
+              clearFeedback();
+            }}
+            className="mt-0.5"
+          />
+          <span>
+            <strong>WhatsApp enabled</strong>
+            <br />
+            The master switch for the whole WhatsApp channel — payment confirmations, every
+            manual statement, and WhatsApp login codes. While it is OFF nothing is attempted:
+            sends are refused before they reach Twilio, so none are billed and no member is
+            offered a code that cannot arrive.
+          </span>
+        </label>
+        <p className="mt-2 font-semibold">
+          Currently:{" "}
+          {whatsappEnabled ? (
+            <span className="text-emerald-700 dark:text-emerald-400">ON — sends are attempted</span>
+          ) : (
+            <span className="text-red-800 dark:text-red-400">OFF — nothing is sent</span>
+          )}
+        </p>
+        {!whatsappEnabled && (
+          <p className="mt-1 text-red-900 dark:text-red-300">{WHATSAPP_DISABLED_REASON}</p>
+        )}
+      </div>
+
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"

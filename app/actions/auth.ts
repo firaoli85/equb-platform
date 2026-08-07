@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
+import { firebaseConfigured, verifyFirebaseIdToken } from "@/lib/firebase-verify";
 import { getCurrentUser, isAdminClaims, requireAdmin } from "@/lib/auth";
 import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
 import { maybeSendLockoutNotice } from "@/lib/messaging-engine";
@@ -14,11 +15,13 @@ import {
   isPinLocked,
   isValidPinFormat,
   lockoutAfterFailure,
+  requiresSecondFactor,
   verifyPin,
 } from "@/lib/pin";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { samePhone, toE164 } from "@/lib/phone";
 import { prisma } from "@/lib/prisma";
+import { clearSessionCookie, recordSignIn, revokeCurrentSession } from "@/lib/session-record";
 import { getSetting } from "@/lib/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -262,26 +265,35 @@ export async function signInWithPin(input: { phone: string; pin: string }) {
       data: { pinFailedAttempts: 0, pinLockedUntil: null },
     });
 
-    // SECURITY (audit C2): the phone-digit default is NOT a second factor —
-    // it is the last 4 digits of the identifier the caller just typed, so on
-    // its own it authenticates nobody. When it is what matched, no session is
-    // minted here: the member must also pass the WhatsApp code, and then set
-    // a real PIN. An OWN PIN signs in normally.
-    if (usedDefaultFor.has(person.id)) {
+    // ORGANIZER'S RULING: the phone-digit default signs in DIRECTLY. The old
+    // C2 branch returned here without a session and demanded a code first —
+    // which, with the code channels down, locked out every member who had not
+    // set their own PIN. requiresSecondFactor now returns false for everyone
+    // and carries the full reasoning; the risk is answered by the session
+    // layer instead of at the door.
+    const usedDefaultPin = usedDefaultFor.has(person.id);
+    if (requiresSecondFactor({ usedDefault: usedDefaultPin })) {
+      // Unreachable under the current ruling — requiresSecondFactor returns
+      // false for everyone. Kept as the single place a future gate would go,
+      // so re-introducing one is an edit to lib/pin.ts and nothing else.
       return {
-        ok: true as const,
-        data: {
-          personId: null,
-          name: null,
-          usedDefaultPin: true,
-          // The client must complete the WhatsApp code before any session.
-          needsSecondFactor: true as const,
-        },
+        ok: false as const,
+        error: "A second step is required — use the code instead.",
       };
     }
 
     const session = await mintBridgeSession(person);
     if (!session.ok) return session;
+
+    // AWARENESS, not blocking (ruling 2/5): record the device, browser and IP
+    // behind this session and report whether the combination is new. Failure
+    // here must never cost anyone their sign-in.
+    const signIn = await recordSignIn({
+      personId: person.id,
+      method: "PIN",
+      header,
+      ip,
+    });
 
     return {
       ok: true as const,
@@ -290,8 +302,9 @@ export async function signInWithPin(input: { phone: string; pin: string }) {
         personId: person.id as string | null,
         name: person.nameEnglishFirst as string | null,
         // True when the phone-digit default got them in — the client shows
-        // a skippable "set your own PIN" prompt (never a wall).
-        usedDefaultPin: usedDefaultFor.has(person.id),
+        // an encouraging, SKIPPABLE "set your own PIN" prompt (never a wall).
+        usedDefaultPin,
+        newDevice: signIn.isNewDevice,
       },
     };
   } catch (e) {
@@ -363,6 +376,19 @@ export async function signInAdmin(input: { email: string; password: string }) {
       await supabase.auth.signOut();
       return { ok: false as const, error: "This account is not the organizer." };
     }
+
+    // The organizer's session is recorded exactly like a member's — it is the
+    // one that most needs the 25-minute idle clock and a list he can review.
+    // There is no Person row for him, so the auth user is passed directly.
+    const header = await headers();
+    await recordSignIn({
+      authUserId: data.user.id,
+      role: "ADMIN",
+      method: "PASSWORD",
+      header,
+      ip: callerIp(header),
+    });
+
     return { ok: true as const, data: { signedIn: true } };
   } catch (e) {
     console.error("signInAdmin failed:", e);
@@ -449,12 +475,101 @@ export async function signInWithWhatsAppCode(input: { phone: string; code: strin
     const session = await mintBridgeSession(person);
     if (!session.ok) return session;
 
+    const signIn = await recordSignIn({
+      personId: person.id,
+      method: "WHATSAPP",
+      header,
+      ip,
+    });
+
     return {
       ok: true as const,
-      data: { personId: person.id, name: person.nameEnglishFirst },
+      data: {
+        personId: person.id,
+        name: person.nameEnglishFirst,
+        newDevice: signIn.isNewDevice,
+      },
     };
   } catch (e) {
     console.error("signInWithWhatsAppCode failed:", e);
+    return { ok: false as const, error: `Could not sign you in. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * SMS sign-in via Firebase Phone Auth (restored Aug 2026).
+ *
+ * Firebase sends the code from Google's own infrastructure, so it needs no
+ * carrier A2P registration — the TCR ruling in 2.28 was about sending OUR
+ * OWN messages, which Firebase genuinely cannot do and which stays on
+ * WhatsApp. A login code is a different thing entirely.
+ *
+ * The client passes the Firebase ID TOKEN it received after confirming the
+ * code, never a bare phone number. The token is verified against Google
+ * (lib/firebase-verify.ts) and the phone it proves must be the SAME line as
+ * the one being signed in as — checked with the ONE canonical comparison
+ * (audit H1), so a token for another number can never open this door.
+ *
+ * Ends in the IDENTICAL bridge session as the PIN and WhatsApp paths.
+ */
+export async function signInWithFirebaseSms(input: { phone: string; idToken: string }) {
+  try {
+    const phone = input.phone?.trim();
+    if (!phone) return { ok: false as const, error: "Enter your phone number." };
+    if (!firebaseConfigured()) {
+      return { ok: false as const, error: "SMS sign-in is not available." };
+    }
+
+    const header = await headers();
+    const ip = callerIp(header);
+    if (!allowLookup(`sms-ip:${ip}`) || !allowLookup(`sms:${toE164(phone)}`)) {
+      return { ok: false as const, error: LOOKUP_THROTTLE_MESSAGE };
+    }
+
+    // Proof first: Google validates the token's signature, audience and
+    // expiry, and tells us which phone it actually verified.
+    const verified = await verifyFirebaseIdToken(input.idToken);
+    if (!verified.ok) return { ok: false as const, error: verified.error };
+
+    // The verified line must be the line being signed in as. Without this a
+    // valid token for ANY number would sign in as whoever was typed.
+    if (!samePhone(verified.phoneNumber, phone)) {
+      console.error("signInWithFirebaseSms: verified phone does not match the typed number");
+      return {
+        ok: false as const,
+        error: "That code was for a different number. Start again with the number you verified.",
+      };
+    }
+
+    const candidates = await findPeopleByPhone(verified.phoneNumber);
+    if (candidates.length === 0) {
+      return {
+        ok: false as const,
+        error: "That number isn't registered. Check it, or contact the organizer.",
+      };
+    }
+    const person = candidates[0];
+
+    const session = await mintBridgeSession(person);
+    if (!session.ok) return session;
+
+    const signIn = await recordSignIn({
+      personId: person.id,
+      method: "SMS",
+      header,
+      ip,
+    });
+
+    return {
+      ok: true as const,
+      data: {
+        personId: person.id,
+        name: person.nameEnglishFirst,
+        newDevice: signIn.isNewDevice,
+      },
+    };
+  } catch (e) {
+    console.error("signInWithFirebaseSms failed:", e);
     return { ok: false as const, error: `Could not sign you in. ${errorMessage(e)}` };
   }
 }
@@ -651,6 +766,10 @@ export async function signOutAction() {
   const supabase = await createClient();
   const claims = await getCurrentUser();
   const wasAdmin = claims?.app_metadata?.is_admin === true;
+  // Mark the row ended and drop the handle BEFORE the Supabase sign-out, so
+  // this device stops appearing as active in "Where you are signed in" the
+  // moment they tap it. The row is kept, never deleted (2.14).
+  await revokeCurrentSession("Signed out");
   await supabase.auth.signOut();
   redirect(wasAdmin ? "/admin/login" : "/login");
 }

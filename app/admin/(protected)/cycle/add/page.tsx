@@ -102,6 +102,8 @@ export default async function AddMemberPage() {
           nameEnglishLast: p.nameEnglishLast,
           phone: p.phone,
           inActiveCycle: p.inActiveCycle,
+          carriedBalance: p.carriedBalance,
+          carriedFrom: p.carriedFrom,
         }))}
       />
     </main>

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { totalContributed } from "@/lib/contribution";
+import { ledgerBalance } from "@/lib/ledger";
 import { errorMessage } from "@/lib/action-result";
 import { requireAdmin } from "@/lib/auth";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
@@ -34,6 +35,9 @@ export async function listPeople(searchTerm?: string) {
         : undefined,
       orderBy: [{ nameEnglishFirst: "asc" }, { createdAt: "asc" }],
       include: {
+        // 2.18: a carried balance must SURFACE when adding someone to a new
+        // cycle — never silently carried, deducted or ignored.
+        ledgerEntries: { select: { type: true, amount: true, description: true } },
         participations: {
           orderBy: { createdAt: "asc" },
           include: {
@@ -56,6 +60,12 @@ export async function listPeople(searchTerm?: string) {
       return {
         ...person,
         inActiveCycle: here !== null,
+        /** Cents they still carry from earlier cycles (2.18). */
+        carriedBalance: ledgerBalance(person.ledgerEntries),
+        /** Where it came from, for the add-to-cycle warning. */
+        carriedFrom: person.ledgerEntries
+          .filter((e) => e.type === "DEBT")
+          .map((e) => e.description),
         /** Cents contributed to the active cycle; 0 when they are not in it. */
         contributedThisCycle: here
           ? totalContributed(here.paymentEvents.map((e) => ({ amount: e.amount })))

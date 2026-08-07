@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from "firebase/auth";
 import { lookupMemberByPhone } from "@/app/actions/member";
 import {
   requestWhatsAppCode,
   setMyPin,
+  signInWithFirebaseSms,
   signInWithPin,
   signInWithWhatsAppCode,
 } from "@/app/actions/auth";
+import { firebaseAuth } from "@/lib/firebase/client";
 import { motionTokens } from "@/lib/motion-tokens";
 
 // The two-step member login, in the portal's own visual system so entry
@@ -24,6 +27,9 @@ type Lookup = {
   nameEnglishFirst: string;
   nameAmharic: string;
   pinAvailable: boolean;
+  /** 2.28: the server says which CHANNELS are configured on this deployment. */
+  whatsAppAvailable: boolean;
+  smsAvailable: boolean;
 };
 
 const PAD_ROWS = [
@@ -120,7 +126,9 @@ export function LoginFlow() {
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [phonePending, startLookup] = useTransition();
 
-  const [choice, setChoice] = useState<"none" | "pin" | "otp">("none");
+  // Three doors (2.28): PIN, WhatsApp code, SMS code. Only configured ones
+  // are ever offered — a member must never reach a dead end.
+  const [choice, setChoice] = useState<"none" | "pin" | "otp" | "sms">("none");
 
   // PIN state
   const [pin, setPin] = useState("");
@@ -141,8 +149,16 @@ export function LoginFlow() {
   const [otpCode, setOtpCode] = useState("");
   const [otpError, setOtpError] = useState<string | null>(null);
   // True when the member came through "Forgot your PIN?" — after the
-  // WhatsApp code signs them in, they are offered a NEW PIN (skippable).
+  // code signs them in, they are offered a NEW PIN (skippable).
   const [recovering, setRecovering] = useState(false);
+
+  // SMS state (Firebase Phone Auth — Google sends the code, so no carrier
+  // A2P registration is involved).
+  const [smsStep, setSmsStep] = useState<"idle" | "sending" | "sent" | "verifying">("idle");
+  const [smsCode, setSmsCode] = useState("");
+  const [smsError, setSmsError] = useState<string | null>(null);
+  const confirmation = useRef<ConfirmationResult | null>(null);
+  const recaptcha = useRef<RecaptchaVerifier | null>(null);
 
   const welcomeName = lookup
     ? lookup.nameEnglishFirst && lookup.nameAmharic
@@ -172,14 +188,28 @@ export function LoginFlow() {
     });
   }
 
+  function clearCodeState() {
+    setOtpStep("idle");
+    setOtpCode("");
+    setOtpError(null);
+    setSmsStep("idle");
+    setSmsCode("");
+    setSmsError(null);
+    confirmation.current = null;
+    try {
+      recaptcha.current?.clear();
+    } catch {
+      // A cleared verifier that was never rendered throws — harmless.
+    }
+    recaptcha.current = null;
+  }
+
   function resetToPhone() {
     setLookup(null);
     setChoice("none");
     setPin("");
     setPinError(null);
-    setOtpStep("idle");
-    setOtpCode("");
-    setOtpError(null);
+    clearCodeState();
     setRecovering(false);
   }
 
@@ -187,20 +217,33 @@ export function LoginFlow() {
     setChoice("none");
     setPin("");
     setPinError(null);
-    setOtpStep("idle");
-    setOtpCode("");
-    setOtpError(null);
+    clearCodeState();
     setRecovering(false);
   }
 
-  // "Forgot your PIN?" — the WhatsApp code is the way in (2.28); once
-  // signed in, they are offered a fresh PIN.
+  /**
+   * Send a code down whichever channel this deployment actually has (2.28).
+   * SMS is preferred when configured — it is the channel members already
+   * know — and WhatsApp is the fallback.
+   */
+  function startCodeChannel(l: Lookup) {
+    if (l.smsAvailable) {
+      setChoice("sms");
+      void sendSms(l);
+      return;
+    }
+    setChoice("otp");
+    void sendOtp(l);
+  }
+
+  // "Forgot your PIN?" — a code is the way in; once signed in, they are
+  // offered a fresh PIN.
   function startPinRecovery() {
+    if (!lookup) return;
     setRecovering(true);
     setPin("");
     setPinError(null);
-    setChoice("otp");
-    void sendOtp();
+    startCodeChannel(lookup);
   }
 
   // ── PIN ─────────────────────────────────────────────────────────
@@ -214,14 +257,14 @@ export function LoginFlow() {
           setPin("");
           return;
         }
-        if (result.data.needsSecondFactor) {
-          // SECURITY (audit C2): the phone-digit default is not a secret —
-          // it is part of the number they just typed. It gets them no
-          // session on its own; the WhatsApp code must follow, and then a
-          // real PIN is required rather than offered.
+        // ORGANIZER'S RULING: the phone-digit default signs in DIRECTLY —
+        // they are already in by the time this runs. What follows is an
+        // INVITATION to set their own PIN, never a wall: friction a member
+        // does not understand is worse than the risk, and the risk is
+        // answered by the session layer instead.
+        if (result.data.usedDefaultPin) {
           setUsedDefault(true);
-          setChoice("otp");
-          void sendOtp();
+          setPromptSetPin(true);
           return;
         }
         goToPortal();
@@ -255,14 +298,88 @@ export function LoginFlow() {
     });
   }
 
-  // ── WhatsApp code (2.28: the working OTP channel) ───────────────
-  async function sendOtp() {
-    if (!lookup || otpStep === "sending" || otpStep === "verifying") return;
+  // ── SMS code (Firebase Phone Auth) ──────────────────────────────
+  //
+  // Google sends the message, so no carrier A2P registration is involved —
+  // which is why this channel works where our own SMS never could. The code
+  // is confirmed IN THE BROWSER by Firebase, then the resulting ID TOKEN goes
+  // to the server, which verifies it with Google before minting a session.
+  // The server never trusts a bare phone number here.
+
+  function friendlySmsError(error: unknown): string {
+    const code = (error as { code?: string })?.code ?? "";
+    if (code === "auth/too-many-requests") return "Too many attempts. Wait a few minutes and try again.";
+    if (code === "auth/invalid-verification-code") return "That code is not right.";
+    if (code === "auth/code-expired") return "That code expired — request a new one.";
+    if (code === "auth/invalid-phone-number") return "That phone number is not in a valid format.";
+    if (code === "auth/quota-exceeded") return "SMS is temporarily unavailable. Try WhatsApp or your PIN.";
+    return "Could not send the code. Try again, or use another method.";
+  }
+
+  async function sendSms(l: Lookup) {
+    if (smsStep === "sending" || smsStep === "verifying") return;
+    setSmsStep("sending");
+    setSmsError(null);
+    setSmsCode("");
+    try {
+      const auth = firebaseAuth();
+      if (!auth) {
+        setSmsError("Text-message codes aren't available. Use WhatsApp or your PIN.");
+        setSmsStep("idle");
+        return;
+      }
+      // A fresh verifier per send — a reused one throws after its token burns.
+      try {
+        recaptcha.current?.clear();
+      } catch {
+        // never rendered; nothing to clear
+      }
+      const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      recaptcha.current = verifier;
+      confirmation.current = await signInWithPhoneNumber(auth, l.phone, verifier);
+      setSmsStep("sent");
+    } catch (err) {
+      setSmsError(friendlySmsError(err));
+      setSmsStep("idle");
+    }
+  }
+
+  async function verifySms(e: React.FormEvent) {
+    e.preventDefault();
+    if (!lookup || smsStep === "verifying" || !confirmation.current) return;
+    setSmsStep("verifying");
+    setSmsError(null);
+    try {
+      // Firebase checks the code and hands back a signed identity.
+      const credential = await confirmation.current.confirm(smsCode);
+      const idToken = await credential.user.getIdToken();
+      const result = await signInWithFirebaseSms({ phone: lookup.phone, idToken });
+      if (!result.ok) {
+        setSmsError(result.error);
+        setSmsStep("sent");
+        setSmsCode("");
+        return;
+      }
+      if (recovering || usedDefault) {
+        setPromptSetPin(true);
+        return;
+      }
+      goToPortal();
+    } catch (err) {
+      setSmsError(friendlySmsError(err));
+      setSmsStep("sent");
+      setSmsCode("");
+    }
+  }
+
+  // ── WhatsApp code (Twilio Verify) ───────────────────────────────
+  async function sendOtp(l: Lookup) {
+    if (otpStep === "sending" || otpStep === "verifying") return;
     setOtpStep("sending");
     setOtpError(null);
     setOtpCode("");
     try {
-      const result = await requestWhatsAppCode({ phone: lookup.phone });
+      const result = await requestWhatsAppCode({ phone: l.phone });
       if (!result.ok) {
         setOtpError(result.error);
         setOtpStep("idle");
@@ -311,6 +428,7 @@ export function LoginFlow() {
         : choice;
 
   return (
+    <>
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={step}
@@ -416,30 +534,70 @@ export function LoginFlow() {
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setChoice("otp");
-                  void sendOtp();
-                }}
-                style={{ touchAction: "manipulation", minHeight: "56px" }}
-                className="w-full flex items-center gap-3 px-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#141414] hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-              >
-                <svg className="w-5 h-5 text-gray-500 dark:text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"
-                  />
-                </svg>
-                <span className="flex-1 text-left">
-                  <span className="block text-sm font-bold text-gray-900 dark:text-white">WhatsApp me a code</span>
-                  <span className="block text-xs text-gray-500 dark:text-gray-400">6-digit code on WhatsApp</span>
-                </span>
-                <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
+              {/* 2.28 — a channel appears only when it is CONFIGURED. An
+                  option that dead-ends is worse than no option. */}
+              {lookup.smsAvailable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChoice("sms");
+                    void sendSms(lookup);
+                  }}
+                  style={{ touchAction: "manipulation", minHeight: "56px" }}
+                  className="w-full flex items-center gap-3 px-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#141414] hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  <svg className="w-5 h-5 text-gray-500 dark:text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M8 10.5h8m-8 3h5m-9 3.75V6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v7.5a2.25 2.25 0 01-2.25 2.25H7.5L3 20.25z"
+                    />
+                  </svg>
+                  <span className="flex-1 text-left">
+                    <span className="block text-sm font-bold text-gray-900 dark:text-white">Text me a code</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">6-digit code by SMS</span>
+                  </span>
+                  <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+
+              {lookup.whatsAppAvailable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChoice("otp");
+                    void sendOtp(lookup);
+                  }}
+                  style={{ touchAction: "manipulation", minHeight: "56px" }}
+                  className="w-full flex items-center gap-3 px-4 rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#141414] hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  <svg className="w-5 h-5 text-gray-500 dark:text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"
+                    />
+                  </svg>
+                  <span className="flex-1 text-left">
+                    <span className="block text-sm font-bold text-gray-900 dark:text-white">WhatsApp me a code</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">6-digit code on WhatsApp</span>
+                  </span>
+                  <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+
+              {!lookup.pinAvailable && !lookup.smsAvailable && !lookup.whatsAppAvailable && (
+                <p
+                  role="alert"
+                  className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-3 py-2 rounded-lg border border-red-100 dark:border-red-900"
+                >
+                  No sign-in method is available for you right now. Contact the organizer.
+                </p>
+              )}
             </div>
 
             <div className="text-center pt-4">
@@ -518,12 +676,16 @@ export function LoginFlow() {
           <div className="space-y-4">
             <div className="text-center space-y-1">
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                {recovering ? "You're in — set a new PIN" : "You're in — choose your own PIN"}
+                You&apos;re in{recovering ? " — set a new PIN" : ""}
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              {/* ENCOURAGING, NOT A WALL. They already have a session; this
+                  screen asks for something better and takes no for an
+                  answer. The reason is stated plainly so the ask makes sense
+                  to someone who has never thought about passwords. */}
+              <p className="text-xs text-gray-500 dark:text-gray-400 text-pretty">
                 {recovering && !usedDefault
-                  ? "You signed in with the WhatsApp code. Choose a new PIN for next time — or skip and use a WhatsApp code again."
-                  : "Your phone's last 4 digits are not a secret — anyone who has your number knows them. Pick a PIN only you know to finish signing in."}
+                  ? "You signed in with the code. Choose a PIN for next time — or skip and use a code again."
+                  : "This PIN is your phone's last 4 digits — anyone who knows your number could use it. Set your own PIN so only you can get in."}
               </p>
               <div className="pt-2">
                 <PinDots length={newPin.length} />
@@ -552,20 +714,20 @@ export function LoginFlow() {
               {savingPin ? "Saving…" : "Save my PIN"}
             </button>
 
-            {/* No skip after a phone-digit default (audit C2) — leaving it
-                on means the number alone still opens the account. */}
-            {!usedDefault && (
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={goToPortal}
-                  disabled={savingPin}
-                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
-                >
-                  Skip for now — take me to my account
-                </button>
-              </div>
-            )}
+            {/* ALWAYS skippable, including after a phone-digit default. The
+                ruling is explicit: never forced. A member who skips is
+                signed in, sees the amber badge on the organizer's side, and
+                gets asked again next time. */}
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={goToPortal}
+                disabled={savingPin}
+                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+              >
+                Skip for now — take me to my account
+              </button>
+            </div>
           </div>
         )}
 
@@ -592,7 +754,7 @@ export function LoginFlow() {
             {otpStep === "idle" || otpStep === "sending" ? (
               <button
                 type="button"
-                onClick={() => void sendOtp()}
+                onClick={() => void sendOtp(lookup)}
                 disabled={otpStep === "sending"}
                 style={{ touchAction: "manipulation" }}
                 className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition-colors text-sm"
@@ -633,7 +795,81 @@ export function LoginFlow() {
             </div>
           </div>
         )}
+
+        {/* ── STEP 3c — SMS code (Firebase Phone Auth) ── */}
+        {step === "sms" && lookup && (
+          <div className="space-y-4">
+            <div className="text-center space-y-1">
+              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                {smsStep === "sent" || smsStep === "verifying"
+                  ? "Enter the code from the text message"
+                  : "Text-message code"}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {smsStep === "sending"
+                  ? "Sending…"
+                  : smsStep === "sent" || smsStep === "verifying"
+                    ? `Sent by SMS to ${lookup.phone}`
+                    : "We'll text a 6-digit code to your number."}
+              </p>
+            </div>
+
+            {smsError && <ErrorMsg msg={smsError} />}
+
+            {smsStep === "idle" || smsStep === "sending" ? (
+              <button
+                type="button"
+                onClick={() => void sendSms(lookup)}
+                disabled={smsStep === "sending"}
+                style={{ touchAction: "manipulation" }}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition-colors text-sm"
+              >
+                {smsStep === "sending" ? "Sending…" : "Text me a code"}
+              </button>
+            ) : (
+              <form onSubmit={verifySms} className="space-y-3">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={smsCode}
+                  onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  aria-label="Verification code"
+                  style={{ fontSize: "28px", letterSpacing: "0.5em", textAlign: "center" }}
+                  className="w-full font-mono py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600 transition-colors"
+                />
+                <button
+                  type="submit"
+                  disabled={smsStep === "verifying" || smsCode.length !== 6}
+                  style={{ touchAction: "manipulation" }}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition-colors text-sm"
+                >
+                  {smsStep === "verifying" ? "Checking…" : "Sign in"}
+                </button>
+              </form>
+            )}
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={backToOptions}
+                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              >
+                ← Back to sign-in options
+              </button>
+            </div>
+          </div>
+        )}
+
       </motion.div>
     </AnimatePresence>
+
+    {/* Firebase renders its invisible reCAPTCHA into this node. It sits
+        OUTSIDE the AnimatePresence on purpose: the animated wrapper is keyed
+        by step, so anything inside it unmounts on every transition — and a
+        verifier whose container disappeared mid-flow throws. Here the node is
+        mounted once, from first paint, and never moves. */}
+    <div id="recaptcha-container" />
+    </>
   );
 }

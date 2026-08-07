@@ -91,6 +91,38 @@ export async function verifyPin(
   return pin === fallback ? { result: "match", usedDefault: true } : { result: "wrong" };
 }
 
+/**
+ * THE DOOR RULE, as one testable predicate. NOBODY is ever stopped here.
+ *
+ * This used to return `usedDefault`, forcing a WhatsApp/SMS code whenever the
+ * phone-digit default was what matched (audit C2). That door held: of 27
+ * members, only the one with her own PIN could get in, because the code
+ * channel could not deliver.
+ *
+ * ORGANIZER'S RULING (Aug 2026), overriding C2 at the door: the default PIN
+ * signs a member in DIRECTLY. Members are non-technical, and friction they do
+ * not understand is worse than the risk — they have to be able to get in and
+ * see the thing before being asked to secure it. The default is temporary and
+ * retires at cycle 2.
+ *
+ * The risk C2 identified is REAL and has not gone away: the default is the
+ * last 4 digits of the identifier the caller just typed, so it authenticates
+ * nobody. It is answered elsewhere instead of at the door —
+ *   - an encouraging, skippable "set your own PIN" prompt after sign-in,
+ *   - every sign-in recorded with device, browser and IP (lib/session-record),
+ *   - bounded session lifetimes, idle and absolute (lib/session-policy),
+ *   - "Where you are signed in" + "Sign out everywhere else" in the portal,
+ *   - a prominent new-device notice on the member's next visit,
+ *   - the organizer's amber "still on the default" badges, kept as they were.
+ *
+ * Kept as a function, not deleted, so the ruling is asserted by tests rather
+ * than living only in a removed `if`. Anything that ever needs to gate on the
+ * default should read `usedDefault` directly and say why.
+ */
+export function requiresSecondFactor(_match: { usedDefault: boolean }): boolean {
+  return false;
+}
+
 export async function hashPin(pin: string): Promise<string> {
   return bcrypt.hash(pin, BCRYPT_ROUNDS);
 }
