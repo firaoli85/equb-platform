@@ -396,12 +396,64 @@ describe("resizeWinnerWeekSettlement — the cash always lands somewhere (2.14)"
     expect(resizeWinnerWeekSettlement(100_000, 50_000)).toEqual({
       resized: 50_000,
       credit: 50_000,
+      refusal: null,
     });
   });
 
-  it("an unchanged or dearer week resizes nothing and credits nothing", () => {
-    expect(resizeWinnerWeekSettlement(100_000, 100_000)).toEqual({ resized: 100_000, credit: 0 });
-    expect(resizeWinnerWeekSettlement(100_000, 250_000)).toEqual({ resized: 100_000, credit: 0 });
+  it("an unchanged week moves nothing", () => {
+    expect(resizeWinnerWeekSettlement(100_000, 100_000)).toEqual({
+      resized: 100_000,
+      credit: 0,
+      refusal: null,
+    });
+  });
+
+  it("a DEARER week is funded from the payout — it is not left half-paid", () => {
+    // This was the ratchet: Math.min() left the receipt at the old, smaller
+    // figure while the week itself now cost more, so the winner was dunned
+    // PARTIAL for the very week they won (rule 6) and the payout kept a
+    // credit it was no longer entitled to.
+    expect(resizeWinnerWeekSettlement(50_000, 100_000, 1_000_000)).toEqual({
+      resized: 100_000,
+      credit: -50_000,
+      refusal: null,
+    });
+  });
+
+  it("REVERSING an edit puts the books back exactly where they started", () => {
+    // $500/wk drawn in week 12, settlement receipt $500, payout net $18,600.
+    let event = 50_000;
+    let payoutNet = 1_860_000;
+
+    // Cut to $250: the receipt shrinks and $250 goes back to the payout.
+    let step = resizeWinnerWeekSettlement(event, 25_000, payoutNet);
+    event = step.resized;
+    payoutNet += step.credit;
+    expect(event).toBe(25_000);
+    expect(payoutNet).toBe(1_885_000);
+
+    // Put it back to $500. Under the old ratchet this was a no-op, leaving
+    // week 12 half-paid forever.
+    step = resizeWinnerWeekSettlement(event, 50_000, payoutNet);
+    event = step.resized;
+    payoutNet += step.credit;
+    expect(step.refusal).toBeNull();
+    expect(event).toBe(50_000);
+    expect(payoutNet).toBe(1_860_000); // exactly where it started
+  });
+
+  it("refuses a rise the payout cannot fund rather than writing a negative payout", () => {
+    const step = resizeWinnerWeekSettlement(50_000, 200_000, 100_000);
+    expect(step.refusal).not.toBeNull();
+    expect(step.refusal).toContain("$1,000"); // what is left in the payout
+    expect(step.refusal).toContain("$1,500"); // the extra it would need
+
+    // Exactly enough is allowed — the boundary is a real one, not a margin.
+    expect(resizeWinnerWeekSettlement(50_000, 200_000, 150_000).refusal).toBeNull();
+  });
+
+  it("without a payout figure it computes but cannot refuse — the caller must pass one", () => {
+    expect(resizeWinnerWeekSettlement(50_000, 999_999_00).refusal).toBeNull();
   });
 
   it("resized + credit always equals what was originally settled", () => {
@@ -410,9 +462,11 @@ describe("resizeWinnerWeekSettlement — the cash always lands somewhere (2.14)"
       [100_000, 37_500],
       [45_000, 45_000],
       [45_000, 1],
+      [45_000, 90_000], // the grow path — conservation holds there too
+      [0, 50_000],
     ]) {
       const { resized, credit } = resizeWinnerWeekSettlement(event, weekly);
-      expect(resized + credit).toBe(event);
+      expect(resized + credit, `${event} → ${weekly}`).toBe(event);
     }
   });
 });

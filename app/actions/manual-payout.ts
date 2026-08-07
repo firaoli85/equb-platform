@@ -237,8 +237,11 @@ export async function assignPayoutManually(input: {
         isSkipped: week.isSkipped,
       });
       if (choice.kind === "blocked") return { error: choice.reason };
-      if (choice.kind === "replaces") {
+      if (choice.kind === "replaces" && choice.payoutCount > 0) {
         // Destroying a payout record needs the deliberate act, not a click.
+        // An EMPTY draw holds no money record, so there is nothing to destroy
+        // and nothing to type — demanding a name there would be friction
+        // guarding an absence.
         if (!nameConfirmed(input.replaceConfirmation ?? "", participation.person)) {
           return {
             error:

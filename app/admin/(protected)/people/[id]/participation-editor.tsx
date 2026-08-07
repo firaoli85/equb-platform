@@ -12,6 +12,7 @@ import {
   updatePaymentEvent,
   updatePaymentRow,
 } from "@/app/actions/edits";
+import { RemoveFromCycle } from "@/components/admin/remove-from-cycle";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -26,6 +27,7 @@ import {
   weeksToFinishWithGroup,
 } from "@/lib/commitment";
 import { formatDateLongUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
+import type { NumberConflict } from "@/lib/lucky-numbers";
 import { nameConfirmed } from "@/lib/settlement";
 
 type Method = "ZELLE" | "CASH" | "OTHER" | null;
@@ -36,6 +38,23 @@ const METHOD_OPTIONS: { value: "" | "ZELLE" | "CASH" | "OTHER"; label: string }[
   { value: "CASH", label: "Cash" },
   { value: "OTHER", label: "Other" },
 ];
+
+/** One receipt, as the row edits it. */
+type EventRowData = {
+  id: string;
+  amount: number;
+  method: Method;
+  receivedAt: string;
+  notes: string | null;
+  /**
+   * This receipt came out of a payout, not out of a pocket — the winner's own
+   * week (rule 6). Computed on the server from pinnedWeekId and
+   * settlementPayoutId, never sniffed from the notes: the notes are editable
+   * on the same row, so a text marker could be erased by an ordinary edit
+   * while the money link to the payout survived.
+   */
+  settlement: boolean;
+};
 
 /** The real figures behind a drawn member's terms change (from the server). */
 type NeedsSettlement = {
@@ -80,7 +99,7 @@ export function ParticipationEditor(props: {
     cycleName: string;
   };
   luckyNumbers: { id: string; number: number; amount: number }[];
-  events: { id: string; amount: number; method: Method; receivedAt: string; notes: string | null }[];
+  events: EventRowData[];
   weeks: {
     paymentId: string;
     weekNumber: number;
@@ -250,9 +269,56 @@ export function ParticipationEditor(props: {
   function saveParticipation() {
     const input = baseInput();
     if (!input) return;
+
+    // THE THREE THINGS THIS SAVE DOES THAT THE DIALOG NEVER MENTIONED.
+    //
+    // 1. It moves the PAYOUT. When their week-of-the-win was settled out of
+    //    their payout, a changed weekly resizes that receipt and moves the
+    //    payout with it — even when their entitlement is unchanged and so no
+    //    settlement step opens at all.
+    // 2. It lengthens the CYCLE. Weeks are rows on the cycle, shared by
+    //    everyone; a commitment running past the planned end creates them.
+    // 3. It deletes and rewrites receipts, so it is not a quiet save.
+    const weeklyMoved = input.weeklyAmount !== participation.weeklyAmount;
+    const settlementMoves = weeklyMoved && props.events.some((e) => e.settlement);
+    const finishesAt = input.startWeek + input.weeksCommitted - 1;
+    const addsWeeks = finishesAt > participation.plannedWeeks;
+    const shortening = input.weeksCommitted < participation.weeksCommitted;
+    const consequences = [
+      settlementMoves
+        ? `Their week-of-the-win contribution was settled out of their payout. Changing the ` +
+          `weekly resizes that receipt and moves the payout figure with it — on this page and ` +
+          `on Collections — whether or not a settlement step opens.`
+        : null,
+      addsWeeks
+        ? `This runs to week ${finishesAt}, past the cycle's planned ${participation.plannedWeeks}. ` +
+          `The missing weeks are created on the CYCLE, so they appear in every member's grid, ` +
+          `not just ${participation.personName}'s.`
+        : null,
+    ].filter((line): line is string => line !== null);
+
     setConfirm({
       title: `Save ${participation.personName}'s participation?`,
-      destructive: false,
+      // It deletes and replays receipts and can move a payout. An indigo
+      // button said otherwise.
+      destructive: consequences.length > 0,
+      consequence: consequences.length > 0 ? consequences.join(" ") : undefined,
+      // Shortening the weeks is the obvious way to say "they are stopping
+      // early" — and it is the expensive way. The action that means that
+      // closes the participation and touches no money at all.
+      alternative: shortening
+        ? {
+            label: "They are leaving the cycle",
+            description:
+              "Use “Remove from cycle → keep their money records” below instead. It closes " +
+              "their participation and leaves every receipt, week and figure exactly as it " +
+              "is, rather than re-allocating their money against a shorter commitment.",
+            onChoose: () => {
+              setConfirm(null);
+              setOnConfirm(null);
+            },
+          }
+        : undefined,
       body: (
         <>
           <p>
@@ -322,6 +388,43 @@ export function ParticipationEditor(props: {
   // ————— Lucky numbers —————
   const [newNumber, setNewNumber] = useState("");
   const [newAmountDollars, setNewAmountDollars] = useState("");
+
+  // A NUMBER ALREADY IN USE IS A CHOICE, NOT A DEAD END (organizer's ruling).
+  // The server refuses and hands back WHO holds it, whether it can be taken,
+  // and which number is free — this panel turns that into the two real
+  // options. Nothing is applied until one of them is pressed.
+  const [conflict, setConflict] = useState<PendingConflict | null>(null);
+
+  /**
+   * Save a lucky number, routing a conflict into the panel instead of showing
+   * a dead-end error. `retry` re-runs the identical save with the organizer's
+   * REPLACE answer; `keep` writes the free number into the field they used.
+   */
+  async function saveNumber(args: {
+    label: string;
+    save: (onConflict?: "replace") => Promise<{ ok: boolean; error?: string; conflict?: NumberConflict }>;
+    keep: (suggested: number) => void;
+  }) {
+    setBanner(null);
+    setConflict(null);
+    setBusy(true);
+    try {
+      const result = await args.save();
+      if (result.ok) {
+        setBanner({ kind: "ok", text: `✓ ${args.label}` });
+        router.refresh();
+      } else if (result.conflict) {
+        // `args` already carries the label, the retry and the keep-handler.
+        setConflict({ ...args, conflict: result.conflict });
+      } else {
+        setBanner({ kind: "err", text: `Not saved: ${result.error}` });
+      }
+    } catch {
+      setBanner({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const nameOk =
     settlement !== null &&
@@ -418,13 +521,18 @@ export function ParticipationEditor(props: {
             <>Allow extending past the planned {participation.plannedWeeks} weeks (2.22 override — creates the extra weeks)</>
           }
         />
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={saveParticipation} disabled={busy} className={buttonCls.primary}>
             Save participation
           </button>
-          <button type="button" onClick={doRemove} disabled={busy} className={buttonCls.danger}>
-            Remove from cycle
-          </button>
+          {/* The single red button that cascade-deleted everything is gone.
+              RemoveFromCycle computes what is attached — receipts, payout,
+              numbers, fee — and offers the two genuinely different outcomes
+              with their figures, neither pre-selected. */}
+          <RemoveFromCycle
+            participationId={participation.id}
+            personName={participation.personName}
+          />
         </div>
 
         {settlement && (
@@ -596,7 +704,7 @@ export function ParticipationEditor(props: {
         <table className="w-full border-collapse text-sm">
           <tbody>
             {props.luckyNumbers.map((n) => (
-              <LuckyRow key={n.id} n={n} busy={busy} run={run} ask={ask} />
+              <LuckyRow key={n.id} n={n} busy={busy} saveNumber={saveNumber} ask={ask} />
             ))}
           </tbody>
         </table>
@@ -613,19 +721,51 @@ export function ParticipationEditor(props: {
             onClick={() => {
               const cents = parseDollarsToCents(newAmountDollars);
               if (cents === null || cents < 1) return setBanner({ kind: "err", text: "New number amount is invalid." });
-              void run(`Added #${newNumber}.`, () =>
-                addLuckyNumber({
-                  participationId: participation.id,
-                  number: Number.parseInt(newNumber, 10),
-                  amount: cents,
-                }),
-              );
+              const wanted = Number.parseInt(newNumber, 10);
+              void saveNumber({
+                label: `Added #${wanted}.`,
+                save: (onConflict) =>
+                  addLuckyNumber({
+                    participationId: participation.id,
+                    number: wanted,
+                    amount: cents,
+                    onConflict,
+                  }),
+                keep: (suggested) => setNewNumber(String(suggested)),
+              });
             }}
             className={buttonCls.secondary}
           >
             Add number
           </button>
         </div>
+
+        {conflict && (
+          <NumberConflictPanel
+            pending={conflict}
+            busy={busy}
+            onDismiss={() => setConflict(null)}
+            onReplace={() => {
+              const { save, label } = conflict;
+              setConflict(null);
+              void saveNumber({
+                label,
+                save: () => save("replace"),
+                keep: conflict.keep,
+              });
+            }}
+            onKeep={() => {
+              conflict.keep(conflict.conflict.suggestedNumber);
+              setConflict(null);
+              setBanner({
+                kind: "ok",
+                text:
+                  `#${conflict.conflict.number} stays with ${conflict.conflict.holder.memberName}. ` +
+                  `The field now reads #${conflict.conflict.suggestedNumber} — press save to use it.`,
+              });
+            }}
+          />
+        )}
       </section>
 
       <section className={`space-y-3 ${show.receipts ? "" : "hidden"}`}>
@@ -685,16 +825,95 @@ type Ask = (
   fn: () => Promise<{ ok: boolean; error?: string }>,
 ) => void;
 type Run = (label: string, fn: () => Promise<{ ok: boolean; error?: string }>) => Promise<void>;
+type SaveNumber = (args: {
+  label: string;
+  save: (
+    onConflict?: "replace",
+  ) => Promise<{ ok: boolean; error?: string; conflict?: NumberConflict }>;
+  keep: (suggested: number) => void;
+}) => Promise<void>;
+
+/** A conflict awaiting the organizer's answer, with the way to apply each. */
+type PendingConflict = {
+  conflict: NumberConflict;
+  label: string;
+  save: (
+    onConflict?: "replace",
+  ) => Promise<{ ok: boolean; error?: string; conflict?: NumberConflict }>;
+  keep: (suggested: number) => void;
+};
+
+/**
+ * The conflict panel: WHO holds the number, and the two things that can be
+ * done about it. When the number cannot be taken (drawn, or carrying a
+ * payout) only KEEP is offered, with the reason stated rather than a disabled
+ * button the organizer has to guess at.
+ */
+function NumberConflictPanel({
+  pending,
+  busy,
+  onReplace,
+  onKeep,
+  onDismiss,
+}: {
+  pending: PendingConflict;
+  busy: boolean;
+  onReplace: () => void;
+  onKeep: () => void;
+  onDismiss: () => void;
+}) {
+  const c = pending.conflict;
+  return (
+    <div
+      role="alert"
+      data-testid="number-conflict"
+      className="space-y-2 rounded-2xl border-2 border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-gray-900 dark:text-gray-100"
+    >
+      <h3 className="font-black">
+        #{c.number} already belongs to {c.holder.memberName}
+      </h3>
+      <p>{c.message}</p>
+      <div className="flex flex-wrap gap-2 pt-1">
+        {c.replaceRefusal === null && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onReplace}
+            className={buttonCls.primary + " !text-xs"}
+          >
+            Replace — take #{c.number} and move {c.holder.memberName}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onKeep}
+          className={buttonCls.secondary + " !text-xs"}
+        >
+          Keep — leave #{c.number} with {c.holder.memberName}, use #{c.suggestedNumber}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onDismiss}
+          className={buttonCls.ghost + " !text-xs"}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function LuckyRow({
   n,
   busy,
-  run,
+  saveNumber,
   ask,
 }: {
   n: { id: string; number: number; amount: number };
   busy: boolean;
-  run: Run;
+  saveNumber: SaveNumber;
   ask: Ask;
 }) {
   const [number, setNumber] = useState(String(n.number));
@@ -715,9 +934,18 @@ function LuckyRow({
           onClick={() => {
             const cents = parseDollarsToCents(dollars);
             if (cents === null) return;
-            void run(`#${number} saved.`, () =>
-              updateLuckyNumber({ luckyNumberId: n.id, number: Number.parseInt(number, 10), amount: cents }),
-            );
+            const wanted = Number.parseInt(number, 10);
+            void saveNumber({
+              label: `#${wanted} saved.`,
+              save: (onConflict) =>
+                updateLuckyNumber({
+                  luckyNumberId: n.id,
+                  number: wanted,
+                  amount: cents,
+                  onConflict,
+                }),
+              keep: (suggested) => setNumber(String(suggested)),
+            });
           }}
           className={buttonCls.ghost + " mr-1 !px-2.5 !py-1 !text-xs"}
         >
@@ -758,7 +986,7 @@ function EventRow({
   run,
   ask,
 }: {
-  event: { id: string; amount: number; method: Method; receivedAt: string; notes: string | null };
+  event: EventRowData;
   busy: boolean;
   run: Run;
   ask: Ask;
@@ -767,11 +995,29 @@ function EventRow({
   const [method, setMethod] = useState<"" | "ZELLE" | "CASH" | "OTHER">(event.method ?? "");
   const [receivedAt, setReceivedAt] = useState(event.receivedAt.slice(0, 10));
   const [notes, setNotes] = useState(event.notes ?? "");
-  const isSettlement = event.notes?.includes("settled from the payout") ?? false;
+  const router = useRouter();
+  // Structural, from the server (pinnedWeekId + settlementPayoutId). This used
+  // to sniff the notes for "settled from the payout" — and the Save button on
+  // this same row can empty the notes, so one ordinary edit made a settlement
+  // receipt stop looking like one while its money link to the payout survived.
+  const isSettlement = event.settlement;
   return (
     <tr className="border-b border-gray-200 dark:border-gray-800 align-top">
       <td className="py-1.5 pr-2">
-        <AmountInput value={dollars} onChange={setDollars} ariaLabel="Receipt amount in dollars" className="w-28" />
+        <AmountInput
+          value={dollars}
+          onChange={setDollars}
+          ariaLabel="Receipt amount in dollars"
+          // The amount is half of a pair with the payout. It only ever moves
+          // together with the other half, which is the participation save.
+          disabled={isSettlement}
+          className="w-28"
+        />
+        {isSettlement && (
+          <p className="mt-1 max-w-44 text-[10px] leading-tight text-gray-600 dark:text-gray-400">
+            Set by the draw. Change their weekly amount to change what this week costs.
+          </p>
+        )}
       </td>
       <td className="py-1.5 pr-2">
         <Select value={method} onChange={setMethod} ariaLabel="Receipt method" options={METHOD_OPTIONS} disabled={busy} className="w-24" />
@@ -796,6 +1042,11 @@ function EventRow({
             Payout settlement — undone automatically if the draw is undone
           </p>
         )}
+        {isSettlement && (
+          <p className="mt-1 max-w-44 text-[10px] leading-tight text-gray-600 dark:text-gray-400">
+            Emptying this box does not make it an ordinary receipt.
+          </p>
+        )}
       </td>
       <td className="whitespace-nowrap py-1.5">
         <button
@@ -808,10 +1059,21 @@ function EventRow({
               {
                 title: `Save this receipt as ${formatMoney(cents)}?`,
                 destructive: false,
+                // A settlement receipt's amount is locked in the field above,
+                // so Save here only ever carries the date, method and notes.
+                // Say so, rather than letting the organizer wonder why their
+                // typing had no effect.
+                consequence: isSettlement
+                  ? "This is a payout settlement. The amount stays at " +
+                    `${formatMoney(event.amount)} — it is the winner's own week, taken out of ` +
+                    "their payout, and the two figures only move together. Only the date, " +
+                    "method and notes are saved."
+                  : undefined,
                 body: (
                   <p>
                     All of this member&apos;s weeks recalculate from their receipts immediately.
-                    An audit entry records old and new values.
+                    If a receipt no longer fits, nothing changes and you see the reason. An
+                    audit entry records old and new values.
                   </p>
                 ),
                 confirmLabel: "Save receipt",
@@ -820,7 +1082,10 @@ function EventRow({
               () =>
                 updatePaymentEvent({
                   eventId: event.id,
-                  amount: cents,
+                  // Never send a hand-typed figure for a settlement receipt:
+                  // the field is disabled, but the state behind it is not the
+                  // authority — the server's own record is.
+                  amount: isSettlement ? event.amount : cents,
                   method: method === "" ? null : method,
                   receivedAt: `${receivedAt}T00:00:00.000Z`,
                   notes: notes || undefined,
@@ -838,20 +1103,25 @@ function EventRow({
             ask(
               {
                 title: `Delete this ${formatMoney(event.amount)} receipt?`,
+                consequence: isSettlement
+                  ? "This is a payout settlement, not a payment. Deleting it would make the " +
+                    "drawn week owed again while the payout stays reduced by the same money — " +
+                    "the member would be charged twice. The server refuses it."
+                  : undefined,
+                alternative: isSettlement
+                  ? {
+                      label: "Go to Collections",
+                      description:
+                        "Undo the draw, or take that winner off the week. Either one reverses " +
+                        "the settlement and the payout together.",
+                      onChoose: () => router.push("/admin/collections"),
+                    }
+                  : undefined,
                 body: (
-                  <>
-                    <p>
-                      The money disappears from the member&apos;s record and every week
-                      recalculates. An audit entry records the deleted receipt.
-                    </p>
-                    {isSettlement && (
-                      <p className="text-amber-800 dark:text-amber-400">
-                        This is a payout settlement — deleting it makes the drawn week owed again
-                        while the payout keeps its reduced net. Usually you want &quot;Undo the
-                        draw&quot; or &quot;Delete payout&quot; on Collections instead.
-                      </p>
-                    )}
-                  </>
+                  <p>
+                    The money disappears from the member&apos;s record and every week
+                    recalculates. An audit entry records the deleted receipt.
+                  </p>
                 ),
                 confirmLabel: "Delete receipt",
               },

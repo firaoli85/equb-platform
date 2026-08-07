@@ -90,6 +90,40 @@ const SECURE_TOKEN_ORIGIN = "https://securetoken.googleapis.com";
 const RECAPTCHA_FRAME_ORIGIN = "https://www.google.com";
 
 /**
+ * The SECOND host Google serves those same challenge iframes from. Google's
+ * own CSP guidance names two frame-src sources, not one:
+ *
+ *   frame-src https://www.google.com/recaptcha/, https://recaptcha.google.com/recaptcha/
+ *   — https://developers.google.com/recaptcha/docs/faq
+ *
+ * Every capture taken here used www.google.com, so this is not a fault anyone
+ * has hit yet — which is exactly why it is easy to leave out and then be
+ * puzzled by. Unlike the connect-src gap this one fails LOUDLY (a frame-src
+ * violation, no widget at all), but it still means no login for whoever gets
+ * served that host.
+ */
+const RECAPTCHA_ALT_FRAME_ORIGIN = "https://recaptcha.google.com";
+
+/**
+ * DO NOT REMOVE AS UNUSED. recaptcha__<lang>.js fetches
+ * `https://www.google.com/recaptcha/api2/clr?k=<sitekey>` from the PAGE's own
+ * context while it mints a token — not from inside the challenge iframe, so
+ * this document's connect-src governs it and script-src/frame-src do not
+ * cover it.
+ *
+ * Blocking it does not stop the widget rendering and does not stop a token
+ * being produced; it produces a token Google then rejects, which arrives as
+ * auth/invalid-app-credential with nothing malformed to point at. Exactly the
+ * same failure shape as stripping the Referer (see Referrer-Policy below):
+ * a blocked sub-resource yields a bad token, silently.
+ *
+ * Observed as: "Fetch API cannot load
+ * https://www.google.com/recaptcha/api2/clr?k=… Refused to connect because it
+ * violates the document's Content Security Policy."
+ */
+const RECAPTCHA_CONNECT_ORIGIN = "https://www.google.com";
+
+/**
  * The Supabase project origin — where the BROWSER talks to Supabase.
  *
  * BOTH forms are required and neither implies the other: `https://<host>`
@@ -140,12 +174,17 @@ export function contentSecurityPolicy(input: PolicyInput): string {
   const recaptchaScript = smsLogin
     ? ` ${RECAPTCHA_SCRIPT_ORIGIN} ${RECAPTCHA_ASSET_ORIGIN}`
     : "";
+  // RECAPTCHA_CONNECT_ORIGIN is here for the api2/clr fetch, and it is gated on
+  // the same switch as every other Google origin: a deployment with no SMS
+  // login opens none of them.
   const firebaseConnect = smsLogin
-    ? ` ${IDENTITY_TOOLKIT_ORIGIN} ${SECURE_TOKEN_ORIGIN}`
+    ? ` ${IDENTITY_TOOLKIT_ORIGIN} ${SECURE_TOKEN_ORIGIN} ${RECAPTCHA_CONNECT_ORIGIN}`
     : "";
   // reCAPTCHA's own iframes, plus the Firebase auth helper iframe served from
   // the project's authDomain.
-  const frameSrc = smsLogin ? `${RECAPTCHA_FRAME_ORIGIN}${firebaseFrame}` : "'none'";
+  const frameSrc = smsLogin
+    ? `${RECAPTCHA_FRAME_ORIGIN} ${RECAPTCHA_ALT_FRAME_ORIGIN}${firebaseFrame}`
+    : "'none'";
 
   return [
     `default-src 'self'`,

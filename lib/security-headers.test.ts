@@ -161,10 +161,53 @@ describe("Firebase Phone Auth — the login code can actually be sent", () => {
     expect(connect).toContain(" https://securetoken.googleapis.com");
   });
 
+  // REGRESSION — the second silent-token bug.
+  //
+  // recaptcha__en.js fetches https://www.google.com/recaptcha/api2/clr?k=<sitekey>
+  // from OUR page's context while it mints a token. www.google.com was granted in
+  // script-src and frame-src but NOT connect-src, so that one fetch was refused:
+  //
+  //   "Fetch API cannot load https://www.google.com/recaptcha/api2/clr?k=…
+  //    Refused to connect because it violates the document's Content Security Policy."
+  //
+  // The widget still rendered and still produced a token — a token Google then
+  // rejected, arriving as auth/invalid-app-credential with no malformed field to
+  // point at. An origin appearing in one directive says NOTHING about another;
+  // that is the whole trap, and it is why this is asserted per directive.
+  it("connect-src allows the api2/clr fetch reCAPTCHA makes while minting a token", () => {
+    const connect = directive(contentSecurityPolicy(prod), "connect-src");
+    expect(connect).toContain(" https://www.google.com");
+  });
+
+  it("the api2/clr grant holds in development too, and vanishes without Firebase", () => {
+    expect(directive(contentSecurityPolicy(dev), "connect-src")).toContain(
+      " https://www.google.com",
+    );
+    // Gated on the same switch as every other Google origin (2.28).
+    expect(directive(contentSecurityPolicy(noFirebase), "connect-src")).not.toContain(
+      "google.com",
+    );
+  });
+
   it("frame-src allows the reCAPTCHA challenge and the Firebase auth iframe", () => {
     const frame = directive(contentSecurityPolicy(prod), "frame-src");
-    expect(frame).toBe(`frame-src https://www.google.com https://${AUTH_DOMAIN}`);
+    expect(frame).toBe(
+      `frame-src https://www.google.com https://recaptcha.google.com https://${AUTH_DOMAIN}`,
+    );
     expect(frame).not.toContain("'none'");
+  });
+
+  // Google serves the challenge iframes from EITHER host, and its own CSP
+  // guidance names both:
+  //   frame-src https://www.google.com/recaptcha/, https://recaptcha.google.com/recaptcha/
+  //   — https://developers.google.com/recaptcha/docs/faq
+  // Every capture taken here happened to use www.google.com, so the missing
+  // second host would sit unnoticed until someone was served the other one and
+  // got no widget at all.
+  it("frame-src allows BOTH hosts Google serves the challenge from", () => {
+    const frame = directive(contentSecurityPolicy(prod), "frame-src");
+    expect(frame).toContain(" https://www.google.com");
+    expect(frame).toContain(" https://recaptcha.google.com");
   });
 
   it("every Firebase grant is present in DEVELOPMENT too", () => {
@@ -209,15 +252,24 @@ describe("Firebase Phone Auth — the login code can actually be sent", () => {
     expect(firebaseAuthDomainSource("   ")).toBe("");
   });
 
-  it("the Google grants are exactly four origins — not a wildcard opening", () => {
+  it("the Google grants are an exact, closed set — not a wildcard opening", () => {
     const csp = contentSecurityPolicy(prod);
     const googleSources = csp.match(/https:\/\/[a-z0-9.-]*google[a-z0-9.-]*/g) ?? [];
     expect(new Set(googleSources)).toEqual(
       new Set([
         "https://www.google.com",
+        "https://recaptcha.google.com",
         "https://identitytoolkit.googleapis.com",
         "https://securetoken.googleapis.com",
       ]),
     );
+    // Ruled out by the origin audit, and each must STAY out:
+    //   apis.google.com  — gapi loader, popup/redirect resolver only, a path
+    //                      phone auth never takes (confirmed live: zero CSP
+    //                      violations across a full send attempt).
+    //   www.recaptcha.net — an opt-in SUBSTITUTE host for regions that cannot
+    //                      reach www.google.com, not an additional one.
+    expect(csp).not.toContain("apis.google.com");
+    expect(csp).not.toContain("recaptcha.net");
   });
 });

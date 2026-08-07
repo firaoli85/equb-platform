@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { refuseIfCycleClosed } from "@/lib/cycle-guard";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { formatMoney } from "@/lib/format";
 import { currentWeekFromRows } from "@/lib/commitment";
@@ -291,6 +292,10 @@ export async function saveSlots(input: { slots: SlotProposalInput }) {
       const loaded = await loadWheel(tx);
       if (!loaded) return "No active cycle.";
       const { cycle } = loaded;
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { cycleId: cycle.id });
 
       const numberById = new Map(cycle.luckyNumbers.map((n) => [n.id, n]));
       // The full backstop lives in lib/arrangement.ts (pure, tested): number
@@ -454,6 +459,10 @@ export async function createWinnerPlan(input: {
     // as saveSlots): a draw committed between them could otherwise pull a
     // just-drawn number out of its drawn slot.
     const outcome = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { weekId: input.weekId });
       const loaded = await loadWheel(tx);
       if (!loaded) return { error: "No active cycle." };
       const { cycle } = loaded;
@@ -551,6 +560,10 @@ export async function cancelWinnerPlan(input: { planId: string }) {
   if (!gate.ok) return gate;
   try {
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { winnerPlanId: input.planId });
       const plan = await tx.winnerPlan.findUniqueOrThrow({
         where: { id: input.planId },
         include: { numbers: { include: { luckyNumber: true } }, week: true },

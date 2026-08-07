@@ -1,3 +1,4 @@
+import { CLOSING_WAIT_DAYS_DEFAULT } from "./cycle-lock";
 import { SESSION_LIMIT_DEFAULTS } from "./session-policy";
 
 // The SHAPE of platform settings, with no database attached.
@@ -63,6 +64,15 @@ export type SettingDefaults = {
   adminSessionIdleMinutes: number;
   /** Organizer session: total hours from sign-in, never extended. */
   adminSessionMaxHours: number;
+  /**
+   * Days after the FINAL week before closing a cycle is offered (2.6, 2.9).
+   *
+   * Closing writes every shortfall onto the carried ledger and freezes the
+   * books. Money for the last week routinely arrives days late — the payment
+   * window itself is 5 days — so closing the moment the last week passes turns
+   * payments in transit into permanent debts. 0 switches the wait off.
+   */
+  closingWaitDays: number;
 };
 
 export const SETTING_DEFAULTS: SettingDefaults = {
@@ -77,6 +87,7 @@ export const SETTING_DEFAULTS: SettingDefaults = {
   memberSessionMaxDays: SESSION_LIMIT_DEFAULTS.memberMaxDays,
   adminSessionIdleMinutes: SESSION_LIMIT_DEFAULTS.adminIdleMinutes,
   adminSessionMaxHours: SESSION_LIMIT_DEFAULTS.adminMaxHours,
+  closingWaitDays: CLOSING_WAIT_DAYS_DEFAULT,
 };
 
 /**

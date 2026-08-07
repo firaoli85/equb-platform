@@ -55,6 +55,12 @@ export type WeekWinners = {
   /** True when this week has no draw record at all. */
   undrawn: boolean;
   isSkipped: boolean;
+  /**
+   * A winner plan is COMMITTED to this week (2.3). Moving someone else into it
+   * would overwrite the organizer's locked intent, so it is refused by name
+   * rather than silently honoured.
+   */
+  planned?: boolean;
   payouts: readonly WinnerPayout[];
 };
 
@@ -94,7 +100,32 @@ export type WinnerEditPreview = {
    * Cash RECEIVED is unaffected by these edits; only obligations move.
    */
   cashPositionDelta: number;
+  /**
+   * The week this edit leaves holding NOTHING, whose draw is therefore removed
+   * (lib/draw-cascade). Null when the week keeps at least one winner. Stated
+   * separately because "the week becomes undrawn and selectable again" is a
+   * consequence the organizer must see before confirming, not after.
+   */
+  freedWeek: { weekNumber: number; numbersReturning: number[] } | null;
 };
+
+/**
+ * The week being edited becomes undrawn when the payout leaving was its LAST
+ * one. Its remaining slot numbers come back to the pool with the draw.
+ */
+function freesTheWeek(input: {
+  week: WeekWinners;
+  leavingPayoutId: string;
+  /** Numbers staying in the drawn slot after this edit. */
+  slotNumbersAfter: readonly number[];
+}): { weekNumber: number; numbersReturning: number[] } | null {
+  const remaining = input.week.payouts.filter((p) => p.payoutId !== input.leavingPayoutId);
+  if (remaining.length > 0) return null;
+  return {
+    weekNumber: input.week.weekNumber,
+    numbersReturning: [...input.slotNumbersAfter].sort((a, b) => a - b),
+  };
+}
 
 const totalNet = (payouts: readonly WinnerPayout[]) => payouts.reduce((s, p) => s + p.net, 0);
 
@@ -177,7 +208,20 @@ export function removeWinnerRefusal(input: {
   return null;
 }
 
-/** Why this payout cannot move, or null. */
+/**
+ * Why this payout cannot move, or null.
+ *
+ * AN UNDRAWN DESTINATION IS ALLOWED. This used to refuse it — "week N has no
+ * draw yet" — which meant a week the organizer had just freed could not be
+ * moved into, and the only route was to draw it first on the wheel and then
+ * move. The organizer decides where a winner belongs (2.2); the destination
+ * having no draw yet is a thing to CREATE, not a reason to refuse. The move
+ * builds the draw on arrival, exactly as a manual assignment does.
+ *
+ * A committed winner plan still refuses, because that is the organizer's own
+ * locked intent (2.3) and overwriting it silently is the failure that shipped
+ * twice before.
+ */
 export function movePayoutRefusal(input: {
   from: WeekWinners;
   to: WeekWinners;
@@ -186,13 +230,10 @@ export function movePayoutRefusal(input: {
   if (input.from.weekId === input.to.weekId) {
     return "That payout is already on this week.";
   }
-  if (input.to.undrawn) {
-    // A week with no draw record has no slot to join. Moving the whole draw
-    // is a different, existing action — say so rather than silently creating
-    // a second money route.
+  if (input.to.planned && input.to.undrawn) {
     return (
-      `Week ${input.to.weekNumber} has no draw yet. Move the whole draw to that week, ` +
-      `or draw it first and then move this winner into it.`
+      `Week ${input.to.weekNumber} has a committed winner plan. Cancel the plan on the wheel ` +
+      `first (2.3 — a locked plan is never overwritten silently), then move this winner into it.`
     );
   }
   if (input.to.payouts.some((p) => p.luckyNumberId === input.payout.luckyNumberId)) {
@@ -241,14 +282,25 @@ export function addWinnerPreview(input: {
         : [],
     // The group now owes this member their payout.
     cashPositionDelta: netAfterSettlement,
+    // Adding a winner can never leave a week empty.
+    freedWeek: null,
   };
 }
 
 export function removeWinnerPreview(input: {
   week: WeekWinners;
   payout: WinnerPayout;
+  /**
+   * Numbers left in the drawn slot after this one leaves. Defaults to the
+   * week's other payouts, which is the ordinary case (payout and slot member
+   * always move together).
+   */
+  slotNumbersAfter?: readonly number[];
 }): WinnerEditPreview {
   const before = totalNet(input.week.payouts);
+  const slotNumbersAfter =
+    input.slotNumbersAfter ??
+    input.week.payouts.filter((p) => p.payoutId !== input.payout.payoutId).map((p) => p.number);
   return {
     weekTotalBefore: before,
     weekTotalAfter: before - input.payout.net,
@@ -267,16 +319,25 @@ export function removeWinnerPreview(input: {
         : [],
     weeksSettling: [],
     cashPositionDelta: -input.payout.net,
+    freedWeek: freesTheWeek({
+      week: input.week,
+      leavingPayoutId: input.payout.payoutId,
+      slotNumbersAfter,
+    }),
   };
 }
 
 /**
- * Moving a winner between two drawn weeks.
+ * Moving a winner from one week to another — drawn or not.
  *
  * The settlement FOLLOWS the payout, because the rule is "the winner does not
  * pay the week they win" — so week A's contribution becomes owed again and
  * week B's settles. Both halves are stated; a move that silently left the old
  * week settled would hand the member a free week.
+ *
+ * If A had no other winner, A becomes UNDRAWN and selectable again — reported
+ * in `freedWeek`, because a week quietly changing state is exactly what left
+ * week 6 stranded.
  */
 export function movePayoutPreview(input: {
   from: WeekWinners;
@@ -286,6 +347,8 @@ export function movePayoutPreview(input: {
   candidate: Pick<WinnerCandidate, "weeklyAmount" | "startWeek" | "weeksCommitted" | "memberName">;
   /** What they have already paid toward the destination week. */
   alreadyPaidOnTarget?: number;
+  /** Numbers left in the SOURCE slot after this one leaves. */
+  slotNumbersAfter?: readonly number[];
 }): WinnerEditPreview & {
   fromTotalAfter: number;
   toTotalAfter: number;
@@ -334,6 +397,15 @@ export function movePayoutPreview(input: {
         : [],
     // The payout still exists; only its size changes with the settlement swap.
     cashPositionDelta: movedNet - input.payout.net,
+    freedWeek: freesTheWeek({
+      week: input.from,
+      leavingPayoutId: input.payout.payoutId,
+      slotNumbersAfter:
+        input.slotNumbersAfter ??
+        input.from.payouts
+          .filter((p) => p.payoutId !== input.payout.payoutId)
+          .map((p) => p.number),
+    }),
   };
 }
 
@@ -369,6 +441,18 @@ export function previewSentences(preview: WinnerEditPreview, formatMoney: (c: nu
     const up = preview.cashPositionDelta > 0;
     lines.push(
       `Money committed to payouts ${up ? "rises" : "falls"} by ${formatMoney(Math.abs(preview.cashPositionDelta))}.`,
+    );
+  }
+  // Last, because it is the biggest change of state: a week changes from
+  // drawn to undrawn and re-enters every picker.
+  if (preview.freedWeek) {
+    const { weekNumber, numbersReturning } = preview.freedWeek;
+    lines.push(
+      `Week ${weekNumber} is left with no winner, so its draw is removed and the week becomes ` +
+        `UNDRAWN — selectable again everywhere` +
+        (numbersReturning.length > 0
+          ? `, and ${numbersReturning.map((n) => `#${n}`).join(", ")} ${numbersReturning.length === 1 ? "returns" : "return"} to the wheel pool.`
+          : "."),
     );
   }
   return lines;

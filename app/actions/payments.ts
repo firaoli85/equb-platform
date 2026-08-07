@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
+import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { refuseIfCycleClosed } from "@/lib/cycle-guard";
 import { allocatePayment, type AllocationWeek } from "@/lib/allocation";
+import { formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { sendStatement, type SendOutcome } from "@/lib/messaging-engine";
 import { contribution } from "@/lib/contribution";
@@ -186,6 +189,10 @@ export async function recordPayment(input: RecordPaymentInput) {
     }
 
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { participationId: input.participationId });
       // The receipt is created FIRST: a duplicate submission dies here on the
       // database's unique idempotencyKey before anything else is touched. Any
       // later guard throwing rolls the event back too, so a corrected retry
@@ -256,6 +263,39 @@ export async function recordPayment(input: RecordPaymentInput) {
           data: { eventId: event.id, paymentId: payment.id, amount: a.applied },
         });
       }
+      // D-32: money arriving is the most consequential state change there is,
+      // and it was the only write with no audit entry — the receipt row
+      // recorded WHAT was received, but nothing recorded the ALLOCATION
+      // decision (2.15: oldest debt first, then forward), which is what turns
+      // one amount into a set of covered weeks.
+      await logAudit(tx, {
+        entity: "PaymentEvent",
+        entityId: event.id,
+        action: "create",
+        summary:
+          `Payment recorded for ${loaded.participation.person.nameEnglishFirst}: ` +
+          `${formatMoney(input.amount)}${input.method ? ` by ${input.method.toLowerCase()}` : ""} ` +
+          `received ${receivedAt.toISOString().slice(0, 10)}. ` +
+          (plan.result.allocations.length > 0
+            ? `Allocated oldest-first to week${plan.result.allocations.length === 1 ? "" : "s"} ` +
+              plan.result.allocations
+                .map((a) => `${a.weekNumber} (${formatMoney(a.applied)})`)
+                .join(", ") + "."
+            : "Nothing was allocated to a week.") +
+          (plan.result.totalApplied < input.amount
+            ? ` ${formatMoney(input.amount - plan.result.totalApplied)} could not be allocated.`
+            : ""),
+        after: {
+          amount: input.amount,
+          method: input.method ?? null,
+          receivedAt,
+          totalApplied: plan.result.totalApplied,
+          weeks: plan.result.allocations.map((a) => ({
+            weekNumber: a.weekNumber,
+            applied: a.applied,
+          })),
+        },
+      });
       return {
         eventId: event.id,
         allocations: plan.result.allocations,

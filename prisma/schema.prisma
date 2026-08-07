@@ -378,6 +378,9 @@ model Payout {
 
 // D-32 audit trail: every organizer correction records what changed, from
 // what to what, and when. Append-only from the app's perspective.
+// APPEND-ONLY (D-32). A Postgres trigger raises on UPDATE and DELETE —
+// see prisma/migrations/20260807030000_audit_log_append_only. A wrong entry
+// is answered by a new entry, never by a rewritten one.
 model AuditLog {
   id        String   @id @default(cuid())
   entity    String
@@ -387,6 +390,10 @@ model AuditLog {
   before    String?
   after     String?
   createdAt DateTime @default(now())
+  // Reading pages, filters by action and entity, and takes a date range.
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([entity, entityId])
   @@map("audit_logs")
 }
 

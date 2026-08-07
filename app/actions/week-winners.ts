@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { deleteDrawIfEmpty, freedWeekClause } from "@/lib/draw-cascade";
 import { settleWinnerWeeks, unsettlePayout } from "@/lib/draw-settlement";
 import { formatMoney } from "@/lib/format";
 import { frozenCycleRefusal } from "@/lib/cycle-close";
@@ -42,16 +43,6 @@ const refuse = (message: string): never => {
   throw new WinnerEditError(message);
 };
 
-/** Everything the UI needs to preview and confirm an edit on one week. */
-export type WeekWinnersView = {
-  week: WeekWinners;
-  /** Numbers still in the pool, offered as candidates. */
-  candidates: WinnerCandidate[];
-  feePercent: number;
-  /** Other drawn weeks, as move destinations. */
-  otherWeeks: { weekId: string; weekNumber: number }[];
-};
-
 async function loadDrawContext(tx: Parameters<typeof settleWinnerWeeks>[0], weekId: string) {
   const week = await tx.week.findUniqueOrThrow({
     where: { id: weekId },
@@ -86,12 +77,16 @@ async function drawnNumberIds(
   return new Set(draws.flatMap((d) => d.slot.members.map((m) => m.luckyNumberId)));
 }
 
-function toWeekWinners(week: Awaited<ReturnType<typeof loadDrawContext>>): WeekWinners {
+function toWeekWinners(
+  week: Awaited<ReturnType<typeof loadDrawContext>>,
+  planned = false,
+): WeekWinners {
   return {
     weekId: week.id,
     weekNumber: week.weekNumber,
     undrawn: week.draw === null,
     isSkipped: week.isSkipped,
+    planned,
     payouts: (week.draw?.payouts ?? []).map(
       (p): WinnerPayout => ({
         payoutId: p.id,
@@ -126,7 +121,8 @@ export async function addWinnerToWeek(input: { weekId: string; luckyNumberId: st
       if (frozen) refuse(frozen);
       if (!week.draw) {
         refuse(
-          `Week ${week.weekNumber} has no draw yet — draw it on the wheel first, then add more winners here.`,
+          `Week ${week.weekNumber} has no draw yet — spin it on the wheel, or use "Assign payout" ` +
+            `on the member's page to record the first winner. More winners can be added here after that.`,
         );
       }
 
@@ -268,6 +264,10 @@ export async function removeWinnerFromWeek(input: { payoutId: string }) {
         where: { slotId: payout.draw!.slotId, luckyNumberId: payout.luckyNumberId },
       });
 
+      // THE CASCADE. If that was the week's LAST winner, the draw records a
+      // win that holds nothing — it goes, and the week is undrawn again.
+      const freed = await deleteDrawIfEmpty(tx, payout.draw!.id);
+
       await logAudit(tx, {
         entity: "Draw",
         entityId: payout.draw!.id,
@@ -280,7 +280,9 @@ export async function removeWinnerFromWeek(input: { payoutId: string }) {
           (reversed > 0
             ? `; their week-${week.weekNumber} contribution of ${formatMoney(reversed)} is owed again`
             : "") +
-          `. The week's other winners are unchanged.`,
+          (freed.deleted
+            ? `.${freedWeekClause(freed, week.weekNumber)}`
+            : `. The week's other winners are unchanged.`),
         before: {
           payoutId: payout.id,
           number: payout.luckyNumber.number,
@@ -294,6 +296,8 @@ export async function removeWinnerFromWeek(input: { payoutId: string }) {
         number: payout.luckyNumber.number,
         memberName: payout.luckyNumber.participation.person.nameEnglishFirst,
         reversed,
+        weekFreed: freed.deleted,
+        numbersReturned: freed.numbersReturning,
       };
     });
 
@@ -308,11 +312,22 @@ export async function removeWinnerFromWeek(input: { payoutId: string }) {
 
 /**
  * MOVE ONE WINNER from week A to week B — for merging two people into the
- * week they actually shared.
+ * week they actually shared, or for putting a winner on the week they
+ * actually belong to.
  *
  * The settlement FOLLOWS the payout: week A becomes owed again and week B
  * settles, because the winner does not pay the week they win. Both draws are
  * re-settled through the same helper recordDraw uses.
+ *
+ * B MAY BE UNDRAWN. The organizer decides where a winner belongs (2.2), so a
+ * destination with no draw is something to CREATE rather than a reason to
+ * refuse: a fresh slot holds the moved number and a Draw is recorded on the
+ * week, flagged assignedManually because it was a decision, not a spin — the
+ * same shape assignPayoutManually builds, so there is no second money route.
+ *
+ * And if A is left with no winner at all, A's draw is deleted and A becomes
+ * UNDRAWN and selectable again (lib/draw-cascade). Leaving it behind is what
+ * stranded week 6.
  */
 export async function movePayoutToWeek(input: { payoutId: string; targetWeekId: string }) {
   const gate = await requireAdmin();
@@ -348,33 +363,76 @@ export async function movePayoutToWeek(input: { payoutId: string; targetWeekId: 
         settlement: 0,
         status: payout.status,
       };
+      // A plan committed to the destination is the organizer's locked intent
+      // (2.3) — read live, inside the transaction, never from the client.
+      const targetPlanned =
+        (await tx.winnerPlan.count({
+          where: { cycleId: toWeek.cycleId, weekId: toWeek.id, status: "PLANNED" },
+        })) > 0;
       const refusal = movePayoutRefusal({
         from: toWeekWinners(fromWeek),
-        to: toWeekWinners(toWeek),
+        to: toWeekWinners(toWeek, targetPlanned),
         payout: winner,
       });
       if (refusal) refuse(refusal);
 
       // 1. Give the old week its contribution back.
       const { reversed } = await unsettlePayout(tx, payout.id);
-      // 2. Move the PAIR — payout and slot membership — to the new week.
+
+      // 2. The destination needs a draw to join. An undrawn week gets one
+      //    built here — a fresh slot (a slot wins at most once per cycle, so
+      //    it can never be an existing one) and a Draw recorded as an
+      //    organizer decision rather than a spin.
+      let targetDraw = toWeek.draw;
+      let createdDraw = false;
+      if (!targetDraw) {
+        const maxPosition =
+          (await tx.slot.aggregate({ where: { cycleId: toWeek.cycleId }, _max: { position: true } }))
+            ._max.position ?? 0;
+        const slot = await tx.slot.create({
+          data: { cycleId: toWeek.cycleId, position: maxPosition + 1 },
+        });
+        targetDraw = (await tx.draw.create({
+          data: {
+            weekId: toWeek.id,
+            slotId: slot.id,
+            assignedManually: true,
+            notes: `Created by moving #${payout.luckyNumber.number} from week ${fromWeek.weekNumber}`,
+          },
+          include: {
+            slot: { include: { members: true } },
+            payouts: {
+              include: {
+                luckyNumber: { include: { participation: { include: { person: true } } } },
+              },
+            },
+          },
+        })) as typeof targetDraw;
+        createdDraw = true;
+      }
+
+      // 3. Move the PAIR — payout and slot membership — to the new week.
       await tx.payout.update({
         where: { id: payout.id },
         // netAmount is restored to gross-minus-fee; the new week's settlement
         // decrements it again below.
-        data: { drawId: toWeek.draw!.id, netAmount: payout.grossAmount - payout.feeAmount },
+        data: { drawId: targetDraw!.id, netAmount: payout.grossAmount - payout.feeAmount },
       });
       await tx.slotMember.deleteMany({
         where: { slotId: fromWeek.draw!.slotId, luckyNumberId: payout.luckyNumberId },
       });
       await tx.slotMember.create({
-        data: { slotId: toWeek.draw!.slotId, luckyNumberId: payout.luckyNumberId },
+        data: { slotId: targetDraw!.slotId, luckyNumberId: payout.luckyNumberId },
       });
-      // 3. Settle the new week from it.
-      const settlements = await settleWinnerWeeks(tx, toWeek.draw!.id);
+      // 4. Settle the new week from it.
+      const settlements = await settleWinnerWeeks(tx, targetDraw!.id);
       const mine = settlements.find(
         (s) => s.participationId === payout.luckyNumber.participationId,
       );
+
+      // 5. THE CASCADE. If that winner was week A's last, A's draw records a
+      //    win holding nothing — it goes, and A is undrawn and selectable.
+      const freed = await deleteDrawIfEmpty(tx, fromWeek.draw!.id);
 
       const after = await tx.payout.findUniqueOrThrow({ where: { id: payout.id } });
       await logAudit(tx, {
@@ -384,15 +442,19 @@ export async function movePayoutToWeek(input: { payoutId: string; targetWeekId: 
         summary:
           `#${payout.luckyNumber.number} (${winner.memberName}) moved from week ` +
           `${fromWeek.weekNumber} to week ${toWeek.weekNumber}. ` +
+          (createdDraw
+            ? `Week ${toWeek.weekNumber} had no draw, so one was created for it (assigned, not spun); `
+            : "") +
           (reversed > 0
             ? `Week ${fromWeek.weekNumber}'s contribution of ${formatMoney(reversed)} is owed again; `
             : "") +
           (mine
             ? `week ${toWeek.weekNumber}'s contribution of ${formatMoney(mine.settled)} settles from the payout; `
             : "") +
-          `payout now ${formatMoney(after.netAmount)} net. The number stays drawn throughout.`,
+          `payout now ${formatMoney(after.netAmount)} net. The number stays drawn throughout.` +
+          freedWeekClause(freed, fromWeek.weekNumber),
         before: { weekNumber: fromWeek.weekNumber, net: payout.netAmount },
-        after: { weekNumber: toWeek.weekNumber, net: after.netAmount },
+        after: { weekNumber: toWeek.weekNumber, net: after.netAmount, createdDraw },
       });
 
       return {
@@ -401,6 +463,9 @@ export async function movePayoutToWeek(input: { payoutId: string; targetWeekId: 
         fromWeek: fromWeek.weekNumber,
         toWeek: toWeek.weekNumber,
         net: after.netAmount,
+        createdDraw,
+        weekFreed: freed.deleted,
+        numbersReturned: freed.numbersReturning,
       };
     });
 

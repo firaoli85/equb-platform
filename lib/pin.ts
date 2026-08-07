@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { phoneDigits } from "./phone";
+import { defaultPinForPhone, phoneDigits } from "./phone";
 
 // Transition-period PIN login (retired at cycle 2). Pure decision logic —
 // no database — so the lockout rules are unit-testable. PINs are stored
@@ -132,14 +132,11 @@ export function isValidPinFormat(pin: string): boolean {
 }
 
 /**
- * The default PIN (2.6: defaultPinFromPhone): the LAST 4 DIGITS of the
- * registered phone. Derived on every call, never stored — a phone with
- * fewer than 4 digits (or none) has no default.
+ * Re-exported from lib/phone.ts, where it lives so that client components can
+ * compute it without pulling bcryptjs into the browser bundle. Every existing
+ * caller imports it from here and keeps working.
  */
-export function defaultPinForPhone(phone: string | null | undefined): string | null {
-  const digits = phoneDigits(phone ?? "");
-  return digits.length >= 4 ? digits.slice(-4) : null;
-}
+export { defaultPinForPhone } from "./phone";
 
 /**
  * Decide what a PIN attempt does, given the stored state.

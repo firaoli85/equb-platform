@@ -23,6 +23,17 @@ type Review = {
   membersShort: number;
   statementsSent: number;
   memberCount: number;
+  /**
+   * How long since the final week, against the configured wait (2.6). The
+   * whole point is to say WHY closing is not offered yet — a button that is
+   * simply dead reads as a bug.
+   */
+  timing: {
+    state: "too-soon" | "ready";
+    reason: string;
+    daysRemaining: number;
+    availableOn: string | null;
+  };
 };
 
 // STEP 1 (review) + STEP 2 (close). Statements ride the one messaging flow
@@ -36,6 +47,7 @@ export function CloseFlow({ review }: { review: Review }) {
 
   const needsAck = review.undrawn.length > 0;
   const ackOk = !needsAck || acknowledge.trim().length > 0;
+  const tooSoon = review.timing.state === "too-soon";
 
   async function doClose() {
     setBusy(true);
@@ -219,12 +231,43 @@ export function CloseFlow({ review }: { review: Review }) {
         </div>
       </Card>
 
+      {/* ————— THE WAIT PERIOD (2.6 / 2.9) —————
+          Stated as a sentence with a date, not a greyed-out button. The
+          organizer is not being stopped by the product; they are being told
+          that last week's money is still allowed to arrive. */}
+      {tooSoon ? (
+        <Card>
+          <CardHeader
+            title={`Closing opens in ${review.timing.daysRemaining} day${review.timing.daysRemaining === 1 ? "" : "s"}`}
+            sub="Configurable in Settings — set it to 0 to close as soon as the last week passes."
+          />
+          <div className="px-5 pb-4 text-sm text-gray-800 dark:text-gray-200">
+            <p>{review.timing.reason}</p>
+            {review.timing.availableOn && (
+              <p className="mt-2">
+                Available from <strong className="tabular-nums">{review.timing.availableOn}</strong>.
+                Everything below is already final except late money for the last week — send the
+                closing statements now, and close then.
+              </p>
+            )}
+          </div>
+        </Card>
+      ) : (
+        <p className="text-xs text-gray-600 dark:text-gray-400">{review.timing.reason}</p>
+      )}
+
       {/* ————— STEP 2: the close ————— */}
       <div className="flex items-center gap-3">
         <button
           type="button"
-          disabled={busy || !ackOk}
-          title={!ackOk ? "Write the acknowledgement reason first (2.27)" : undefined}
+          disabled={busy || !ackOk || tooSoon}
+          title={
+            tooSoon
+              ? review.timing.reason
+              : !ackOk
+                ? "Write the acknowledgement reason first (2.27)"
+                : undefined
+          }
           onClick={() =>
             setConfirm({
               title: `Close ${review.cycleName}?`,

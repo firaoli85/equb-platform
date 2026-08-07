@@ -9,6 +9,7 @@ import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/l
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { calculateFinishWeek } from "@/lib/money";
+import type { PinState } from "@/lib/person-record";
 import { defaultPinForPhone } from "@/lib/pin";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
@@ -127,12 +128,23 @@ export default async function PersonPage({
     ? person.pinLockedUntil!.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
     : null;
   const defaultPinOn = await getSetting("defaultPinFromPhone");
-  const pinState =
+  const pinState: PinState =
     person.pinHash !== null
       ? "own"
       : defaultPinOn && defaultPinForPhone(person.phone) !== null
         ? "default"
         : "none";
+
+  // The two counts the removal dialog needs to tell the truth about what the
+  // database will actually allow, and what the delete would take with it.
+  // Only the Settings tab renders that form.
+  const [messageCount, sessionCount] =
+    tab === "settings"
+      ? await Promise.all([
+          prisma.messageLog.count({ where: { personId: person.id } }),
+          prisma.signInSession.count({ where: { personId: person.id } }),
+        ])
+      : [0, 0];
 
   const stats =
     standing?.ok && active
@@ -510,6 +522,9 @@ export default async function PersonPage({
                   method: e.method,
                   receivedAt: e.receivedAt.toISOString(),
                   notes: e.notes,
+                  // Structural, per the schema comment on PaymentEvent: this
+                  // pair of links IS the definition of a settlement receipt.
+                  settlement: e.pinnedWeekId !== null && e.settlementPayoutId !== null,
                 }))}
                 weeks={active.payments.map((p) => ({
                   paymentId: p.id,
@@ -569,6 +584,7 @@ export default async function PersonPage({
                     method: e.method,
                     receivedAt: e.receivedAt.toISOString(),
                     notes: e.notes,
+                    settlement: e.pinnedWeekId !== null && e.settlementPayoutId !== null,
                   }))}
                   weeks={active.payments.map((p) => ({
                     paymentId: p.id,
@@ -600,6 +616,13 @@ export default async function PersonPage({
                     nameEnglishLast: person.nameEnglishLast,
                     phone: person.phone,
                     participationCount: person.participations.length,
+                    // The form warns about a credential change and states the
+                    // real blockers on a removal. It can do neither without
+                    // the facts, and this page already holds all of them.
+                    pinState,
+                    ledgerEntryCount: person.ledgerEntries.length,
+                    messageCount: messageCount,
+                    sessionCount: sessionCount,
                   }}
                 />
               </div>

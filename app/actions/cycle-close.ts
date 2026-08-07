@@ -17,7 +17,8 @@ import {
   type ArchiveWeek,
   type MemberFinal,
 } from "@/lib/cycle-close";
-import { formatMoney } from "@/lib/format";
+import { closeTiming } from "@/lib/cycle-lock";
+import { formatDateLongUTC, formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
@@ -168,6 +169,29 @@ function archiveWeeks(cycle: LoadedCycle): ArchiveWeek[] {
   });
 }
 
+/**
+ * How long since this cycle's final week, against the configured wait.
+ *
+ * The final week is the LAST STORED WEEK ROW — the day that actually happened
+ * — with the projection off the start date used only when a cycle somehow has
+ * no week rows at all. Shared by the review (which explains the wait) and the
+ * close itself (which enforces it), so the two can never disagree.
+ */
+async function cycleCloseTiming(cycle: LoadedCycle, today: Date) {
+  const waitDays = await getSetting("closingWaitDays");
+  const finalWeek = cycle.weeks[cycle.weeks.length - 1] ?? null;
+  const finalWeekDate =
+    finalWeek?.date ??
+    new Date(cycle.startDate.getTime() + (cycle.plannedWeeks - 1) * 7 * 86_400_000);
+  return closeTiming({
+    finalWeekDate,
+    today,
+    waitDays,
+    finalWeekLabel: formatDateLongUTC(finalWeekDate),
+    cycleNameForReason: cycle.name,
+  });
+}
+
 // ————————————————— STEP 1: the pre-close review —————————————————
 
 export async function getCloseReview() {
@@ -184,6 +208,13 @@ export async function getCloseReview() {
     }
 
     const today = new Date();
+
+    // 2.6 / 2.9 — HOW LONG SINCE THE LAST WEEK. Measured from the final
+    // week's own STORED date, because a cycle that ran long finishes when its
+    // last week actually happened, not when a projection off the start date
+    // says it should have (2.14, 2.7).
+    const timing = await cycleCloseTiming(cycle, today);
+
     const finals = memberFinals(cycle, today);
     const undrawn = finals
       .filter((m) => m.drawnWeek === null)
@@ -243,6 +274,13 @@ export async function getCloseReview() {
         membersShort: finals.filter((m) => m.outstanding > 0).length,
         statementsSent,
         memberCount: finals.length,
+        timing: {
+          state: timing.state,
+          reason: timing.reason,
+          daysRemaining: timing.state === "too-soon" ? timing.daysRemaining : 0,
+          availableOn:
+            timing.state === "too-soon" ? timing.availableOn.toISOString().slice(0, 10) : null,
+        },
       },
     };
   } catch (e) {
@@ -269,6 +307,13 @@ export async function closeCycle(input: { cycleId: string; typedName: string; ac
       }
 
       const now = new Date();
+
+      // THE WAIT IS A RULE, NOT A DISABLED BUTTON. Re-checked here, inside
+      // the transaction, so it holds for any caller — and it names the day
+      // rather than just refusing.
+      const timing = await cycleCloseTiming(cycle, now);
+      if (timing.state === "too-soon") return { error: timing.reason };
+
       const finals = memberFinals(cycle, now);
 
       // 2.27 backstop — re-checked inside the transaction, not just the UI.
@@ -423,6 +468,10 @@ export async function deleteClosedCycle(input: { cycleId: string; typedName: str
       // People, ledger entries, message logs, and the archive have no
       // cascading relation to it, by design.
       await tx.cycle.delete({ where: { id: cycle.id } });
+      // The per-cycle numbering choice is a Setting row keyed by cycle id
+      // (createCycle writes it). Setting has no relation to Cycle, so nothing
+      // cascades it away — deleted here or it outlives the cycle forever.
+      await tx.setting.deleteMany({ where: { key: `numberingMode:${cycle.id}` } });
       return { deleted: true as const, name: cycle.name };
     });
     if ("error" in outcome && outcome.error) return { ok: false as const, error: outcome.error };

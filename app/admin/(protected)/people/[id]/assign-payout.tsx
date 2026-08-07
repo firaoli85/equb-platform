@@ -50,12 +50,27 @@ type Options = {
   }[];
 };
 
-/** The suffix in the dropdown — the state is in the label, never a disabled attribute. */
+/**
+ * The suffix in the dropdown — the state is in the label, never a disabled
+ * attribute.
+ *
+ * THE READING THAT WENT WRONG. A drawn week with no payout rendered as
+ * "Week 6 — already drawn · replacing it undoes that draw", with the money
+ * silently omitted, while every other drawn week quoted a figure. That is
+ * where the organizer first saw week 6's half-state. Such a week should no
+ * longer exist (its draw is now removed with its last payout), but if one
+ * survives from older data the label says exactly what it is.
+ */
 function weekLabel(w: WeekOption): string {
-  if (w.kind === "free") return `Week ${w.weekNumber}`;
+  if (w.kind === "free") return `Week ${w.weekNumber} — free`;
   if (w.kind === "blocked") return `Week ${w.weekNumber} — plan committed`;
-  const money = w.payoutCount > 0 ? `, ${formatMoney(w.totalNet)}` : "";
-  return `Week ${w.weekNumber} — already drawn${money} · replacing it undoes that draw`;
+  if (w.payoutCount === 0) {
+    return `Week ${w.weekNumber} — drawn but holding NO payout · choosing it clears that draw`;
+  }
+  return (
+    `Week ${w.weekNumber} — already drawn, ${formatMoney(w.totalNet)} · ` +
+    `replacing it undoes that draw`
+  );
 }
 
 export function AssignPayout({
@@ -120,6 +135,9 @@ export function AssignPayout({
   );
   const week = options?.weeks.find((w) => w.weekId === weekId) ?? null;
   const replacing = week?.kind === "replaces" ? week : null;
+  // An empty draw holds no money record, so there is nothing to type a name
+  // for — the server relaxes the same way, and the two must agree.
+  const needsPhrase = replacing !== null && replacing.payoutCount > 0;
   const blocked = week?.kind === "blocked" ? week : null;
   const canConfirm = week !== null && !blocked && selected.length > 0 && !busy;
 
@@ -132,7 +150,7 @@ export function AssignPayout({
         weekId,
         luckyNumberIds: [...chosen],
         notes,
-        replaceConfirmation: replacing ? options?.confirmPhrase : undefined,
+        replaceConfirmation: needsPhrase ? options?.confirmPhrase : undefined,
       });
       if (!result.ok) setMsg({ kind: "err", text: `Not assigned: ${result.error}` });
       else {
@@ -220,13 +238,21 @@ export function AssignPayout({
                     {replacing.consequence}
                   </p>
                   <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
-                    The undo and the assignment happen together, in one transaction — the week is
-                    never left with neither, and the audit entry records both. You will be asked to
-                    type <strong>{options.confirmPhrase}</strong> to confirm
-                    {replacing.highStakes
-                      ? ", because money already collected would be un-recorded"
-                      : ""}
-                    .
+                    The clearing and the assignment happen together, in one transaction — the week
+                    is never left with neither, and the audit entry records both.
+                    {needsPhrase ? (
+                      <>
+                        {" "}
+                        You will be asked to type <strong>{options.confirmPhrase}</strong> to
+                        confirm
+                        {replacing.highStakes
+                          ? ", because money already collected would be un-recorded"
+                          : ""}
+                        .
+                      </>
+                    ) : (
+                      " No money record is destroyed, so nothing needs to be typed."
+                    )}
                   </p>
                 </div>
               )}
@@ -301,8 +327,8 @@ export function AssignPayout({
                     title: replacing
                       ? `Replace week ${week?.weekNumber}'s draw and assign ${formatMoney(totals.net)} to ${options.memberName}?`
                       : `Assign ${formatMoney(totals.net)} to ${options.memberName}?`,
-                    destructive: replacing !== null,
-                    requirePhrase: replacing ? options.confirmPhrase : undefined,
+                    destructive: needsPhrase,
+                    requirePhrase: needsPhrase ? options.confirmPhrase : undefined,
                     body: (
                       <>
                         {replacing && <p>{replacing.consequence}</p>}

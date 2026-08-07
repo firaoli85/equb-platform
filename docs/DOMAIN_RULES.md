@@ -189,10 +189,34 @@ replays onto that week only. Ordinary oldest-first allocation must never consume
 **Edits charge the difference:** if the member's terms change after the settlement, a
 repeat charges only the **difference**, never the whole gap again.
 
+**The receipt and the payout are ONE movement, and they move together.** `Payout.netAmount`
+was decremented by exactly the settlement receipt's amount when it was created, so
+changing either half alone creates or destroys money. Two consequences, both now law:
+
+- **Resizing runs BOTH ways.** `resizeWinnerWeekSettlement` was `Math.min(event, weekly)`
+  — a one-way ratchet. Cut a weekly from `$500` to `$250` and back to `$500` and the
+  receipt stayed at `$250` while week 12 again cost `$500`: the winner was dunned PARTIAL
+  for the very week they won, and the payout kept a `$250` credit it was no longer owed.
+  The settled week now costs exactly the new weekly and `credit` may be **negative** — a
+  dearer week is funded out of the payout, which is where a winner's own week has always
+  come from. Refused outright when the payout cannot cover it.
+- **The receipts list cannot edit it.** `updatePaymentEvent` accepted any amount at or
+  below the week (`allocatePinned` returns `unallocated: 0`) and never credited the payout
+  back, so a `$500` settlement edited to `$0.01` lost `$499.99`. The amount is refused
+  there; date, method and notes stay editable. Deleting is refused for the same reason.
+
+**Identification is structural, never textual.** `pinnedWeekId` + `settlementPayoutId` is
+the definition. The UI recognised settlement receipts by searching the notes for
+"settled from the payout" — and the Save button on the same row can empty the notes, so
+one ordinary edit made a settlement receipt stop *looking* like one while its money link
+to the payout survived.
+
 **Pinned by:** `lib/settlement.test.ts` → *"planWinnerWeekSettlement — the winner does not
 pay the week they win"*, *"allocatePinned — a settlement replays onto its pinned week
 ONLY"*, *"audit H4 — a repeated edit charges the DIFFERENCE, never the gap again"*,
-*"resizeWinnerWeekSettlement — the cash always lands somewhere (2.14)"*;
+*"resizeWinnerWeekSettlement — the cash always lands somewhere (2.14)"* (including
+*"REVERSING an edit puts the books back exactly where they started"*);
+`lib/settlement-receipt.test.ts` (whole file, plus a guard that no code sniffs the notes);
 `lib/standing.test.ts` → *"computeStanding — payout settlements are PINNED, never
 fungible"*.
 
@@ -382,6 +406,61 @@ lock.
 (2.3)"*, *"validateArrangement — the server backstop (2.3) holds on its own"*;
 `lib/wheel.test.ts` → *"reshuffle — THE pinned defect (2.3): frozen means frozen"*,
 *"selectWinningSlot — plan first, then chance (2.2/2.3)"*.
+
+---
+
+## 14. A closed cycle is read-only, and closing waits
+
+> **Once a cycle is CLOSED its books are final: nothing writes to it again. And closing
+> is not offered until the last week's money has had time to arrive.**
+
+Closing writes every shortfall onto the members' carried ledgers (rule 10) and freezes the
+archive. Both halves of this rule protect the same thing — the books after the last week.
+
+**Read-only was applied by hand and had drifted badly.** Of the 19 mutations in
+`app/actions/edits.ts` only 9 carried `frozenCycleRefusal`; `participations.ts` carried
+none; `wheel.ts` carried 3 of 10. The cause was friction, not carelessness: the pure check
+needs the cycle, so each action first had to load it through whatever id it happened to
+hold. `lib/cycle-guard.ts` resolves the cycle from **any** cycle-scoped id
+(`cycleId | weekId | participationId | luckyNumberId | payoutId | drawId | slotId |
+winnerPlanId | paymentId | paymentEventId`) and throws, so the guard is one line with no
+plumbing and no reason to skip it. **14 actions were missing it and now carry it.**
+
+**The wait is 5 days by default** — the same window a payment gets (`PAYMENT_WINDOW_DAYS`).
+Measured from the final week's own **stored** date (rule 7), configurable to any value
+including 0 (2.6), and stated on the pre-close review as a sentence with a date rather
+than a greyed-out button. Enforced inside `closeCycle`'s transaction, not only in the UI.
+
+**Pinned by:** `lib/cycle-lock.test.ts` (timing, what a closed cycle allows, **and a source
+guard** that fails when a cycle-mutating action ships without the check — it found the 14);
+`scripts/verify-cycle-lock.mts` proves all ten resolution paths refuse a CLOSED cycle and
+allow an open one, against the live database. A wrong relation hop would return null and
+silently allow the write the guard exists to refuse, which no source scan can catch.
+
+---
+
+## 15. The audit log is append-only
+
+> **An entry is never edited or removed. A wrong entry is answered by a NEW entry.**
+
+An entry that could be rewritten is not evidence of anything. Enforced by a Postgres
+trigger that raises on UPDATE and DELETE of `audit_logs`
+(`prisma/migrations/20260807030000_audit_log_append_only`) — not by convention, because the
+log is precisely the record that must stay true when the application is not.
+
+**The cost is accepted:** audit rows can never be pruned or corrected, exactly as a wrong
+payment is answered by a correcting receipt rather than a rewritten one.
+
+**Readable is part of the rule.** A record that cannot be searched is not much better than
+one that was never written: the log showed the most recent 200 entries with no filter, so
+entry 201 was unreachable. It now pages 50 at a time and filters by action, by entity, by
+person and by date range, with the active filter stated in a sentence — a narrowed list
+must never be mistaken for an empty history.
+
+**Pinned by:** `lib/audit-query.test.ts` — paging, the inclusive end date, the clamped
+page, the reversed range, the person-name boundary match (including Amharic, where `\b`
+never fires), **plus a source guard** proven non-vacuous by planting an
+`auditLog.deleteMany` and watching it fail with the file name.
 
 ---
 

@@ -24,6 +24,7 @@ export async function getPlatformSettings() {
         memberSessionMaxDays: await getSetting("memberSessionMaxDays"),
         adminSessionIdleMinutes: await getSetting("adminSessionIdleMinutes"),
         adminSessionMaxHours: await getSetting("adminSessionMaxHours"),
+        closingWaitDays: await getSetting("closingWaitDays"),
       },
     };
   } catch (e) {
@@ -176,6 +177,31 @@ export async function updatePinLockoutPolicy(input: {
     };
   } catch (e) {
     console.error("updatePinLockoutPolicy failed:", e);
+    return { ok: false as const, error: `Could not save the setting. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * ADMIN: how many days after the final week closing is offered (2.6 / 2.9).
+ *
+ * Zero is a legitimate value — the organizer may decide the money is all in
+ * and close the same day — so this is one of the few numeric settings where
+ * the floor is 0 rather than 1. The ceiling exists only to catch a typo: a
+ * cycle that cannot be closed for a year is a bug report, not a policy.
+ */
+export async function updateClosingWaitDays(input: { days: number }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (!Number.isSafeInteger(input.days) || input.days < 0 || input.days > 90) {
+      return { ok: false as const, error: "The wait must be a whole number of days, 0–90." };
+    }
+    await setSetting("closingWaitDays", input.days);
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin/cycle/close");
+    return { ok: true as const, data: { closingWaitDays: input.days } };
+  } catch (e) {
+    console.error("updateClosingWaitDays failed:", e);
     return { ok: false as const, error: `Could not save the setting. ${errorMessage(e)}` };
   }
 }

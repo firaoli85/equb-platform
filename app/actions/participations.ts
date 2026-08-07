@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
+import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { chooseAutoNumbers, validateManualNumbers } from "@/lib/lucky-numbers";
 import { calculateFinishWeek, splitIntoLuckyNumbers } from "@/lib/money";
@@ -127,13 +129,44 @@ async function createParticipationWithNumbers(
     throw e;
   }
 
-  return tx.participation.findUniqueOrThrow({
+  const full = await tx.participation.findUniqueOrThrow({
     where: { id: participation.id },
     include: {
       person: true,
       luckyNumbers: { orderBy: { number: "asc" } },
     },
   });
+
+  // D-32: adding someone to a cycle creates a participation AND lucky numbers
+  // — both entities the audit trail is required to cover. It was the one
+  // creation path with no entry, so the numbers a member was given could not
+  // be traced back to when or how they were chosen.
+  await logAudit(tx, {
+    entity: "Participation",
+    entityId: full.id,
+    action: "create",
+    summary:
+      `${full.person.nameEnglishFirst} added to the cycle — ` +
+      `${formatMoney(full.weeklyAmount)}/week from week ${full.startWeek} for ` +
+      `${full.weeksCommitted} week${full.weeksCommitted === 1 ? "" : "s"} ` +
+      `(finishes week ${calculateFinishWeek(full.startWeek, full.weeksCommitted)}). ` +
+      `Lucky number${full.luckyNumbers.length === 1 ? "" : "s"} ` +
+      `${full.luckyNumbers.map((n) => `#${n.number}`).join(", ")} ` +
+      (args.manualNumbers
+        ? "entered by the organizer."
+        : args.preferredNumbers
+          ? "assigned automatically, carrying over the previous cycle's numbers where free."
+          : "assigned automatically from the next free numbers."),
+    after: {
+      personId: args.personId,
+      weeklyAmount: full.weeklyAmount,
+      startWeek: full.startWeek,
+      weeksCommitted: full.weeksCommitted,
+      numbers: full.luckyNumbers.map((n) => n.number),
+      numbersChosenBy: args.manualNumbers ? "organizer" : "auto",
+    },
+  });
+  return full;
 }
 
 /**

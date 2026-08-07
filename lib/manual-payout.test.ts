@@ -38,6 +38,46 @@ describe("weekChoice — every week is choosable, with its consequence stated", 
     expect(weekChoice(week())).toEqual({ weekNumber: 7, kind: "free" });
   });
 
+  // WHERE THE ORGANIZER FIRST SAW THE BUG. Week 6 held a draw with no payout,
+  // so this branch produced "Week 6 already has a draw (, no payout recorded)"
+  // — an empty parenthesis where every other drawn week quoted a figure. Such
+  // a week should no longer be creatable (lib/draw-cascade removes the draw
+  // with its last payout), but older data must still read honestly.
+  describe("a draw holding NO payout — the half-state that stranded weeks 1 and 6", () => {
+    it("says exactly what it is, never a drawn week with a blank amount", () => {
+      const c = weekChoice(drawnWeek({ payouts: [], drawnNumbers: [78] }));
+      expect(c.kind).toBe("replaces");
+      if (c.kind !== "replaces") return;
+      expect(c.consequence).toContain("marked drawn but holds NO payout");
+      expect(c.consequence).not.toContain("(,");
+      expect(c.consequence).not.toContain(", ,");
+      expect(c.totalNet).toBe(0);
+      expect(c.payoutCount).toBe(0);
+    });
+
+    it("names the numbers stranded in its slot as returning", () => {
+      const c = weekChoice(drawnWeek({ payouts: [], drawnNumbers: [78] }));
+      if (c.kind !== "replaces") throw new Error("expected replaces");
+      expect(c.numbersReturning).toEqual([78]);
+      expect(c.consequence).toContain("#78 returns to the wheel");
+    });
+
+    it("says no number is affected when the slot is empty too — the week-6 shape", () => {
+      const c = weekChoice(drawnWeek({ payouts: [], drawnNumbers: [] }));
+      if (c.kind !== "replaces") throw new Error("expected replaces");
+      expect(c.numbersReturning).toEqual([]);
+      expect(c.consequence).toContain("no number is affected");
+      expect(c.consequence).not.toMatch(/\s+returns? to the wheel/);
+    });
+
+    it("is NOT high stakes — there is no money record to destroy", () => {
+      const c = weekChoice(drawnWeek({ payouts: [], drawnNumbers: [78] }));
+      if (c.kind !== "replaces") throw new Error("expected replaces");
+      expect(c.highStakes).toBe(false);
+      expect(c.reopensWeeks).toEqual([]);
+    });
+  });
+
   it("a DRAWN week is offered, not refused — with the real figures", () => {
     const c = weekChoice(drawnWeek());
     expect(c.kind).toBe("replaces");

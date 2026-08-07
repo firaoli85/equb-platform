@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { isWithinBounds, type DateBounds } from "@/lib/date-bounds";
 import { motionTokens } from "@/lib/motion-tokens";
+import { AnchoredPopover } from "./anchored-popover";
 
 // The platform date picker — a drop-in for <input type="date"> (same
 // YYYY-MM-DD string contract) with the craft stock pickers lack:
@@ -95,6 +96,7 @@ export function DatePicker({
   const reduce = useReducedMotion();
   const liveId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const selected = fromIso(value);
@@ -110,15 +112,9 @@ export function DatePicker({
     setTyped(display(value));
   }, [value]);
 
-  // Close on outside click.
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  // Outside-click and Escape are owned by AnchoredPopover: the panel is
+  // portalled to body, so rootRef no longer contains it and a contains()
+  // check here would close the calendar on every click INSIDE it.
 
   const view = { year: cursor.getUTCFullYear(), month: cursor.getUTCMonth() };
   const preview = hovered ?? cursor;
@@ -196,7 +192,7 @@ export function DatePicker({
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
-      <div className="relative">
+      <div ref={fieldRef} className="relative">
         <input
           id={id}
           type="text"
@@ -256,7 +252,16 @@ export function DatePicker({
         {announce}
       </span>
 
-      <AnimatePresence>
+      {/* PORTALLED (UI_STANDARDS 10b). Inside a Table the calendar was clipped
+          at the overflow-x-auto edge; AnchoredPopover measures the field and
+          positions against the viewport, flipping above when there is no room
+          below — which matters most for a date field in the last table row. */}
+      <AnchoredPopover
+        anchorRef={fieldRef}
+        open={open}
+        onRequestClose={() => setOpen(false)}
+      >
+        <AnimatePresence>
         {open && (
           <motion.div
             key="panel"
@@ -272,7 +277,7 @@ export function DatePicker({
             }}
             transition={{ duration: motionTokens.duration.fast, ease: motionTokens.easing.smooth }}
             style={{ transformOrigin: "top left" }}
-            className="absolute left-0 top-full z-50 mt-1.5 flex w-[21rem] overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#141414] shadow-lg shadow-black/10 dark:shadow-black/50"
+            className="flex w-[21rem] overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#141414] shadow-lg shadow-black/10 dark:shadow-black/50"
           >
             {/* ————— Presets rail ————— */}
             <div className="flex w-24 shrink-0 flex-col gap-0.5 border-r border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-white/[0.03] p-1.5">
@@ -438,7 +443,8 @@ export function DatePicker({
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>
+      </AnchoredPopover>
     </div>
   );
 }

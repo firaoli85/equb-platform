@@ -128,6 +128,19 @@ export function selectWinningSlot(input: {
   }
   const plan = input.winnerPlans.find((p) => p.weekId === input.weekId);
   if (plan) {
+    // A plan with NO numbers must never decide a draw. `[].every(...)` is
+    // vacuously true, so an emptied plan would match the FIRST eligible slot
+    // and rig the week — recorded in the audit log as an intentional "planned"
+    // win rather than a spin. Plans are emptied by cascade, not by the
+    // organizer: WinnerPlanNumber cascades when a LuckyNumber is deleted, so
+    // removing a member or a number can hollow one out. They are purged at
+    // source (lib/draw-cascade purgeEmptyWinnerPlans); this refuses to act on
+    // one that slipped through.
+    if (plan.luckyNumberIds.length === 0) {
+      throw new Error(
+        "The winner plan for this week has no numbers left in it — cancel or rebuild the plan on the setup page before drawing.",
+      );
+    }
     const slot = input.eligibleSlots.find((s) =>
       plan.luckyNumberIds.every((id) => s.luckyNumberIds.includes(id)),
     );

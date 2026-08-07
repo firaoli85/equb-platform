@@ -1,52 +1,74 @@
-"use client";
-
-// The browser half of SMS login — Firebase Phone Auth, ported from the
-// previous build (equb-app/src/lib/firebase.ts), which worked and needed no
-// carrier A2P registration.
+// VERBATIM PORT of equb-app/src/lib/firebase.ts — the build that successfully
+// sends SMS on localhost against this same Firebase project.
 //
-// SCOPE (2.28): Firebase is used for LOGIN CODES ONLY. It cannot send our own
-// messages — reminders, statements, winner announcements all stay on
-// WhatsApp/Twilio. The SMS ruling was about sending our own content; a login
-// code is Google's message, not ours.
+// Three real causes were found and fixed before this port (Referrer-Policy
+// stripping reCAPTCHA's Referer, connect-src blocking api2/clr, frame-src
+// missing recaptcha.google.com) and auth/invalid-app-credential survived all
+// three. So this file no longer tries to be a better version of the one that
+// works: the initialisation expression, its position in the module, and the
+// export shape are now character-for-character what the working app does.
 //
-// Initialised LAZILY so a missing config never crashes the login page: the
-// server tells the client whether SMS is available, and this is only reached
-// when it is.
+// WHAT WAS DELIBERATELY UNDONE HERE, and why each could plausibly matter:
+//
+//   * "use client" — REMOVED. The working file does not carry it. A "use
+//     client" module is a client-graph ENTRY POINT, which is a different thing
+//     from a module that merely ends up in the client graph because a client
+//     component imported it. That distinction can change when the module is
+//     evaluated, and evaluation timing is precisely what decides whether
+//     Firebase is ready before RecaptchaVerifier is constructed. It is only
+//     imported by components/member/login-flow.tsx, which is itself
+//     "use client", so the module still lands in the browser bundle.
+//
+//   * CONDITIONAL initialisation — REMOVED. This file used to call
+//     initializeApp only when firebaseClientConfigured() was true, and export
+//     a firebaseAuth() accessor returning Auth | null. That made app creation
+//     depend on a predicate the working app does not have. Now initializeApp
+//     runs unconditionally at module load, exactly as it does there.
+//
+// SCOPE (2.28) is unchanged: Firebase is used for LOGIN CODES ONLY. It cannot
+// send our own messages — reminders, statements and winner announcements all
+// stay on WhatsApp/Twilio. A login code is Google's message, not ours.
 
-import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { initializeApp, getApps } from "firebase/app";
+import { getAuth } from "firebase/auth";
+
+// NEXT_PUBLIC_ values are inlined at BUILD time. Writing them into .env.local
+// while the dev server is running does NOT put them in the browser bundle —
+// the server must be restarted. Each is read as a whole literal for that
+// reason: Next can only substitute the full `process.env.NEXT_PUBLIC_X`
+// expression, never a computed key.
+const firebaseConfig = {
+  apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain:        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId:         process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+export const auth = getAuth(app);
+
+// ————————————————————————————————————————————————————————————————
+// Everything below is DIAGNOSTIC ONLY. None of it participates in creating
+// the app or the Auth instance above, and none of it runs before them.
+// ————————————————————————————————————————————————————————————————
 
 /** The single DOM node the reCAPTCHA widget mounts into. */
 export const RECAPTCHA_CONTAINER_ID = "recaptcha-container";
 
-// NEXT_PUBLIC_ values are inlined at BUILD time. Writing them into .env.local
-// while the dev server is running does NOT put them in the browser bundle —
-// the server must be restarted. That is why each one is read as a whole
-// literal here rather than through a computed key: Next can only substitute
-// the full `process.env.NEXT_PUBLIC_X` expression.
-function config() {
-  return {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  };
-}
-
 /**
  * Which public Firebase values did NOT reach the browser bundle. Named so a
- * failure can say WHICH one is missing instead of "not available".
+ * failure can say WHICH one is missing instead of "not available" — the
+ * original silent failure this whole area exists to prevent.
  */
 export function firebaseMissingClientConfig(): string[] {
-  const c = config();
   return (
     [
-      ["NEXT_PUBLIC_FIREBASE_API_KEY", c.apiKey],
-      ["NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", c.authDomain],
-      ["NEXT_PUBLIC_FIREBASE_PROJECT_ID", c.projectId],
-      ["NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID", c.messagingSenderId],
-      ["NEXT_PUBLIC_FIREBASE_APP_ID", c.appId],
+      ["NEXT_PUBLIC_FIREBASE_API_KEY", firebaseConfig.apiKey],
+      ["NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", firebaseConfig.authDomain],
+      ["NEXT_PUBLIC_FIREBASE_PROJECT_ID", firebaseConfig.projectId],
+      ["NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID", firebaseConfig.messagingSenderId],
+      ["NEXT_PUBLIC_FIREBASE_APP_ID", firebaseConfig.appId],
     ] as const
   )
     .filter(([, value]) => !value?.trim())
@@ -55,36 +77,10 @@ export function firebaseMissingClientConfig(): string[] {
 
 /** True when every public Firebase value reached the browser bundle. */
 export function firebaseClientConfigured(): boolean {
-  const c = config();
-  return Boolean(c.apiKey && c.authDomain && c.projectId && c.appId);
-}
-
-// INITIALISED AT MODULE LOAD, exactly as the working build does it
-// (equb-app/src/lib/firebase.ts):
-//
-//     const app = getApps().length === 0 ? initializeApp(cfg) : getApps()[0];
-//     export const auth = getAuth(app);
-//
-// This was the last structural difference between the two apps. Here it used
-// to be LAZY — initializeApp and getAuth ran inside the click handler, a few
-// milliseconds before RecaptchaVerifier was constructed and
-// signInWithPhoneNumber was called. Doing it at module load means Firebase is
-// ready from the moment the login page's JS evaluates, and reCAPTCHA has the
-// whole time the member spends typing their number to load and settle,
-// instead of being started and used in the same tick.
-//
-// The one thing NOT copied verbatim is the crash on missing config: this
-// platform renders /login for deployments with no Firebase at all (2.28), so
-// a missing config yields null rather than throwing at import time.
-const app: FirebaseApp | null = firebaseClientConfigured()
-  ? getApps().length === 0
-    ? initializeApp(config())
-    : getApps()[0]
-  : null;
-
-const auth: Auth | null = app ? getAuth(app) : null;
-
-/** The Firebase Auth instance, or null when SMS login is not configured. */
-export function firebaseAuth(): Auth | null {
-  return auth;
+  return Boolean(
+    firebaseConfig.apiKey &&
+      firebaseConfig.authDomain &&
+      firebaseConfig.projectId &&
+      firebaseConfig.appId,
+  );
 }

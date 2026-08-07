@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
+import { logAudit } from "@/lib/audit";
+import { formatMoney } from "@/lib/format";
 import { redactCycleDetail } from "@/lib/presentation";
 import { getSetting } from "@/lib/settings";
 import { requireAdmin } from "@/lib/auth";
@@ -138,8 +140,31 @@ export async function createCycle(input: CreateCycleInput) {
         include: { weeks: { orderBy: { weekNumber: "asc" } } },
       });
       // The numbering choice travels with the cycle (per-cycle setting row).
+      // Removed with the cycle by deleteClosedCycle — Setting has no relation
+      // to Cycle, so nothing cascades it.
       await tx.setting.create({
         data: { key: `numberingMode:${created.id}`, value: JSON.stringify(input.numbering) },
+      });
+      // D-32: creating a cycle is a state change like any other, and it was
+      // the only one of its size with no entry at all.
+      await logAudit(tx, {
+        entity: "Cycle",
+        entityId: created.id,
+        action: "create",
+        summary:
+          `Cycle "${created.name}" created — ${created.plannedWeeks} planned weeks from ` +
+          `${formatDateLongUTC(created.startDate)}, unit ${formatMoney(created.unitAmount)}, ` +
+          `fee ${created.feePercent}%, lucky numbers ${input.numbering === "carryover" ? "CARRIED OVER where free" : "FRESH from 1"}. ` +
+          `Status ${created.status}${active ? ` (${active.name} is still active)` : ""}.`,
+        after: {
+          name: created.name,
+          startDate: created.startDate,
+          plannedWeeks: created.plannedWeeks,
+          unitAmount: created.unitAmount,
+          feePercent: created.feePercent,
+          numbering: input.numbering,
+          status: created.status,
+        },
       });
       return created;
     });

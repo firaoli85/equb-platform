@@ -40,6 +40,23 @@ export function samePhone(a: string, b: string): boolean {
 }
 
 /**
+ * The default PIN (2.6: defaultPinFromPhone): the LAST 4 DIGITS of the
+ * registered phone. Derived on every call, never stored — a phone with
+ * fewer than 4 digits (or none) has no default.
+ *
+ * It lives HERE, not in lib/pin.ts, because it is a fact about a phone
+ * number and nothing else. lib/pin.ts imports bcryptjs, and the admin form
+ * that warns "their PIN becomes 4219" is a client component: importing it
+ * from there would drag a hashing library into the browser bundle to compute
+ * a four-character substring. lib/pin.ts re-exports it, so every existing
+ * caller is unaffected.
+ */
+export function defaultPinForPhone(phone: string | null | undefined): string | null {
+  const digits = phoneDigits(phone ?? "");
+  return digits.length >= 4 ? digits.slice(-4) : null;
+}
+
+/**
  * E.164 for the OTP/WhatsApp senders — the canonical form, nothing else.
  * Empty input falls back to "+" so provider calls fail loudly rather than
  * silently targeting a wrong number.

@@ -20,7 +20,7 @@ import {
 } from "@/lib/pin";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { samePhone, toE164 } from "@/lib/phone";
-import { prisma } from "@/lib/prisma";
+import { prisma, serializableTransaction } from "@/lib/prisma";
 import { clearSessionCookie, recordSignIn, revokeCurrentSession } from "@/lib/session-record";
 import { getSetting } from "@/lib/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -637,16 +637,38 @@ export async function setMemberPin(input: { personId: string; pin: string }) {
     }
     const person = await prisma.person.findUnique({ where: { id: input.personId } });
     if (!person) return { ok: false as const, error: "Person not found." };
-    await prisma.person.update({
-      where: { id: input.personId },
-      data: {
-        pinHash: await hashPin(input.pin),
-        pinFailedAttempts: 0,
-        pinLockedUntil: null,
-      },
+
+    const hadOwnPin = person.pinHash !== null;
+    const hash = await hashPin(input.pin);
+
+    // AUDITED (2.23). This action had no audit entry at all, while the two
+    // actions either side of it — unlock and reset — both write one. It is the
+    // one place the ORGANIZER LEARNS AND SETS a member's credential, so it is
+    // the one that most needs a record: afterwards, someone other than the
+    // member knows a PIN that can open their account.
+    //
+    // The PIN itself is never recorded, only that it was set and by whom.
+    await serializableTransaction(async (tx) => {
+      await tx.person.update({
+        where: { id: input.personId },
+        data: { pinHash: hash, pinFailedAttempts: 0, pinLockedUntil: null },
+      });
+      await logAudit(tx, {
+        entity: "Person",
+        entityId: input.personId,
+        action: "update",
+        summary:
+          `Organizer ${hadOwnPin ? "REPLACED" : "set"} ${person.nameEnglishFirst}'s PIN. ` +
+          `The organizer knows this PIN — the member should change it. ` +
+          `Any lock and failed-attempt count were cleared.`,
+        before: { hadOwnPin, pinFailedAttempts: person.pinFailedAttempts, pinLockedUntil: person.pinLockedUntil },
+        after: { hadOwnPin: true, pinFailedAttempts: 0, pinLockedUntil: null },
+      });
     });
+
     revalidatePath(`/admin/people/${input.personId}`);
-    return { ok: true as const, data: { personId: input.personId } };
+    revalidatePath("/admin/audit");
+    return { ok: true as const, data: { personId: input.personId, replaced: hadOwnPin } };
   } catch (e) {
     console.error("setMemberPin failed:", e);
     return { ok: false as const, error: `Could not save the PIN. ${errorMessage(e)}` };

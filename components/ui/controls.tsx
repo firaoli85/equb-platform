@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "@/lib/motion-tokens";
+import { AnchoredPopover } from "./anchored-popover";
 
 // The crafted form controls — one look everywhere, replacing every stock
 // browser control. Concentric radii (outer 12px = inner 8px + 4px padding),
@@ -34,6 +35,7 @@ export function Select<V extends string = string>({
 }) {
   const reduce = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -44,11 +46,9 @@ export function Select<V extends string = string>({
   useEffect(() => {
     if (!open) return;
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
-    function onDoc(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    // Outside-click and Escape are owned by AnchoredPopover: the list is
+    // portalled to body, so rootRef no longer contains it and a contains()
+    // check here would close the menu on every click INSIDE it.
   }, [open, options, value]);
 
   function move(dir: 1 | -1) {
@@ -89,6 +89,7 @@ export function Select<V extends string = string>({
   return (
     <div ref={rootRef} className={`relative ${className}`}>
       <button
+        ref={triggerRef}
         type="button"
         role="combobox"
         aria-expanded={open}
@@ -115,8 +116,18 @@ export function Select<V extends string = string>({
         </svg>
       </button>
 
-      <AnimatePresence>
-        {open && (
+      {/* PORTALLED (UI_STANDARDS 10b). Inside a Table the old absolutely
+          positioned list was clipped at the table's overflow-x-auto edge —
+          the options simply vanished. AnchoredPopover measures this trigger
+          and positions against the viewport instead. */}
+      <AnchoredPopover
+        anchorRef={triggerRef}
+        open={open}
+        onRequestClose={() => setOpen(false)}
+        matchTriggerWidth
+      >
+        <AnimatePresence>
+          {open && (
           <motion.ul
             key="list"
             id={listboxId}
@@ -132,7 +143,7 @@ export function Select<V extends string = string>({
             }}
             transition={{ duration: motionTokens.duration.fast, ease: motionTokens.easing.smooth }}
             style={{ transformOrigin: "top" }}
-            className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-64 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1f1f1f] p-1 shadow-lg shadow-black/10 dark:shadow-black/50"
+            className="max-h-64 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1f1f1f] p-1 shadow-lg shadow-black/10 dark:shadow-black/50"
           >
             {options.map((o, i) => {
               const isSelected = o.value === value;
@@ -165,8 +176,9 @@ export function Select<V extends string = string>({
               );
             })}
           </motion.ul>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </AnchoredPopover>
     </div>
   );
 }

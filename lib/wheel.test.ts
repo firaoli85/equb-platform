@@ -151,6 +151,48 @@ describe("selectWinningSlot — plan first, then chance (2.2/2.3)", () => {
       /No eligible slots/,
     );
   });
+
+  // FOUND LIVE, ON WEEK 11. `WinnerPlanNumber` cascades when a LuckyNumber is
+  // deleted, so removing a member or a number can leave a PLANNED plan with no
+  // numbers in it — the organizer never did anything to it. `[].every(...)` is
+  // VACUOUSLY TRUE, so that plan matched the FIRST eligible slot and would
+  // have decided week 11 silently, audited as an intentional "planned" win
+  // rather than a spin. There is no honest reading of a plan with no numbers.
+  it("refuses to let a plan with ZERO numbers decide the draw", () => {
+    expect(() =>
+      selectWinningSlot({
+        eligibleSlots: slots,
+        winnerPlans: [{ id: "p-empty", weekId: "w9", luckyNumberIds: [] }],
+        weekId: "w9",
+      }),
+    ).toThrow(/no numbers left in it/);
+  });
+
+  it("does not let an empty plan silently take the first slot", () => {
+    // The precise failure: without the guard this returned s1 with
+    // reason "planned".
+    let selection: ReturnType<typeof selectWinningSlot> | null = null;
+    try {
+      selection = selectWinningSlot({
+        eligibleSlots: slots,
+        winnerPlans: [{ id: "p-empty", weekId: "w9", luckyNumberIds: [] }],
+        weekId: "w9",
+      });
+    } catch {
+      /* expected */
+    }
+    expect(selection).toBeNull();
+  });
+
+  it("an empty plan for ANOTHER week never interferes with this one", () => {
+    const selection = selectWinningSlot({
+      eligibleSlots: slots,
+      winnerPlans: [{ id: "p-empty", weekId: "w11", luckyNumberIds: [] }],
+      weekId: "w9",
+      random: () => 0,
+    });
+    expect(selection).toEqual({ slotId: "s1", reason: "random" });
+  });
 });
 
 describe("autoArrange — target the unit, flag over-unit, never block", () => {

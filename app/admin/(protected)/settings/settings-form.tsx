@@ -8,6 +8,7 @@ import {
   updatePinLockoutPolicy,
   updatePinLoginEnabled,
   updateWhatsappEnabled,
+  updateClosingWaitDays,
 } from "@/app/actions/settings";
 // From setting-defaults, NOT lib/settings: the latter imports Prisma, which
 // imports `pg`, which imports node:dns — pulling that into a client bundle is
@@ -24,6 +25,7 @@ export function SettingsForm({
     pinLockMinutes: number;
     notifyOnLockout: boolean;
     whatsappEnabled: boolean;
+    closingWaitDays: number;
   };
 }) {
   const router = useRouter();
@@ -33,6 +35,7 @@ export function SettingsForm({
   const [lockMinutes, setLockMinutes] = useState(String(initial.pinLockMinutes));
   const [notifyOnLockout, setNotifyOnLockout] = useState(initial.notifyOnLockout);
   const [whatsappEnabled, setWhatsappEnabled] = useState(initial.whatsappEnabled);
+  const [closingWaitDays, setClosingWaitDays] = useState(String(initial.closingWaitDays));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -43,7 +46,8 @@ export function SettingsForm({
     maxAttempts !== String(initial.pinMaxAttempts) ||
     lockMinutes !== String(initial.pinLockMinutes) ||
     notifyOnLockout !== initial.notifyOnLockout ||
-    whatsappEnabled !== initial.whatsappEnabled;
+    whatsappEnabled !== initial.whatsappEnabled ||
+    closingWaitDays !== String(initial.closingWaitDays);
 
   function clearFeedback() {
     setError(null);
@@ -91,6 +95,13 @@ export function SettingsForm({
       }
       if (whatsappEnabled !== initial.whatsappEnabled) {
         const result = await updateWhatsappEnabled({ enabled: whatsappEnabled });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+      }
+      if (closingWaitDays !== String(initial.closingWaitDays)) {
+        const result = await updateClosingWaitDays({ days: Number(closingWaitDays) });
         if (!result.ok) {
           setError(result.error);
           return;
@@ -222,6 +233,33 @@ export function SettingsForm({
             />
           </label>
         </div>
+      </div>
+
+      <div className="rounded border border-gray-300 dark:border-gray-700 p-3 text-sm">
+        <p className="mb-2">
+          <strong>Wait before a cycle can be closed</strong>
+          <br />
+          Closing writes every shortfall onto the members&apos; carried ledgers and freezes the
+          books. Money for the last week routinely arrives days late — the payment window itself
+          is 5 days — so this holds closing open long enough for it to land on the week instead
+          of becoming a debt. Set 0 to close as soon as the last week passes.
+        </p>
+        <label className="block">
+          <span className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
+            Days after the final week
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={90}
+            value={closingWaitDays}
+            onChange={(e) => {
+              setClosingWaitDays(e.target.value);
+              clearFeedback();
+            }}
+            className="w-28 rounded border border-gray-400 px-3 py-2 text-sm"
+          />
+        </label>
       </div>
 
       <label className="flex items-start gap-2 text-sm">

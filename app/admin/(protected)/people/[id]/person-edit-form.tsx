@@ -5,6 +5,14 @@ import { useState } from "react";
 import { deletePerson, updatePerson } from "@/app/actions/edits";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { buttonCls } from "@/components/ui/primitives";
+import {
+  canRemovePerson,
+  personRemovalBlockers,
+  personRemovalConsequences,
+  phoneChange,
+  type PersonRemovalFacts,
+  type PinState,
+} from "@/lib/person-record";
 
 type PersonFields = {
   id: string;
@@ -13,6 +21,16 @@ type PersonFields = {
   nameEnglishLast: string | null;
   phone: string | null;
   participationCount: number;
+  /**
+   * Whether their PIN is their own, derived from the phone, or absent —
+   * computed server-side on the page (pinHash plus the defaultPinFromPhone
+   * setting). The form cannot warn about a credential it cannot see.
+   */
+  pinState: PinState;
+  /** Ledger rows, messages sent-or-attempted, and sign-in history. */
+  ledgerEntryCount: number;
+  messageCount: number;
+  sessionCount: number;
 };
 
 export function PersonEditForm({ person }: { person: PersonFields }) {
@@ -27,11 +45,33 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
   const dirty = JSON.stringify(fields) !== JSON.stringify(initial);
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  const facts: PersonRemovalFacts = {
+    name: person.nameEnglishFirst,
+    participationCount: person.participationCount,
+    ledgerEntryCount: person.ledgerEntryCount,
+    carriedBalance: 0,
+    messageCount: person.messageCount,
+    sessionCount: person.sessionCount,
+  };
+  const blockers = personRemovalBlockers(facts);
+  const removable = canRemovePerson(facts);
+
+  // WHAT SAVING THE PHONE ACTUALLY DOES. The phone is the member's sign-in
+  // identity on every door, and for anyone still on the default it is also
+  // their PIN. Formatting-only edits stay silent — see lib/person-record.ts.
+  const phone = phoneChange({
+    name: person.nameEnglishFirst,
+    before: person.phone,
+    after: fields.phone,
+    pinState: person.pinState,
+  });
+
+  async function doSave() {
     setError(null);
     setSaved(false);
     setSaving(true);
@@ -50,10 +90,43 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       setError("Could not reach the server — not saved.");
     } finally {
       setSaving(false);
+      setConfirm(null);
+      setOnConfirm(null);
     }
   }
 
-  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    // A name correction is an ordinary save. A phone change is a credential
+    // change, so it gets the same confirmation any other credential change
+    // would — and it names the new PIN rather than hinting at one.
+    if (!phone.changed) return void doSave();
+    setConfirm({
+      title: phone.locksOut
+        ? `Remove ${person.nameEnglishFirst}'s phone number?`
+        : `Change ${person.nameEnglishFirst}'s phone number?`,
+      destructive: phone.locksOut,
+      consequence: phone.consequence ?? undefined,
+      body: (
+        <p>
+          The directory entry, the names and everything else about them stay exactly as they are.
+          An audit entry records the old and new number.
+        </p>
+      ),
+      alternative: phone.newDefaultPin
+        ? {
+            label: "Give them a PIN of their own first",
+            description:
+              "Set a PIN below, under “PIN sign-in”. Their PIN then stops following their phone " +
+              "number, and this edit becomes an ordinary correction.",
+            onChoose: () => setConfirm(null),
+          }
+        : undefined,
+      confirmLabel: phone.locksOut ? "Remove the number" : "Change the number",
+      requirePhrase: phone.locksOut ? person.nameEnglishFirst : undefined,
+    });
+    setOnConfirm(() => () => void doSave());
+  }
 
   async function doDelete() {
     setSaving(true);
@@ -68,18 +141,59 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
     } finally {
       setSaving(false);
       setConfirm(null);
+      setOnConfirm(null);
     }
   }
 
   function handleDelete() {
+    // BLOCKED — say so here, with every reason at once, instead of letting
+    // them type the name and then meet a refusal. The message log is the one
+    // nothing can clear, so the honest offer is the thing they usually meant:
+    // stop contacting them, and leave the record intact (2.20).
+    if (!removable) {
+      setConfirm({
+        title: `${person.nameEnglishFirst} cannot be removed from the directory`,
+        destructive: false,
+        consequence: blockers.map((b) => b.reason).join(" "),
+        body: (
+          <>
+            <p>
+              People are permanent once they have a history (2.5). What is left of that history
+              is what makes the books readable years later, so the product keeps it rather than
+              pretending it never happened.
+            </p>
+            {blockers.every((b) => !b.clearable) && (
+              <p>
+                Nothing you can do here clears {blockers.length === 1 ? "that" : "those"} — and
+                that is deliberate, not a missing feature.
+              </p>
+            )}
+          </>
+        ),
+        alternative: {
+          label: "Stop messaging them instead",
+          description:
+            "The “No messages” switch below stops every message to " +
+            `${person.nameEnglishFirst}, automatic and manual, without touching their record. ` +
+            "That is usually what “remove them” means.",
+          onChoose: () => setConfirm(null),
+        },
+        confirmLabel: "Close",
+      });
+      setOnConfirm(() => () => setConfirm(null));
+      return;
+    }
+
     setConfirm({
       title: `Remove ${person.nameEnglishFirst} from the directory permanently?`,
+      consequence: personRemovalConsequences(facts).join(" "),
       body: (
         <>
           <p>
             This deletes {person.nameAmharic} ({person.nameEnglishFirst}
-            {person.nameEnglishLast ? ` ${person.nameEnglishLast}` : ""})&apos;s name and phone. It
-            is only possible because they are in no cycle and carry no ledger balance.
+            {person.nameEnglishLast ? ` ${person.nameEnglishLast}` : ""})&apos;s name and phone.
+            It is possible because they are in no cycle, carry no ledger record and have never
+            been messaged.
           </p>
           <p>An audit entry records the removal.</p>
         </>
@@ -87,6 +201,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       confirmLabel: "Remove permanently",
       requirePhrase: person.nameEnglishFirst,
     });
+    setOnConfirm(() => () => void doDelete());
   }
 
   return (
@@ -111,6 +226,18 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
             }}
             className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
           />
+          {/* The warning belongs BESIDE the field being changed, not only in
+              the dialog that appears after they have decided. */}
+          {key === "phone" && phone.changed && (
+            <span className="mt-1 block text-xs leading-snug text-amber-700 dark:text-amber-500">
+              {phone.consequence}
+            </span>
+          )}
+          {key === "phone" && !phone.changed && person.pinState === "default" && (
+            <span className="mt-1 block text-xs leading-snug text-gray-600 dark:text-gray-400">
+              This number is how they sign in, and the last 4 digits are their PIN.
+            </span>
+          )}
         </label>
       ))}
 
@@ -133,16 +260,18 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
+        {/* NOT disabled when blocked. A dead button teaches nothing; pressing
+            it now explains every blocker and offers the thing they meant. */}
         <button
           type="button"
           onClick={handleDelete}
-          disabled={saving || person.participationCount > 0}
+          disabled={saving}
           title={
-            person.participationCount > 0
-              ? "In a cycle — remove the participation first"
-              : "Remove from the directory"
+            removable
+              ? "Remove from the directory"
+              : "Not possible — press to see why, and what to do instead"
           }
-          className={buttonCls.danger}
+          className={removable ? buttonCls.danger : buttonCls.ghost}
         >
           Remove from directory
         </button>
@@ -150,8 +279,11 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       <ConfirmDialog
         spec={confirm}
         busy={saving}
-        onConfirm={() => void doDelete()}
-        onCancel={() => setConfirm(null)}
+        onConfirm={() => onConfirm?.()}
+        onCancel={() => {
+          setConfirm(null);
+          setOnConfirm(null);
+        }}
       />
     </form>
   );

@@ -289,15 +289,38 @@ describe("MOVE a payout — the settlement follows the winner", () => {
       );
     });
 
-    it("refuses an UNDRAWN destination and points at the right action instead", () => {
+    it("ALLOWS an undrawn destination — the move creates the draw on arrival", () => {
+      // This used to refuse. It meant a week the organizer had just freed
+      // could not be moved into, and the only route was to draw it on the
+      // wheel first. The organizer decides where a winner belongs (2.2); an
+      // absent draw is a thing to create, not a reason to refuse.
+      expect(
+        movePayoutRefusal({ from: week6, to: { ...week9, undrawn: true }, payout: hana }),
+      ).toBeNull();
+    });
+
+    it("still refuses an UNDRAWN destination carrying a committed winner plan (2.3)", () => {
+      // The organizer's own locked intent for a week not yet drawn. Moving
+      // someone into it would overwrite the plan silently — the failure that
+      // shipped twice before.
       const refusal = movePayoutRefusal({
         from: week6,
-        to: { ...week9, undrawn: true },
+        to: { ...week9, undrawn: true, planned: true },
         payout: hana,
       });
-      // No second money route: moving a whole draw is an existing action.
-      expect(refusal).toContain("has no draw yet");
-      expect(refusal).toContain("Move the whole draw");
+      expect(refusal).toMatch(/committed winner plan/i);
+      expect(refusal).toMatch(/Cancel the plan/i);
+    });
+
+    it("does NOT refuse on a plan the week has already fulfilled", () => {
+      // Once drawn, the plan has done its job; it is history, not intent.
+      expect(
+        movePayoutRefusal({
+          from: week6,
+          to: { ...week9, undrawn: false, planned: true },
+          payout: hana,
+        }),
+      ).toBeNull();
     });
 
     it("refuses when that number already wins the destination week", () => {
@@ -342,5 +365,57 @@ describe("the sentences the organizer actually reads", () => {
       expect(line).not.toContain("undefined");
       expect(line).not.toContain("NaN");
     }
+  });
+});
+
+// A WEEK CHANGING FROM DRAWN TO UNDRAWN IS THE BIGGEST CONSEQUENCE THERE IS,
+// and it used to happen with nothing said — the draw simply survived its last
+// payout and the week was stuck. The preview now carries it, so the
+// confirmation states it BEFORE the organizer commits, not after.
+describe("freedWeek — the week left with no winner at all", () => {
+  const abebe: WinnerPayout = { ...hana, payoutId: "po-abebe", luckyNumberId: "ln-31", number: 31, memberName: "Abebe" };
+  const week9: WeekWinners = { weekId: "wk-9", weekNumber: 9, undrawn: false, isSkipped: false, payouts: [] };
+  const hanaTerms = { weeklyAmount: 25_000, startWeek: 1, weeksCommitted: 20, memberName: "Hana" };
+
+  it("reports the week freed when the ONLY winner is removed", () => {
+    const p = removeWinnerPreview({ week: week6, payout: hana });
+    expect(p.freedWeek).toEqual({ weekNumber: 6, numbersReturning: [] });
+    expect(previewSentences(p, formatMoney)).toContain(
+      "Week 6 is left with no winner, so its draw is removed and the week becomes UNDRAWN — selectable again everywhere.",
+    );
+  });
+
+  it("reports NOTHING freed when another winner stays on the week", () => {
+    const shared: WeekWinners = { ...week6, payouts: [hana, abebe] };
+    expect(removeWinnerPreview({ week: shared, payout: hana }).freedWeek).toBeNull();
+    const lines = previewSentences(removeWinnerPreview({ week: shared, payout: hana }), formatMoney);
+    expect(lines.some((l) => l.includes("UNDRAWN"))).toBe(false);
+  });
+
+  it("reports the week freed when the ONLY winner is MOVED away — the week-6 bug", () => {
+    const p = movePayoutPreview({ from: week6, to: week9, payout: hana, candidate: hanaTerms });
+    expect(p.freedWeek).toEqual({ weekNumber: 6, numbersReturning: [] });
+    expect(previewSentences(p, formatMoney).some((l) => l.includes("UNDRAWN"))).toBe(true);
+  });
+
+  it("names numbers stranded in the slot when the draw goes — the week-1 shape", () => {
+    // #78 sat in week 1's slot with no payout of its own: deleting the last
+    // payout left it drawn forever. The draw going is what frees it.
+    const p = removeWinnerPreview({ week: week6, payout: hana, slotNumbersAfter: [78] });
+    expect(p.freedWeek).toEqual({ weekNumber: 6, numbersReturning: [78] });
+    expect(previewSentences(p, formatMoney)).toContain(
+      "Week 6 is left with no winner, so its draw is removed and the week becomes UNDRAWN — selectable again everywhere, and #78 returns to the wheel pool.",
+    );
+  });
+
+  it("never claims a week is freed by ADDING a winner", () => {
+    expect(addWinnerPreview({ week: week6, candidate: partner, feePercent: FEE }).freedWeek).toBeNull();
+  });
+
+  it("reports nothing freed when the move leaves the source week populated", () => {
+    const shared: WeekWinners = { ...week6, payouts: [hana, abebe] };
+    expect(
+      movePayoutPreview({ from: shared, to: week9, payout: hana, candidate: hanaTerms }).freedWeek,
+    ).toBeNull();
   });
 });

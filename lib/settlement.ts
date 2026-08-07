@@ -12,6 +12,7 @@
 //     terms entitle them to, so the organizer settles it explicitly (2.18)
 //     — never silently.
 
+import { formatMoney } from "./format";
 import { calculateFee, calculateGross, calculateNet } from "./money";
 
 // ————————————————— 1. The winner's week —————————————————
@@ -186,16 +187,42 @@ export function settledSoFarFromLedger(
 
 /**
  * Resizing a win-week settlement when the weekly changes: the settled week
- * now costs `newWeeklyAmount`, and the DIFFERENCE must go back to the payout
- * the settlement came from — without the credit, that cash simply vanishes
- * from the books and every later gap is computed off a false total.
+ * now costs `newWeeklyAmount`, and the DIFFERENCE must move between the
+ * receipt and the payout the settlement came from — without it, that cash
+ * simply vanishes from the books and every later gap is computed off a false
+ * total.
+ *
+ * IT RESIZES BOTH WAYS. This was `Math.min(eventAmount, newWeeklyAmount)`, a
+ * one-way ratchet: a weekly cut to $250 and then put back to $500 left the
+ * receipt at $250 while week 12 now cost $500, so the member was dunned as
+ * PARTIAL for the very week they won — breaking rule 6, "the week a member is
+ * drawn settles from their payout, not from their pocket" — and the payout
+ * kept the $250 it had been credited. The settled week costs exactly the new
+ * weekly, so `resized` IS the new weekly and `credit` may be negative: a
+ * dearer week takes more out of the payout, which is where a winner's own
+ * week has always come from.
+ *
+ * `resized + credit === eventAmount` in every case: the money is conserved.
+ *
+ * Pass `payoutNet` to have a growing week checked against what is actually
+ * left in the payout. A payout cannot fund more than it holds, and a negative
+ * netAmount is not a number this system is willing to write.
  */
 export function resizeWinnerWeekSettlement(
   eventAmount: number,
   newWeeklyAmount: number,
-): { resized: number; credit: number } {
-  const resized = Math.min(eventAmount, newWeeklyAmount);
-  return { resized, credit: eventAmount - resized };
+  payoutNet?: number,
+): { resized: number; credit: number; refusal: string | null } {
+  const resized = Math.max(0, newWeeklyAmount);
+  const credit = eventAmount - resized;
+  const refusal =
+    credit < 0 && payoutNet != null && payoutNet + credit < 0
+      ? `Their week-of-the-win contribution would rise to ${formatMoney(resized)}, which is ` +
+        `${formatMoney(-credit)} more than it settled for — but only ${formatMoney(payoutNet)} ` +
+        `is left in the payout it comes out of. Raise the weekly in smaller steps, or correct ` +
+        `the payout figure first.`
+      : null;
+  return { resized, credit, refusal };
 }
 
 // ————————————————— Confirmation (type the member's name) —————————————————

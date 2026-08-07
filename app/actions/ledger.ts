@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { refuseIfCycleClosed } from "@/lib/cycle-guard";
 import { carryChoiceSummary, isCarryChoice, type CarryChoice } from "@/lib/carry-balance";
 import { forgivenessRefusal, ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { formatMoney } from "@/lib/format";
@@ -251,6 +252,10 @@ export async function recordCarryDecision(input: {
     // them as permission to deduct (lib/carry-balance.ts owns that, and a
     // guard test fails if any other path tries).
     await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { participationId: input.participationId });
       await tx.participation.update({
         where: { id: input.participationId },
         data: {

@@ -10,6 +10,8 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { refuseIfCycleClosed } from "@/lib/cycle-guard";
+import { deleteDrawIfEmpty, freedWeekClause, purgeEmptyWinnerPlans } from "@/lib/draw-cascade";
 import {
   SETTLEMENT_EVENT_WHERE,
   settleWinnerWeeks,
@@ -19,6 +21,11 @@ import {
 import { frozenCycleRefusal } from "@/lib/cycle-close";
 import { formatMoney, parseDateInput } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
+import {
+  chooseAutoNumbers,
+  describeNumberConflict,
+  type NumberHolder,
+} from "@/lib/lucky-numbers";
 import { calculateFinishWeek, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
 import {
   computeTermsSettlement,
@@ -28,6 +35,11 @@ import {
   settlementDescriptionPrefix,
   settlementLedgerTag,
 } from "@/lib/settlement";
+import { personRemovalBlockers } from "@/lib/person-record";
+import {
+  settlementReceiptAmountRefusal,
+  settlementReceiptDeleteRefusal,
+} from "@/lib/settlement-receipt";
 import { changeWinnerRefusal } from "@/lib/undo-draw";
 import {
   ensureWeeksThrough,
@@ -126,17 +138,35 @@ export async function deletePerson(input: { personId: string }) {
     const result = await serializableTransaction(async (tx) => {
       const target = await tx.person.findUniqueOrThrow({
         where: { id: input.personId },
-        include: { _count: { select: { participations: true, ledgerEntries: true } } },
+        include: {
+          _count: {
+            select: {
+              participations: true,
+              ledgerEntries: true,
+              // THE THIRD BLOCKER. MessageLog.person has no onDelete, so
+              // Prisma restricts: a person who has ever been messaged — or
+              // for whom a send merely FAILED, since failures are logged too
+              // — cannot be deleted. This was previously discovered only as a
+              // raw foreign-key error, after the organizer had typed the
+              // name to confirm.
+              messageLogs: true,
+              signInSessions: true,
+            },
+          },
+        },
       });
-      if (target._count.participations > 0) {
-        throw new Error(
-          `${target.nameEnglishFirst} is in ${target._count.participations} cycle(s) — remove those participations first.`,
-        );
-      }
-      if (target._count.ledgerEntries > 0) {
-        throw new Error(
-          `${target.nameEnglishFirst} has ledger entries — the carried balance record must be kept (2.18).`,
-        );
+      const blockers = personRemovalBlockers({
+        name: target.nameEnglishFirst,
+        participationCount: target._count.participations,
+        ledgerEntryCount: target._count.ledgerEntries,
+        carriedBalance: 0,
+        messageCount: target._count.messageLogs,
+        sessionCount: target._count.signInSessions,
+      });
+      // ALL of them at once. Three refusals one after another is not a
+      // workflow — it is the product wasting the organizer's afternoon.
+      if (blockers.length > 0) {
+        throw new Error(blockers.map((b) => b.reason).join(" "));
       }
       await tx.person.delete({ where: { id: input.personId } });
       await logAudit(tx, {
@@ -360,24 +390,31 @@ export async function updateParticipation(
           where: { participationId: before.id, ...SETTLEMENT_EVENT_WHERE },
         });
         for (const event of pinned) {
-          const { resized, credit } = resizeWinnerWeekSettlement(event.amount, input.weeklyAmount);
+          // The payout is read FIRST because a week that grew has to be funded
+          // out of it, and a payout cannot fund more than it holds.
+          const payout = event.settlementPayoutId
+            ? await tx.payout.findUnique({ where: { id: event.settlementPayoutId } })
+            : null;
+          const { resized, credit, refusal } = resizeWinnerWeekSettlement(
+            event.amount,
+            input.weeklyAmount,
+            payout?.netAmount,
+          );
+          if (refusal) throw new Error(refusal);
           if (credit === 0) continue;
           if (resized === 0) await tx.paymentEvent.delete({ where: { id: event.id } });
           else await tx.paymentEvent.update({ where: { id: event.id }, data: { amount: resized } });
-          if (event.settlementPayoutId) {
-            const payout = await tx.payout.findUnique({
-              where: { id: event.settlementPayoutId },
+          if (payout) {
+            await tx.payout.update({
+              where: { id: payout.id },
+              data: { netAmount: { increment: credit } },
             });
-            if (payout) {
-              await tx.payout.update({
-                where: { id: payout.id },
-                data: { netAmount: { increment: credit } },
-              });
-            }
           }
           settlementSummary +=
             ` Win-week settlement resized ${formatMoney(event.amount)} → ${formatMoney(resized)} to fit the new weekly` +
-            `; ${formatMoney(credit)} credited back to the payout.`;
+            (credit > 0
+              ? `; ${formatMoney(credit)} credited back to the payout.`
+              : `; ${formatMoney(-credit)} taken from the payout to fund the dearer week.`);
         }
       }
 
@@ -433,6 +470,26 @@ export async function updateParticipation(
   }
 }
 
+/**
+ * REMOVE SOMEONE FROM A CYCLE — as if they had never been in it.
+ *
+ * This was a bare cascade delete. Prisma took their lucky numbers, payouts,
+ * slot memberships, plan numbers, week rows, receipts and allocations, and
+ * left FOUR things behind (mapped in lib/participation-removal.ts):
+ *
+ *   1. their DRAW, holding no payouts and an emptied slot — the week counted
+ *      as drawn forever, un-redrawable
+ *   2. the SLOT, occupying its @@unique([cycleId, position]) seat with nobody
+ *      in it, and unreachable from the wheel UI (saveSlots refuses to delete a
+ *      slot that has a draw)
+ *   3. their WINNER PLAN with ZERO numbers — which silently rigs the next
+ *      draw, because `[].every(...)` is true
+ *   4. their SETTLEMENT RECEIPTS, whose payout FK is SetNull on delete, so
+ *      money stayed credited to weeks with no payout behind it
+ *
+ * Each is now swept inside the same transaction, before the derived figures
+ * are read again.
+ */
 export async function removeParticipation(input: { participationId: string }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
@@ -443,27 +500,109 @@ export async function removeParticipation(input: { participationId: string }) {
         include: {
           person: true,
           cycle: true,
+          luckyNumbers: {
+            include: {
+              payouts: { select: { id: true, drawId: true, netAmount: true, status: true } },
+            },
+          },
           _count: { select: { luckyNumbers: true, payments: true, paymentEvents: true } },
         },
       });
+      // Audit H5: a closed cycle's books are frozen and its carried ledgers
+      // were computed from exactly these receipts and payouts.
+      const frozen = frozenCycleRefusal(target.cycle);
+      if (frozen) throw new Error(frozen);
+
+      // 1. Reverse every settlement their payouts funded BEFORE the cascade
+      //    nulls the FK — otherwise the receipt survives as money credited to
+      //    a week with no payout behind it.
+      const payouts = target.luckyNumbers.flatMap((n) => n.payouts);
+      let reversed = 0;
+      for (const payout of payouts) {
+        const result = await unsettlePayout(tx, payout.id);
+        reversed += result.reversed;
+      }
+
+      // 2. Remember which draws they were part of, so an emptied one can be
+      //    removed after the cascade has taken their payouts and slot rows.
+      const drawIds = [...new Set(payouts.map((p) => p.drawId).filter((id): id is string => id !== null))];
+      const slotMembers = await tx.slotMember.findMany({
+        where: { luckyNumberId: { in: target.luckyNumbers.map((n) => n.id) } },
+        include: { slot: { include: { draws: { select: { id: true } } } } },
+      });
+      for (const m of slotMembers) {
+        for (const d of m.slot.draws) if (!drawIds.includes(d.id)) drawIds.push(d.id);
+      }
+      const vacatedSlotIds = [...new Set(slotMembers.map((m) => m.slotId))];
+
       await tx.participation.delete({ where: { id: input.participationId } });
+
+      // 3. Sweep the orphans the cascade cannot reach.
+      const freedWeeks: number[] = [];
+      const returnedNumbers: number[] = [];
+      for (const drawId of drawIds) {
+        const freed = await deleteDrawIfEmpty(tx, drawId);
+        if (freed.deleted) {
+          freedWeeks.push(freed.weekNumber);
+          returnedNumbers.push(...freed.numbersReturning);
+        }
+      }
+      const plans = await purgeEmptyWinnerPlans(tx, target.cycleId);
+      // Slots emptied by the cascade that never had a draw of their own.
+      const releasedSlots = await tx.slot.deleteMany({
+        where: { id: { in: vacatedSlotIds }, members: { none: {} }, draws: { none: {} } },
+      });
+
       await logAudit(tx, {
         entity: "Participation",
         entityId: input.participationId,
         action: "delete",
         summary:
           `Removed ${target.person.nameEnglishFirst} from ${target.cycle.name} ` +
-          `(deleted ${target._count.luckyNumbers} lucky numbers, ${target._count.payments} week rows, ${target._count.paymentEvents} receipts)`,
+          `(deleted ${target._count.luckyNumbers} lucky numbers, ${target._count.payments} week rows, ${target._count.paymentEvents} receipts` +
+          (payouts.length > 0
+            ? `, ${payouts.length} payout(s) totalling ${formatMoney(payouts.reduce((s, p) => s + p.netAmount, 0))}`
+            : "") +
+          `)` +
+          (reversed > 0
+            ? `. ${formatMoney(reversed)} of win-week settlement reversed first, so no receipt is left crediting a week with no payout behind it`
+            : "") +
+          (freedWeeks.length > 0
+            ? `. Week${freedWeeks.length === 1 ? "" : "s"} ${freedWeeks.join(", ")} held no other winner, so ` +
+              `${freedWeeks.length === 1 ? "its draw was" : "their draws were"} removed and ` +
+              `${freedWeeks.length === 1 ? "it is" : "they are"} UNDRAWN again` +
+              (returnedNumbers.length > 0
+                ? ` (${returnedNumbers.sort((a, b) => a - b).map((n) => `#${n}`).join(", ")} back in the pool)`
+                : "")
+            : "") +
+          (plans.purged > 0
+            ? `. ${plans.purged} winner plan(s) left with no numbers were deleted — an empty plan rigs the next draw`
+            : "") +
+          (releasedSlots.count > 0 ? `. ${releasedSlots.count} emptied wheel slot(s) released` : ""),
         before: {
           personId: target.personId,
           weeklyAmount: target.weeklyAmount,
           startWeek: target.startWeek,
           weeksCommitted: target.weeksCommitted,
+          payouts: payouts.map((p) => ({ netAmount: p.netAmount, status: p.status })),
+          settlementReversed: reversed,
         },
       });
-      return { name: target.person.nameEnglishFirst, cycle: target.cycle.name };
+      return {
+        name: target.person.nameEnglishFirst,
+        cycle: target.cycle.name,
+        settlementReversed: reversed,
+        weeksFreed: freedWeeks,
+        plansPurged: plans.purged,
+      };
     });
     revalidateAdmin();
+    revalidatePath("/admin/collections");
+    revalidatePath("/admin/wheel");
+    revalidatePath("/admin/wheel/setup");
+    revalidatePath("/admin/cycle/draws");
+    revalidatePath("/admin/payments");
+    revalidatePath("/admin");
     return { ok: true as const, data };
   } catch (e) {
     console.error("removeParticipation failed:", e);
@@ -472,8 +611,92 @@ export async function removeParticipation(input: { participationId: string }) {
 }
 
 // ————————————————— Lucky numbers —————————————————
+//
+// A NUMBER ALREADY IN USE IS A CHOICE, NOT A DEAD END (organizer's ruling).
+// Both entry points used to answer "Number 22 is already taken in this cycle"
+// — true, and useless: it never said WHO had it, and left nothing to do but
+// guess again. Now the holder is named and two real options are offered:
+//
+//   REPLACE — the number belongs to THIS member. The current holder is
+//             renumbered: onto the number being vacated when there is one (a
+//             true swap, so nobody ends up without a number), otherwise onto
+//             the next free value. Refused when their number is drawn or
+//             carries a payout, because that number IS the record of a week
+//             they won.
+//   KEEP    — the number stays where it is, and the reply names the free
+//             number to use instead.
+//
+// Nothing happens without the organizer choosing, and no path can duplicate:
+// @@unique([cycleId, number]) is the durable backstop under all of it.
 
-export async function updateLuckyNumber(input: { luckyNumberId: string; number: number; amount: number }) {
+/** Who holds a number in this cycle right now, or null. */
+async function findNumberHolder(
+  tx: Prisma.TransactionClient,
+  args: { cycleId: string; number: number; excludeLuckyNumberId?: string },
+): Promise<NumberHolder | null> {
+  const existing = await tx.luckyNumber.findFirst({
+    where: {
+      cycleId: args.cycleId,
+      number: args.number,
+      ...(args.excludeLuckyNumberId ? { id: { not: args.excludeLuckyNumberId } } : {}),
+    },
+    include: {
+      participation: { include: { person: true } },
+      slotMembers: { include: { slot: { include: { draws: { select: { id: true } } } } } },
+      _count: { select: { payouts: true } },
+    },
+  });
+  if (!existing) return null;
+  return {
+    luckyNumberId: existing.id,
+    number: existing.number,
+    participationId: existing.participationId,
+    memberName: existing.participation.person.nameEnglishFirst,
+    drawn: existing.slotMembers.some((m) => m.slot.draws.length > 0),
+    payoutCount: existing._count.payouts,
+  };
+}
+
+/** Every number in use in this cycle — what "free" is measured against. */
+async function takenNumbers(tx: Prisma.TransactionClient, cycleId: string): Promise<Set<number>> {
+  const rows = await tx.luckyNumber.findMany({ where: { cycleId }, select: { number: true } });
+  return new Set(rows.map((r) => r.number));
+}
+
+/**
+ * Move the holder off the number so it can be given to someone else, and
+ * return where they landed.
+ *
+ * The two-step park exists because @@unique([cycleId, number]) is checked per
+ * statement, not deferred: the holder sits briefly on a number nothing can be
+ * using (one above the cycle's highest) before the contested number changes
+ * hands. Both updates are inside the caller's serializable transaction, so the
+ * parked value is never observable.
+ */
+async function renumberHolder(
+  tx: Prisma.TransactionClient,
+  args: { cycleId: string; holder: NumberHolder; to: number | null },
+): Promise<number> {
+  const taken = await takenNumbers(tx, args.cycleId);
+  const park = Math.max(0, ...taken) + 1;
+  await tx.luckyNumber.update({ where: { id: args.holder.luckyNumberId }, data: { number: park } });
+  taken.delete(args.holder.number);
+  const destination =
+    args.to ?? chooseAutoNumbers({ count: 1, taken: new Set([...taken, park]) })[0];
+  await tx.luckyNumber.update({
+    where: { id: args.holder.luckyNumberId },
+    data: { number: destination },
+  });
+  return destination;
+}
+
+export async function updateLuckyNumber(input: {
+  luckyNumberId: string;
+  number: number;
+  amount: number;
+  /** The organizer's answer to a conflict. Absent = ask, never assume. */
+  onConflict?: "replace";
+}) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -483,8 +706,48 @@ export async function updateLuckyNumber(input: { luckyNumberId: string; number: 
     if (!Number.isSafeInteger(input.amount) || input.amount < 1 || input.amount > MAX_MONEY_CENTS) {
       return { ok: false as const, error: "Amount must be a positive amount." };
     }
-    const data = await serializableTransaction(async (tx) => {
-      const before = await tx.luckyNumber.findUniqueOrThrow({ where: { id: input.luckyNumberId } });
+    const outcome = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { luckyNumberId: input.luckyNumberId });
+      const before = await tx.luckyNumber.findUniqueOrThrow({
+        where: { id: input.luckyNumberId },
+        include: { participation: { include: { person: true } } },
+      });
+
+      let swapNote = "";
+      if (before.number !== input.number) {
+        const holder = await findNumberHolder(tx, {
+          cycleId: before.cycleId,
+          number: input.number,
+          excludeLuckyNumberId: input.luckyNumberId,
+        });
+        if (holder) {
+          const taken = await takenNumbers(tx, before.cycleId);
+          // The number being vacated is the swap partner: it comes free the
+          // moment this edit lands, so it is not "taken" for the holder.
+          taken.delete(before.number);
+          const conflict = describeNumberConflict({
+            number: input.number,
+            holder,
+            taken,
+            vacating: before.number,
+          });
+          if (input.onConflict !== "replace" || conflict.replaceRefusal) {
+            return { conflict };
+          }
+          const landedOn = await renumberHolder(tx, {
+            cycleId: before.cycleId,
+            holder,
+            to: before.number,
+          });
+          swapNote =
+            ` ${holder.memberName} held #${input.number} and was moved to #${landedOn} ` +
+            `by the organizer's REPLACE choice.`;
+        }
+      }
+
       const after = await tx.luckyNumber.update({
         where: { id: input.luckyNumberId },
         data: { number: input.number, amount: input.amount },
@@ -493,14 +756,23 @@ export async function updateLuckyNumber(input: { luckyNumberId: string; number: 
         entity: "LuckyNumber",
         entityId: input.luckyNumberId,
         action: "update",
-        summary: `Lucky number #${before.number} (${before.amount}c) -> #${after.number} (${after.amount}c)`,
+        summary:
+          `Lucky number #${before.number} (${before.amount}c) -> #${after.number} (${after.amount}c) ` +
+          `for ${before.participation.person.nameEnglishFirst}.${swapNote}`,
         before: { number: before.number, amount: before.amount },
         after: { number: after.number, amount: after.amount },
       });
-      return after;
+      return { after };
     });
+
+    // The conflict is a REFUSAL carrying the choice, not a failure: the
+    // transaction rolled back and nothing was written.
+    const conflict = outcome.conflict ?? null;
+    if (conflict) return { ok: false as const, error: conflict.message, conflict };
     revalidateAdmin();
-    return { ok: true as const, data };
+    revalidatePath("/admin/wheel");
+    revalidatePath("/admin/wheel/setup");
+    return { ok: true as const, data: outcome.after };
   } catch (e) {
     if (isUnique(e)) {
       return { ok: false as const, error: `Number ${input.number} is already taken in this cycle.` };
@@ -510,7 +782,13 @@ export async function updateLuckyNumber(input: { luckyNumberId: string; number: 
   }
 }
 
-export async function addLuckyNumber(input: { participationId: string; number: number; amount: number }) {
+export async function addLuckyNumber(input: {
+  participationId: string;
+  number: number;
+  amount: number;
+  /** The organizer's answer to a conflict. Absent = ask, never assume. */
+  onConflict?: "replace";
+}) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -520,11 +798,43 @@ export async function addLuckyNumber(input: { participationId: string; number: n
     if (!Number.isSafeInteger(input.amount) || input.amount < 1 || input.amount > MAX_MONEY_CENTS) {
       return { ok: false as const, error: "Amount must be a positive amount." };
     }
-    const data = await serializableTransaction(async (tx) => {
+    const outcome = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { participationId: input.participationId });
       const participation = await tx.participation.findUniqueOrThrow({
         where: { id: input.participationId },
         include: { person: true },
       });
+
+      let swapNote = "";
+      const holder = await findNumberHolder(tx, {
+        cycleId: participation.cycleId,
+        number: input.number,
+      });
+      if (holder) {
+        const conflict = describeNumberConflict({
+          number: input.number,
+          holder,
+          taken: await takenNumbers(tx, participation.cycleId),
+          // An ADD vacates nothing, so there is no swap partner: the holder
+          // moves to the next free number.
+          vacating: null,
+        });
+        if (input.onConflict !== "replace" || conflict.replaceRefusal) {
+          return { conflict };
+        }
+        const landedOn = await renumberHolder(tx, {
+          cycleId: participation.cycleId,
+          holder,
+          to: null,
+        });
+        swapNote =
+          ` ${holder.memberName} held #${input.number} and was moved to #${landedOn} ` +
+          `by the organizer's REPLACE choice.`;
+      }
+
       const created = await tx.luckyNumber.create({
         data: {
           participationId: input.participationId,
@@ -537,13 +847,22 @@ export async function addLuckyNumber(input: { participationId: string; number: n
         entity: "LuckyNumber",
         entityId: created.id,
         action: "create",
-        summary: `Added lucky number #${created.number} (${created.amount}c) for ${participation.person.nameEnglishFirst}`,
+        summary:
+          `Added lucky number #${created.number} (${created.amount}c) for ` +
+          `${participation.person.nameEnglishFirst}.${swapNote}`,
         after: { number: created.number, amount: created.amount },
       });
-      return created;
+      return { created };
     });
+
+    // The conflict is a REFUSAL carrying the choice, not a failure: the
+    // transaction rolled back and nothing was written.
+    const conflict = outcome.conflict ?? null;
+    if (conflict) return { ok: false as const, error: conflict.message, conflict };
     revalidateAdmin();
-    return { ok: true as const, data };
+    revalidatePath("/admin/wheel");
+    revalidatePath("/admin/wheel/setup");
+    return { ok: true as const, data: outcome.created };
   } catch (e) {
     if (isUnique(e)) {
       return { ok: false as const, error: `Number ${input.number} is already taken in this cycle.` };
@@ -558,26 +877,55 @@ export async function deleteLuckyNumber(input: { luckyNumberId: string }) {
   if (!gate.ok) return gate;
   try {
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { luckyNumberId: input.luckyNumberId });
       const target = await tx.luckyNumber.findUniqueOrThrow({
         where: { id: input.luckyNumberId },
-        include: { _count: { select: { payouts: true, slotMembers: true } } },
+        include: {
+          slotMembers: { select: { slotId: true } },
+          _count: { select: { payouts: true, slotMembers: true, planNumbers: true } },
+        },
       });
       if (target._count.payouts > 0) {
         throw new Error(
           `#${target.number} has ${target._count.payouts} payout record(s) — delete those first so no money record is lost.`,
         );
       }
+      const vacatedSlotIds = target.slotMembers.map((m) => m.slotId);
       await tx.luckyNumber.delete({ where: { id: input.luckyNumberId } });
+
+      // WinnerPlanNumber cascades with the number. A plan left with NO numbers
+      // matches the first eligible slot (`[].every(...)` is true) and silently
+      // decides the next draw — so it goes with it rather than lying in wait.
+      const plans = await purgeEmptyWinnerPlans(tx, target.cycleId);
+      // A slot the number vacated, now empty and winning nothing, is released
+      // so it stops holding its position seat.
+      const releasedSlots = await tx.slot.deleteMany({
+        where: { id: { in: vacatedSlotIds }, members: { none: {} }, draws: { none: {} } },
+      });
+
       await logAudit(tx, {
         entity: "LuckyNumber",
         entityId: input.luckyNumberId,
         action: "delete",
-        summary: `Deleted lucky number #${target.number} (${target.amount}c)`,
+        summary:
+          `Deleted lucky number #${target.number} (${target.amount}c)` +
+          (target._count.planNumbers > 0
+            ? `; it was committed to ${target._count.planNumbers} winner plan(s)`
+            : "") +
+          (plans.purged > 0
+            ? `. ${plans.purged} winner plan(s) left with no numbers were deleted — an empty plan rigs the next draw`
+            : "") +
+          (releasedSlots.count > 0 ? `. ${releasedSlots.count} emptied wheel slot(s) released` : ""),
         before: { number: target.number, amount: target.amount },
       });
-      return { number: target.number };
+      return { number: target.number, plansPurged: plans.purged };
     });
     revalidateAdmin();
+    revalidatePath("/admin/wheel");
+    revalidatePath("/admin/wheel/setup");
     return { ok: true as const, data };
   } catch (e) {
     console.error("deleteLuckyNumber failed:", e);
@@ -614,6 +962,20 @@ export async function updatePaymentEvent(input: {
       // already accounted for.
       const frozen = frozenCycleRefusal(before.participation.cycle);
       if (frozen) throw new Error(frozen);
+
+      // A settlement receipt is half of a pair with the payout it came out of
+      // (lib/settlement-receipt.ts). Shrinking one half here destroyed the
+      // difference: `allocatePinned` accepts any amount at or below the week,
+      // so no error fired, and nothing credited the payout back. A $500
+      // settlement edited to $0.01 lost $499.99 with the payout still down the
+      // full $500. The description fields stay editable.
+      const amountRefusal = settlementReceiptAmountRefusal({
+        receipt: before,
+        amountBefore: before.amount,
+        amountAfter: input.amount,
+      });
+      if (amountRefusal) throw new Error(amountRefusal);
+
       const after = await tx.paymentEvent.update({
         where: { id: input.eventId },
         data: {
@@ -655,6 +1017,15 @@ export async function deletePaymentEvent(input: { eventId: string }) {
       // carried-ledger balances were computed with it.
       const frozen = frozenCycleRefusal(target.participation.cycle);
       if (frozen) throw new Error(frozen);
+
+      // A SETTLEMENT receipt is not ordinary money — it is the winner's own
+      // week taken out of their payout, and the payout's netAmount was
+      // DECREMENTED by exactly this amount when it was created. Deleting it
+      // without putting that back charges the member twice. The rule and its
+      // reasoning live in lib/settlement-receipt.ts, shared with the edit path.
+      const deleteRefusal = settlementReceiptDeleteRefusal(target);
+      if (deleteRefusal) throw new Error(deleteRefusal);
+
       await tx.paymentEvent.delete({ where: { id: input.eventId } });
       await rebuildParticipationPayments(tx, target.participationId);
       await logAudit(tx, {
@@ -815,6 +1186,10 @@ export async function setWeekNote(input: {
   try {
     const note = input.note?.trim() || null;
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { participationId: input.participationId });
       const participation = await tx.participation.findUniqueOrThrow({
         where: { id: input.participationId },
         include: { person: true },
@@ -975,6 +1350,10 @@ export async function changeDrawSlot(input: { drawId: string; slotId: string }) 
   if (!gate.ok) return gate;
   try {
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { drawId: input.drawId });
       const before = await tx.draw.findUniqueOrThrow({
         where: { id: input.drawId },
         include: { slot: { include: { members: { include: { luckyNumber: true } } } }, week: true },
@@ -1070,6 +1449,10 @@ export async function updatePayout(input: {
     }
 
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { payoutId: input.payoutId });
       const before = await tx.payout.findUniqueOrThrow({ where: { id: input.payoutId } });
       const after = await tx.payout.update({
         where: { id: input.payoutId },
@@ -1117,33 +1500,52 @@ export async function updatePayout(input: {
 }
 
 /**
- * DELETE PAYOUT — the money record was wrong (2.23). The DRAW STANDS: the
- * lucky number stays drawn and does NOT return to the wheel. Any week that
- * was settled from this payout becomes owed again (the settlement receipt
- * is reversed with it — a week cannot stay covered by money whose record
- * was wrong).
+ * DELETE PAYOUT — the money record was wrong (2.23). The DRAW STANDS while
+ * the week still has another winner: the lucky number stays drawn and does
+ * NOT return to the wheel. Any week that was settled from this payout becomes
+ * owed again (the settlement receipt is reversed with it — a week cannot stay
+ * covered by money whose record was wrong).
+ *
+ * THE ONE EXCEPTION, and the reason it exists. If this was the week's LAST
+ * payout there is no draw left to stand: the row would record a win holding
+ * nothing, and that half-state is what stranded weeks 1 and 6 — counted as
+ * drawn, showing no amount in any picker, impossible to assign to, and
+ * un-redrawable because `Draw.@@unique([weekId])` refuses a second one. So the
+ * empty draw is deleted with it and the week becomes genuinely UNDRAWN, its
+ * slot numbers back in the pool. The caller is told which happened, and the
+ * confirmation dialog states it before anything runs.
  */
 export async function deletePayout(input: { payoutId: string }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { payoutId: input.payoutId });
       const target = await tx.payout.findUniqueOrThrow({
         where: { id: input.payoutId },
         include: { luckyNumber: true, draw: { include: { week: true } } },
       });
       const { reversed } = await unsettlePayout(tx, input.payoutId);
       await tx.payout.delete({ where: { id: input.payoutId } });
+      const freed = target.draw
+        ? await deleteDrawIfEmpty(tx, target.draw.id)
+        : { deleted: false, numbersReturning: [] as number[], sentence: "", deleteDraw: false, deleteSlot: false, weekNumber: 0, planRestored: false };
       await logAudit(tx, {
         entity: "Payout",
         entityId: input.payoutId,
         action: "delete",
         summary:
           `Deleted payout for #${target.luckyNumber.number}: net ${formatMoney(target.netAmount)} (${target.status}). ` +
-          `The draw stands — #${target.luckyNumber.number} stays drawn` +
+          (freed.deleted
+            ? `It was the week's last payout`
+            : `The draw stands — #${target.luckyNumber.number} stays drawn`) +
           (reversed > 0 && target.draw
             ? `; week ${target.draw.week.weekNumber}'s settled ${formatMoney(reversed)} is owed again`
-            : ""),
+            : "") +
+          (target.draw ? freedWeekClause(freed, target.draw.week.weekNumber) : ""),
         before: {
           luckyNumber: target.luckyNumber.number,
           grossAmount: target.grossAmount,
@@ -1153,11 +1555,21 @@ export async function deletePayout(input: { payoutId: string }) {
           settlementReversed: reversed,
         },
       });
-      return { number: target.luckyNumber.number, settlementReversed: reversed };
+      return {
+        number: target.luckyNumber.number,
+        settlementReversed: reversed,
+        weekFreed: freed.deleted,
+        weekNumber: target.draw?.week.weekNumber ?? null,
+        numbersReturned: freed.numbersReturning,
+      };
     });
     revalidateAdmin();
     revalidatePath("/admin/collections");
     revalidatePath("/admin/payments");
+    revalidatePath("/admin/wheel");
+    revalidatePath("/admin/wheel/setup");
+    revalidatePath("/admin/cycle/draws");
+    revalidatePath("/admin");
     return { ok: true as const, data };
   } catch (e) {
     console.error("deletePayout failed:", e);
@@ -1193,6 +1605,10 @@ export async function updateCycle(input: {
     }
 
     const data = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { cycleId: input.cycleId });
       const before = await tx.cycle.findUniqueOrThrow({
         where: { id: input.cycleId },
         include: { weeks: { orderBy: { weekNumber: "asc" } } },
@@ -1287,21 +1703,5 @@ export async function updateCycle(input: {
 
 // ————————————————— Audit log —————————————————
 
-export async function listAuditLog(limit = 200) {
-  const gate = await requireAdmin();
-  if (!gate.ok) return gate;
-  try {
-    // The audit log narrates everything — names, money, plans (2.4).
-    if (await getSetting("presentationMode")) {
-      return { ok: false as const, error: PRESENTATION_HIDDEN };
-    }
-    const entries = await prisma.auditLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: Math.min(Math.max(1, limit), 500),
-    });
-    return { ok: true as const, data: entries };
-  } catch (e) {
-    console.error("listAuditLog failed:", e);
-    return { ok: false as const, error: `Could not load the audit log. ${errorMessage(e)}` };
-  }
-}
+// listAuditLog moved to app/actions/audit.ts — reading the record is not a
+// job for the file that writes it, and the reader now pages and filters.

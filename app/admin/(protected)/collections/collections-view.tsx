@@ -6,12 +6,15 @@ import { deletePayout, updatePayout } from "@/app/actions/edits";
 import { undoDraw } from "@/app/actions/wheel";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { CarryDeductionOffer } from "@/components/admin/carry-deduction-offer";
+import { WeekWinnerEditor } from "@/components/admin/week-winner-editor";
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { AmountInput, Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Card, Pill } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import type { UndoDrawConsequences } from "@/lib/undo-draw";
+import { removeWinnerPreview, previewSentences, type WeekWinners } from "@/lib/week-winners";
+import { removeWinnerFromWeek } from "@/app/actions/week-winners";
 
 type Method = "ZELLE" | "CASH" | "OTHER" | null;
 
@@ -36,6 +39,9 @@ export type PayoutRow = {
 
 export type WeekGroup = {
   drawId: string | null;
+  /** Needed to add a winner to, or move one into, this week. */
+  weekId: string | null;
+  isSkipped: boolean;
   weekNumber: number | null;
   weekDate: string | null;
   /** 2.2: the organizer decided this payout rather than spinning for it. */
@@ -44,10 +50,34 @@ export type WeekGroup = {
   undo: UndoDrawConsequences | null;
 };
 
+/**
+ * Every week of the cycle with its LIVE state — what the move picker is built
+ * from. Not derived from the payout groups: a free week must show as free and
+ * a drawn week must show its real total, both the moment they change.
+ */
+export type WeekOption = {
+  weekId: string;
+  weekNumber: number;
+  hasDraw: boolean;
+  isSkipped: boolean;
+  /** A winner plan is committed here (2.3) — moving into it is refused. */
+  planned: boolean;
+  payoutCount: number;
+  totalNet: number;
+};
+
 // READ-FIRST (2.25): rows display; actions are deliberate. The two delete
 // intentions are separate buttons with separate, computed consequences —
 // the organizer never guesses whether a number goes back on the wheel.
-export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cycleName: string }) {
+export function CollectionsView({
+  groups,
+  weeks,
+  cycleName,
+}: {
+  groups: WeekGroup[];
+  weeks: WeekOption[];
+  cycleName: string;
+}) {
   const router = useRouter();
   const [openRow, setOpenRow] = useState<{ id: string; mode: "collect" | "edit" } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
@@ -147,6 +177,71 @@ export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cy
     );
   }
 
+  /** The group, in the shape lib/week-winners.ts computes against. */
+  function asWeekWinners(group: WeekGroup): WeekWinners {
+    return {
+      weekId: group.weekId ?? "",
+      weekNumber: group.weekNumber ?? 0,
+      undrawn: group.drawId === null,
+      isSkipped: group.isSkipped,
+      planned: weeks.find((w) => w.weekId === group.weekId)?.planned ?? false,
+      payouts: group.payouts.map((p) => ({
+        payoutId: p.id,
+        luckyNumberId: "",
+        number: p.number,
+        participationId: "",
+        memberName: p.who,
+        gross: p.grossAmount,
+        fee: p.feeAmount,
+        net: p.netAmount,
+        settlement: p.settlementAmount,
+        status: p.status,
+      })),
+    };
+  }
+
+  /**
+   * REMOVE ONE WINNER — distinct from "Delete payout", which keeps the number
+   * drawn. That difference has already misled the organizer once, so each
+   * dialog says what the other does.
+   */
+  function askRemoveWinner(group: WeekGroup, payoutId: string) {
+    const week = asWeekWinners(group);
+    const payout = week.payouts.find((p) => p.payoutId === payoutId);
+    if (!payout) return;
+    const preview = removeWinnerPreview({ week, payout });
+    ask(
+      {
+        title: `Remove ${payout.memberName} (#${payout.number}) from week ${week.weekNumber}?`,
+        consequence: (
+          <>
+            #{payout.number} <strong>RETURNS TO THE WHEEL POOL</strong> and can be drawn again.
+            This is the opposite of “Delete payout”, which keeps the number drawn.
+          </>
+        ),
+        body: (
+          <>
+            <ul className="space-y-1">
+              {previewSentences(preview, formatMoney).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p>
+              {preview.freedWeek
+                ? "They were this week's only winner, so nothing is left on it to keep the draw alive."
+                : "The week's other winners are untouched."}{" "}
+              An audit entry records the change.
+            </p>
+          </>
+        ),
+        confirmLabel: "Remove this winner",
+        requirePhrase: payout.status === "COLLECTED" ? payout.memberName : undefined,
+      },
+      () => removeWinnerFromWeek({ payoutId }),
+      `✓ #${payout.number} removed — the number is back on the wheel.`,
+    );
+  }
+
   if (groups.length === 0) {
     return (
       <Card className="px-6 py-10 text-center">
@@ -203,6 +298,26 @@ export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cy
             )}
           </div>
 
+          {/* A draw holding NO payout is a week counted as drawn while holding
+              nothing — un-redrawable and unassignable. It should no longer be
+              creatable (lib/draw-cascade removes the draw with its last
+              payout), so seeing one means older data: name it and offer the
+              undo rather than rendering an empty card. */}
+          {group.drawId && group.payouts.length === 0 && (
+            <div className="mx-5 mb-3 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                Week {group.weekNumber} is marked drawn but holds no payout.
+              </p>
+              <p className="mt-0.5 text-xs text-amber-900/80 dark:text-amber-200/80">
+                Nothing can be drawn or assigned to it while this record exists. Undo the draw to
+                free the week{group.undo && group.undo.numbersReturning.length > 0
+                  ? ` and return ${group.undo.numbersReturning.map((n) => `#${n}`).join(", ")} to the wheel`
+                  : ""}
+                .
+              </p>
+            </div>
+          )}
+
           <ul className="divide-y divide-gray-100 dark:divide-gray-800/60 border-t border-gray-100 dark:border-gray-800/60">
             {group.payouts.map((p) => (
               <PayoutLine
@@ -210,14 +325,37 @@ export function CollectionsView({ groups, cycleName }: { groups: WeekGroup[]; cy
                 payout={p}
                 weekNumber={group.weekNumber}
                 cycleName={cycleName}
+                // Deleting the LAST payout takes the draw with it — the
+                // dialog has to say so before it happens, not after.
+                isLastPayout={group.payouts.length === 1}
+                numbersReturning={group.undo?.numbersReturning ?? []}
                 open={openRow?.id === p.id ? openRow.mode : null}
                 setOpen={(mode) => setOpenRow(mode ? { id: p.id, mode } : null)}
                 busy={busy}
                 ask={ask}
                 onUndoDraw={group.undo && group.drawId ? () => askUndoDraw(group) : null}
+                onRemoveWinner={
+                  group.weekId ? () => askRemoveWinner(group, p.id) : null
+                }
               />
             ))}
           </ul>
+
+          {/* 2.23: reshape the week without undoing it. Week 6 recorded Hana
+              (#19) alone at $4,900 when she was clearly paired with someone —
+              this is how that gets corrected. */}
+          {group.weekId && (
+            <WeekWinnerEditor
+              week={asWeekWinners(group)}
+              cycleName={cycleName}
+              // EVERY other week of the cycle, drawn or not, straight from
+              // live state. A winner belongs where the organizer says (2.2),
+              // and a week freed a second ago is selectable immediately.
+              otherWeeks={weeks.filter((w) => w.weekId !== group.weekId)}
+              busy={busy}
+              ask={ask}
+            />
+          )}
         </Card>
       ))}
 
@@ -238,15 +376,22 @@ function PayoutLine({
   payout: p,
   weekNumber,
   cycleName,
+  isLastPayout,
+  numbersReturning,
   open,
   setOpen,
   busy,
   ask,
   onUndoDraw,
+  onRemoveWinner,
 }: {
   payout: PayoutRow;
   weekNumber: number | null;
   cycleName: string;
+  /** This is the week's only payout — deleting it removes the draw too. */
+  isLastPayout: boolean;
+  /** Numbers coming back to the wheel if the draw goes with this payout. */
+  numbersReturning: number[];
   open: "collect" | "edit" | null;
   setOpen: (mode: "collect" | "edit" | null) => void;
   busy: boolean;
@@ -257,6 +402,8 @@ function PayoutLine({
   ) => void;
   /** The alternative action, when this payout came from a real draw. */
   onUndoDraw: (() => void) | null;
+  /** Remove this winner and RETURN their number to the wheel. */
+  onRemoveWinner: (() => void) | null;
 }) {
   const [method, setMethod] = useState<Exclude<Method, null>>(p.method ?? "ZELLE");
   const [date, setDate] = useState(p.paidAt ?? new Date().toISOString().slice(0, 10));
@@ -362,6 +509,20 @@ function PayoutLine({
           >
             {open === "edit" ? "Close" : "Edit"}
           </button>
+          {/* THE OTHER intention, beside its neighbour on purpose: this one
+              returns the number to the wheel, the next one does not. Having
+              them adjacent with distinct labels is what stops the confusion
+              that "Delete payout" alone caused. */}
+          {onRemoveWinner && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRemoveWinner}
+              className={buttonCls.ghost + " !px-2.5 !py-1.5 !text-xs"}
+            >
+              Remove winner
+            </button>
+          )}
           <button
             type="button"
             disabled={busy}
@@ -371,30 +532,50 @@ function PayoutLine({
                   title: `Delete #${p.number} ${p.who}'s payout?`,
                   // THE MISS THAT PROMPTED THIS. The organizer deleted a
                   // payout because the member never received the money, and
-                  // expected the number back on the wheel. It is not — by
-                  // design — and nothing said so loudly enough.
-                  consequence: (
+                  // expected the number back on the wheel. With another winner
+                  // on the week it is not — by design. As the LAST payout it
+                  // now is, because a draw holding nothing is the half-state
+                  // that stranded weeks 1 and 6.
+                  consequence: isLastPayout ? (
+                    <>
+                      This is week {weekNumber}&apos;s <strong>only</strong> payout, so the draw
+                      goes with it: week {weekNumber} becomes <strong>UNDRAWN</strong> and
+                      selectable again
+                      {numbersReturning.length > 0 && (
+                        <>
+                          , and{" "}
+                          <strong>{numbersReturning.map((n) => `#${n}`).join(", ")}</strong>{" "}
+                          {numbersReturning.length === 1 ? "returns" : "return"} to the wheel pool
+                        </>
+                      )}
+                      . A week is never left counted as drawn while holding nothing.
+                    </>
+                  ) : (
                     <>
                       <strong>The draw stands.</strong> #{p.number} stays drawn and does{" "}
                       <strong>NOT</strong> return to the wheel
-                      {weekNumber !== null ? ` — week ${weekNumber} remains drawn` : ""}. Only the
-                      money record is removed.
+                      {weekNumber !== null ? ` — week ${weekNumber} remains drawn` : ""}, because
+                      it still has another winner. Only the money record is removed.
                     </>
                   ),
-                  // The action he probably meant, right here.
-                  alternative: onUndoDraw
-                    ? {
-                        description: (
-                          <>
-                            If {p.who} never received the money and week {weekNumber} should be
-                            drawn again, undo the draw instead — that returns the number
-                            {weekNumber !== null ? "" : ""} to the wheel.
-                          </>
-                        ),
-                        label: `Undo the draw for week ${weekNumber}`,
-                        onChoose: onUndoDraw,
-                      }
-                    : undefined,
+                  // The action he probably meant, right here. With one payout
+                  // left the two actions now do the same thing, so offering
+                  // the "alternative" would only suggest a difference that is
+                  // no longer there.
+                  alternative:
+                    onUndoDraw && !isLastPayout
+                      ? {
+                          description: (
+                            <>
+                              If {p.who} never received the money and week {weekNumber} should be
+                              drawn again for everyone on it, undo the whole draw instead — that
+                              returns every number on the week to the wheel.
+                            </>
+                          ),
+                          label: `Undo the draw for week ${weekNumber}`,
+                          onChoose: onUndoDraw,
+                        }
+                      : undefined,
                   body: (
                     <>
                       <p>
@@ -417,7 +598,9 @@ function PayoutLine({
                   requirePhrase: p.status === "COLLECTED" ? p.who : undefined,
                 },
                 () => deletePayout({ payoutId: p.id }),
-                `✓ #${p.number}'s payout deleted — the draw stands.`,
+                isLastPayout
+                  ? `✓ #${p.number}'s payout deleted — week ${weekNumber} is undrawn and selectable again.`
+                  : `✓ #${p.number}'s payout deleted — the draw stands.`,
               )
             }
             className={buttonCls.dangerQuiet + " !text-xs"}

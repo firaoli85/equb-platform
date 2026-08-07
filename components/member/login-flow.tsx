@@ -11,11 +11,7 @@ import {
   signInWithPin,
   signInWithWhatsAppCode,
 } from "@/app/actions/auth";
-import {
-  firebaseAuth,
-  firebaseMissingClientConfig,
-  RECAPTCHA_CONTAINER_ID,
-} from "@/lib/firebase/client";
+import { auth, firebaseMissingClientConfig, RECAPTCHA_CONTAINER_ID } from "@/lib/firebase/client";
 import { motionTokens } from "@/lib/motion-tokens";
 import {
   isValidE164,
@@ -169,7 +165,11 @@ export function LoginFlow() {
   const [smsCode, setSmsCode] = useState("");
   const [smsError, setSmsError] = useState<string | null>(null);
   const confirmation = useRef<ConfirmationResult | null>(null);
-  const recaptcha = useRef<RecaptchaVerifier | null>(null);
+  // useState, not a ref — matching equb-app, where the verifier lives in
+  // component state. A ref would avoid a re-render, but a re-render is a
+  // difference in how the page behaves around the widget, and that is exactly
+  // the class of difference this port stops guessing about.
+  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
 
   const welcomeName = lookup
     ? lookup.nameEnglishFirst && lookup.nameAmharic
@@ -207,12 +207,10 @@ export function LoginFlow() {
     setSmsCode("");
     setSmsError(null);
     confirmation.current = null;
-    try {
-      recaptcha.current?.clear();
-    } catch {
-      // A cleared verifier that was never rendered throws — harmless.
-    }
-    recaptcha.current = null;
+    // The verifier is deliberately NOT touched here. equb-app's three reset
+    // paths (backToOptions, handlePhoneAction, resetAll) all clear
+    // confirmationResult and leave recaptchaVerifier alone — it is cleared at
+    // the start of the next send instead. Matched.
   }
 
   function resetToPhone() {
@@ -346,14 +344,6 @@ export function LoginFlow() {
         return;
       }
 
-      const auth = firebaseAuth();
-      if (!auth) {
-        console.error("[SMS send] firebaseAuth() returned null despite a complete config.");
-        setSmsError("Text-message codes aren't available. Use WhatsApp or your PIN.");
-        setSmsStep("idle");
-        return;
-      }
-
       // 2. The number must be E.164 before Firebase sees it. An invalid value
       //    is rejected client-side with no network call — indistinguishable
       //    from every other silent failure unless it is named here.
@@ -367,20 +357,35 @@ export function LoginFlow() {
         return;
       }
 
-      // 3. The verifier — a FRESH one per attempt.
+      // 3. VERBATIM PORT of equb-app handleSendSms — the five lines below are
+      //    character-for-character what the working build does:
       //
-      //    This is the one place this implementation diverged from the build
-      //    that works in production (equb-app), and reuse is the shape that
-      //    produces auth/invalid-app-credential: that error means the backend
-      //    rejected the reCAPTCHA token, and a verifier carried over from a
-      //    previous attempt hands over a token that was already consumed (or
-      //    expired while an unsolved challenge sat open). The SDK's own
-      //    _reset() in its finally block is not enough to make the next
-      //    attempt's token fresh.
+      //        if (recaptchaVerifier) {
+      //          recaptchaVerifier.clear();
+      //          setRecaptchaVerifier(null);
+      //        }
+      //        const verifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "invisible" });
+      //        setRecaptchaVerifier(verifier);
+      //        const result = await signInWithPhoneNumber(auth, phone, verifier);
       //
-      //    So: clear the old one, build a new one, exactly as the working
-      //    app does.
-      if (!document.getElementById(RECAPTCHA_CONTAINER_ID)) {
+      //    UNDONE TO GET HERE, because each touched how the widget is mounted
+      //    and mounting is what reCAPTCHA scores when it mints a token:
+      //      - the verifier was passed an HTMLElement; it is now the container
+      //        ID STRING, as there.
+      //      - each attempt rendered into a freshly created child node; it now
+      //        renders into #recaptcha-container itself, as there.
+      //      - the verifier lived in a ref; it is now useState, as there.
+      //      - the catch block cleared the verifier; it no longer does. The
+      //        working app clears at the START of the next attempt instead, and
+      //        that ordering is now matched.
+      //
+      //    The ONE addition is the innerHTML reset directly below. On a first
+      //    attempt the container is empty, so it is a no-op and the ported path
+      //    is untouched; it exists only so a SECOND attempt does not die on
+      //    "reCAPTCHA has already been rendered in this element", which clear()
+      //    alone does not prevent.
+      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
+      if (!container) {
         console.error(
           `[SMS send] #${RECAPTCHA_CONTAINER_ID} is not in the DOM — RecaptchaVerifier cannot mount.`,
         );
@@ -388,14 +393,13 @@ export function LoginFlow() {
         setSmsStep("idle");
         return;
       }
-      try {
-        recaptcha.current?.clear();
-      } catch {
-        // Never rendered, or already cleared — nothing to undo.
+      if (recaptchaVerifier) {
+        recaptchaVerifier.clear();
+        setRecaptchaVerifier(null);
+        container.innerHTML = "";
       }
-      recaptcha.current = new RecaptchaVerifier(auth, RECAPTCHA_CONTAINER_ID, {
-        size: "invisible",
-      });
+      const verifier = new RecaptchaVerifier(auth, RECAPTCHA_CONTAINER_ID, { size: "invisible" });
+      setRecaptchaVerifier(verifier);
 
       console.info(`[SMS send] requesting a code for ${l.phone}…`);
 
@@ -408,27 +412,22 @@ export function LoginFlow() {
       // token arrives only after a human solves it — and if the visitor never
       // does, or dismisses the overlay, the promise NEVER settles. No
       // rejection, no request, no console error: the button just says
-      // "Sending…" forever. Verified in a real browser: the bframe challenge
-      // iframe mounts at 375×555 and the promise stays pending indefinitely.
+      // "Sending…" forever.
       //
-      // So the wait is bounded. The timeout is generous — someone genuinely
-      // solving a challenge needs time — but it always ends, and it ends by
-      // SAYING what happened.
+      // KEPT despite not being in the working app, because it provably cannot
+      // affect token minting: withTimeout races a timer against the SAME
+      // promise and touches neither the verifier, the container, nor the
+      // token. It changes only how long we are willing to wait before saying
+      // what happened.
       confirmation.current = await withTimeout(
-        signInWithPhoneNumber(auth, l.phone, recaptcha.current),
+        signInWithPhoneNumber(auth, l.phone, verifier),
         SMS_SEND_TIMEOUT_MS,
       );
       console.info("[SMS send] code request accepted by Firebase.");
       setSmsStep("sent");
     } catch (err) {
-      // A verifier that failed mid-flow cannot be trusted again; drop it so
-      // the next attempt builds a clean one.
-      try {
-        recaptcha.current?.clear();
-      } catch {
-        // already cleared or never rendered
-      }
-      recaptcha.current = null;
+      // The working app does NOT clear the verifier here — it clears at the
+      // start of the next attempt. Matched.
       setSmsError(reportSmsError("send", err));
       setSmsStep("idle");
     }
@@ -954,11 +953,16 @@ export function LoginFlow() {
       </motion.div>
     </AnimatePresence>
 
-    {/* Firebase renders its invisible reCAPTCHA into this node. It sits
-        OUTSIDE the AnimatePresence on purpose: the animated wrapper is keyed
-        by step, so anything inside it unmounts on every transition — and a
-        verifier whose container disappeared mid-flow throws. Here the node is
-        mounted once, from first paint, and never moves. */}
+    {/* The reCAPTCHA HOST. Nothing renders into this node itself — each send
+        attempt puts a disposable child inside it and takes that child away
+        afterwards, because grecaptcha refuses to render twice into the same
+        element (lib/sms-login.ts).
+
+        It sits OUTSIDE the AnimatePresence on purpose: the animated wrapper is
+        keyed by step, so anything inside it unmounts on every transition — and
+        a verifier whose container disappeared mid-flow throws. React owns this
+        node but never its children, so the manual child churn cannot fight
+        React's own DOM reconciliation. */}
     <div id={RECAPTCHA_CONTAINER_ID} />
     </>
   );

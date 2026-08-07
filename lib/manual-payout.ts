@@ -93,22 +93,45 @@ export function weekChoice(week: ManualPayoutWeek): WeekChoice {
   const totalNet = week.payouts.reduce((s, p) => s + p.netAmount, 0);
   const collected = week.payouts.filter((p) => p.status === "COLLECTED");
   const settled = week.payouts.filter((p) => p.settlementAmount > 0);
-  const state =
-    week.payouts.length === 0
-      ? "no payout recorded"
-      : collected.length === week.payouts.length
-        ? "collected"
-        : collected.length > 0
-          ? `${collected.length} of ${week.payouts.length} collected`
-          : "pending";
 
-  const who = week.payouts.length > 0 ? listNumbers(week.payouts.map((p) => p.number)) : listNumbers(week.drawnNumbers);
+  // A DRAW HOLDING NO PAYOUT is not a real win — it is the half-state that
+  // stranded weeks 1 and 6. It should no longer be creatable (the draw is now
+  // deleted with its last payout, lib/draw-cascade), but data from before that
+  // must read honestly rather than as a drawn week with a blank amount.
+  if (week.payouts.length === 0) {
+    const stuck = listNumbers(week.drawnNumbers);
+    return {
+      weekNumber: week.weekNumber,
+      kind: "replaces",
+      consequence:
+        `Week ${week.weekNumber} is marked drawn but holds NO payout — nothing was ever paid ` +
+        `out for it. Assigning here clears that empty draw first` +
+        (week.drawnNumbers.length > 0
+          ? `, and ${stuck} ${week.drawnNumbers.length === 1 ? "returns" : "return"} to the wheel.`
+          : "; no number is affected, because its slot is empty too."),
+      // Nothing of value is destroyed: there is no money record to lose.
+      highStakes: false,
+      payoutCount: 0,
+      totalNet: 0,
+      numbersReturning: [...week.drawnNumbers].sort((a, b) => a - b),
+      reopensWeeks: [],
+    };
+  }
+
+  const state =
+    collected.length === week.payouts.length
+      ? "collected"
+      : collected.length > 0
+        ? `${collected.length} of ${week.payouts.length} collected`
+        : "pending";
+
+  const who = listNumbers(week.payouts.map((p) => p.number));
   const head =
     `Week ${week.weekNumber} already has a ${week.drawnManually ? "manually assigned payout" : "draw"} ` +
-    `(${who}${week.payouts.length > 0 ? `, ${formatMoney(totalNet)}` : ""}, ${state}).`;
+    `(${who}, ${formatMoney(totalNet)}, ${state}).`;
   const tail =
     `Assigning here means undoing that ${week.drawnManually ? "assignment" : "draw"} first: ` +
-    `${week.payouts.length === 1 ? "its payout is" : week.payouts.length === 0 ? "no payout is" : `its ${week.payouts.length} payouts are`} removed, ` +
+    `${week.payouts.length === 1 ? "its payout is" : `its ${week.payouts.length} payouts are`} removed, ` +
     `${listNumbers(week.drawnNumbers)} return${week.drawnNumbers.length === 1 ? "s" : ""} to the wheel` +
     (settled.length > 0
       ? `, and week ${week.weekNumber} becomes owed again for ${listNumbers(settled.map((p) => p.number))} ` +

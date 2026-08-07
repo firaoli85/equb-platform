@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { refuseIfCycleClosed } from "@/lib/cycle-guard";
 import {
   applyCarryDeduction,
   carryOffer,
@@ -129,6 +130,10 @@ export async function deductCarryFromPayout(input: {
   if (!gate.ok) return gate;
   try {
     const result = await serializableTransaction(async (tx) => {
+      // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
+      // lib/cycle-guard so the check is one line and cannot be skipped
+      // for want of plumbing — which is how 14 actions lost it.
+      await refuseIfCycleClosed(tx, { payoutId: input.payoutId });
       const payout = await loadPayoutContext(input.payoutId);
       if (!payout) return { ok: false as const, error: "Payout not found." };
 

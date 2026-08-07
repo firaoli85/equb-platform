@@ -19,9 +19,29 @@ export const dynamic = "force-dynamic";
 export default async function CollectionsPage() {
   // Payouts are names and money (2.4) — nothing is loaded, nothing is sent.
   if (await getSetting("presentationMode")) return <PresentationHidden what="Collections" />;
+  // Weeks carry their OWN live state — draws (even empty ones) and planned
+  // winners. Groups are built from the DRAWS below, never from the payout
+  // list: a draw holding no payouts produced no group at all, which is how
+  // weeks 1 and 6 became invisible here while every picker still called them
+  // "already drawn".
   const cycle = await prisma.cycle.findFirst({
     where: { status: "ACTIVE" },
-    include: { weeks: { orderBy: { weekNumber: "asc" } } },
+    include: {
+      weeks: {
+        orderBy: { weekNumber: "asc" },
+        include: {
+          draws: {
+            select: {
+              id: true,
+              assignedManually: true,
+              slot: { select: { members: { select: { luckyNumber: { select: { number: true } } } } } },
+              payouts: { select: { id: true, netAmount: true } },
+            },
+          },
+          winnerPlans: { where: { status: "PLANNED" }, select: { id: true } },
+        },
+      },
+    },
   });
   const payouts = await prisma.payout.findMany({
     where: { luckyNumber: { cycle: { status: "ACTIVE" } } },
@@ -100,8 +120,14 @@ export default async function CollectionsPage() {
     }
   }
 
-  // Group by week, newest first; payouts without a linked draw go last.
+  // Group by DRAW, newest week first. Every draw of the cycle gets a group —
+  // including one holding no payouts, so a half-state week is visible and can
+  // be undone from here instead of being silently missing. Payouts without a
+  // linked draw go last.
   const groupByDraw = new Map<string, typeof payouts>();
+  for (const week of cycle?.weeks ?? []) {
+    for (const draw of week.draws) groupByDraw.set(draw.id, []);
+  }
   const unlinked: typeof payouts = [];
   for (const p of payouts) {
     if (p.draw) {
@@ -110,6 +136,11 @@ export default async function CollectionsPage() {
       groupByDraw.set(p.draw.id, list);
     } else unlinked.push(p);
   }
+  const drawContext = new Map(
+    (cycle?.weeks ?? []).flatMap((w) =>
+      w.draws.map((d) => [d.id, { week: w, draw: d }] as const),
+    ),
+  );
 
   const toRow = (p: (typeof payouts)[number]) => ({
     id: p.id,
@@ -129,16 +160,22 @@ export default async function CollectionsPage() {
 
   const groups: WeekGroup[] = [...groupByDraw.entries()]
     .map(([drawId, list]) => {
-      const draw = list[0].draw!;
+      // The week/draw come from the CYCLE's own rows, so a draw with zero
+      // payouts still produces a group (list[0] does not exist for it).
+      const context = drawContext.get(drawId)!;
+      const week = context.week;
+      const slotNumbers = context.draw.slot.members.map((m) => m.luckyNumber.number);
       return {
         drawId,
-        weekNumber: draw.week.weekNumber,
-        weekDate: draw.week.date.toISOString(),
-        assignedManually: draw.assignedManually,
+        weekId: week.id,
+        weekNumber: week.weekNumber,
+        weekDate: week.date.toISOString(),
+        isSkipped: week.isSkipped,
+        assignedManually: context.draw.assignedManually,
         payouts: list.map(toRow),
         undo: undoDrawConsequences({
-          weekNumber: draw.week.weekNumber,
-          slotNumbers: draw.slot.members.map((m) => m.luckyNumber.number),
+          weekNumber: week.weekNumber,
+          slotNumbers,
           payouts: list.map((p) => ({
             payoutId: p.id,
             number: p.luckyNumber.number,
@@ -153,13 +190,32 @@ export default async function CollectionsPage() {
   if (unlinked.length > 0) {
     groups.push({
       drawId: null,
+      weekId: null,
       weekNumber: null,
       weekDate: null,
+      isSkipped: false,
       assignedManually: false,
       payouts: unlinked.map(toRow),
       undo: null,
     });
   }
+
+  // EVERY week of the cycle, with its live state — the single source the move
+  // picker builds from. Previously the picker was derived from the payout
+  // groups above, so a free week was never offered and a week the organizer
+  // had just emptied stayed listed as a destination.
+  const weekOptions = (cycle?.weeks ?? []).map((w) => {
+    const draw = w.draws[0] ?? null;
+    return {
+      weekId: w.id,
+      weekNumber: w.weekNumber,
+      hasDraw: draw !== null,
+      isSkipped: w.isSkipped,
+      planned: w.winnerPlans.length > 0,
+      payoutCount: draw?.payouts.length ?? 0,
+      totalNet: draw?.payouts.reduce((s, p) => s + p.netAmount, 0) ?? 0,
+    };
+  });
 
   const collected = payouts.filter((p) => p.status === "COLLECTED");
   const pending = payouts.filter((p) => p.status === "PENDING");
@@ -208,7 +264,7 @@ export default async function CollectionsPage() {
       </div>
 
       <div className="animate-fade-in-up-2">
-        <CollectionsView groups={groups} cycleName={cycle?.name ?? ""} />
+        <CollectionsView groups={groups} weeks={weekOptions} cycleName={cycle?.name ?? ""} />
       </div>
     </main>
   );
