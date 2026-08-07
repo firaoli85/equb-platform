@@ -7,8 +7,10 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { AmountInput, NumberInput, Radio } from "@/components/ui/controls";
 import { Alert, buttonCls, Card, Field } from "@/components/ui/primitives";
 import { cycleFinishPreview, finishLine, parseWeekField } from "@/lib/commitment";
+import { defaultWithinBounds, isWithinBounds, type DateBounds } from "@/lib/date-bounds";
 import { formatDateLongUTC, formatDateUTC, formatMoney, parseDateInput, parseDollarsToCents } from "@/lib/format";
-import { calculateFee, calculateGross, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
+import { MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
+import { cycleFeeProjection } from "@/lib/projection";
 
 const INITIAL = {
   name: "",
@@ -18,54 +20,18 @@ const INITIAL = {
   feePercent: "2",
   // A deliberate choice, never an assumption (no preselection).
   numbering: "" as "" | "fresh" | "carryover",
-  /** Override for the assumed weekly pot, in dollars; "" = use the baseline. */
+  /** Override for the weekly pot, in dollars; "" = use weeks × unitAmount. */
   potOverrideDollars: "",
 };
 
-export type ProjectionBaseline = {
-  cycleName: string;
-  members: { id: string; weeklyAmount: number }[];
-} | null;
-
-/**
- * Project real money for a candidate weeks count (2.1: never "$0" as an
- * answer). With a roster baseline the fee is exact per member (fees are
- * charged per member payout); with an overridden or typed pot it is the
- * aggregate fee on the pot — labelled approximate.
- */
-function project(input: {
-  weeks: number;
-  feePercent: number;
-  baseline: ProjectionBaseline;
-  potOverride: number | null;
-}): { weeklyPot: number; total: number; fees: number; feesPerWeek: number; exact: boolean } | null {
-  const { weeks, feePercent, baseline, potOverride } = input;
-  if (!Number.isSafeInteger(weeks) || weeks < 1 || !Number.isFinite(feePercent)) return null;
-
-  if (potOverride === null && baseline && baseline.members.length > 0) {
-    let weeklyPot = 0;
-    let total = 0;
-    let fees = 0;
-    for (const m of baseline.members) {
-      const gross = calculateGross(m.weeklyAmount, weeks);
-      weeklyPot += m.weeklyAmount;
-      total += gross;
-      fees += calculateFee(gross, feePercent);
-    }
-    // The organizer checks the figure PER WEEK — that is how he holds it.
-    return { weeklyPot, total, fees, feesPerWeek: Math.round(fees / weeks), exact: true };
-  }
-
-  const pot = potOverride;
-  if (pot === null || pot < 1) return null;
-  const total = calculateGross(pot, weeks);
-  const fees = calculateFee(total, feePercent);
-  return { weeklyPot: pot, total, fees, feesPerWeek: Math.round(fees / weeks), exact: false };
-}
-
-export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
+export function NewCycleForm({ startBounds }: { startBounds: DateBounds }) {
   const router = useRouter();
-  const [fields, setFields] = useState(INITIAL);
+  // Never blank: the picker opens on the first date that is actually allowed,
+  // which with an active cycle is the day after it ends rather than today.
+  const [fields, setFields] = useState(() => ({
+    ...INITIAL,
+    startDate: defaultWithinBounds(startBounds),
+  }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAsDraft, setSavedAsDraft] = useState<string | null>(null);
@@ -96,17 +62,31 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
   const startLabel = startDate ? formatDateUTC(startDate) : null;
 
   // ————— The money projection (live) —————
+  //
+  // STRUCTURAL, not roster-based. One slot pays out per week, so an N-week
+  // cycle has N slots and collects N × unitAmount every week — whoever fills
+  // them. The previous version projected from last cycle's members ("if the
+  // same 28 join"), which held the pot fixed and therefore reported that a
+  // 30-week cycle was worth only 1.5× a 20-week one. It is worth 2.25×.
   const feePercentNum = Number.parseFloat(fields.feePercent || "0");
+  const unitAmount = parseDollarsToCents(fields.unitDollars);
   const potOverride =
     fields.potOverrideDollars.trim() === ""
       ? null
       : parseDollarsToCents(fields.potOverrideDollars);
   const overrideInvalid = fields.potOverrideDollars.trim() !== "" && potOverride === null;
-  const needsTypedPot = (baseline === null || baseline.members.length === 0) && potOverride === null;
 
-  const mainProjection = weeksValid
-    ? project({ weeks, feePercent: feePercentNum, baseline, potOverride })
-    : null;
+  const projectAt = (w: number) =>
+    unitAmount === null
+      ? null
+      : cycleFeeProjection({
+          plannedWeeks: w,
+          unitAmount,
+          feePercent: feePercentNum,
+          weeklyPotOverride: potOverride,
+        });
+
+  const mainProjection = weeksValid ? projectAt(weeks) : null;
   const compareWeeks = [...new Set([20, 25, 30, ...(weeksValid ? [weeks] : [])])].sort(
     (a, b) => a - b,
   );
@@ -118,6 +98,12 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
 
     if (!weeksValid) {
       setError(`Planned weeks must be a whole number between 1 and ${MAX_WEEKS}.`);
+      return;
+    }
+    // The picker refuses out-of-range dates, but a value can still arrive
+    // through a stale state or a paste; the reason shown is the same one.
+    if (!isWithinBounds(fields.startDate, startBounds)) {
+      setError(startBounds.reason ?? "That start date is not available.");
       return;
     }
     const unitAmount = parseDollarsToCents(fields.unitDollars);
@@ -179,7 +165,12 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
         </Field>
 
         <Field label="Start date">
-          <DatePicker value={fields.startDate} onChange={set("startDate")} ariaLabel="Cycle start date" />
+          <DatePicker
+            value={fields.startDate}
+            onChange={set("startDate")}
+            ariaLabel="Cycle start date"
+            bounds={startBounds}
+          />
         </Field>
 
         <Field label="Planned weeks">
@@ -265,52 +256,52 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
         <div className="px-5 py-4">
           <h2 className="text-sm font-bold text-gray-900 dark:text-white">What this cycle means in money</h2>
 
-          {baseline && baseline.members.length > 0 && potOverride === null ? (
-            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-              If the same {baseline.members.length} members from {baseline.cycleName} join:
-            </p>
-          ) : needsTypedPot ? (
-            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-              No previous cycle to project from — enter the weekly pot you expect below.
-            </p>
-          ) : (
-            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-              Using your overridden weekly pot (approximate — fees are charged per member).
-            </p>
-          )}
+          {/* The rule, stated — because it is the thing that makes the length
+              choice make sense, and it is not obvious. */}
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 text-pretty">
+            {potOverride !== null ? (
+              <>Using the weekly pot you typed, over {weeksValid ? weeks : "—"} weeks.</>
+            ) : (
+              <>
+                One slot pays out each week, so {weeksValid ? weeks : "—"} weeks means{" "}
+                {weeksValid ? weeks : "—"} slots — collected every week, however many members
+                fill them.
+              </>
+            )}
+          </p>
 
           {mainProjection && (
             <div className="mt-3 tabular-nums" data-testid="fee-projection">
-              {/* The assumed pot is what the whole projection rests on. */}
               <p className="text-sm text-gray-800 dark:text-gray-200">
                 <strong className="text-2xl font-black text-gray-900 dark:text-white">
                   {formatMoney(mainProjection.weeklyPot)}/week
                 </strong>
                 <span className="ml-2 rounded-full border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
-                  {potOverride !== null
+                  {mainProjection.overridden
                     ? "your typed pot"
-                    : baseline && baseline.members.length > 0
-                      ? `assumed pot — ${baseline.cycleName}`
-                      : "assumed pot"}
+                    : `${weeks} × ${formatMoney(unitAmount ?? 0)}`}
                 </span>
               </p>
               <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
-                {formatMoney(mainProjection.feesPerWeek)}/week in fees
-                {mainProjection.exact ? "" : " (approx.)"}
+                {formatMoney(mainProjection.weeklyFee)}/week in fees
               </p>
               <p className="mt-0.5 text-sm text-gray-800 dark:text-gray-200">
-                {formatMoney(mainProjection.total)} over {weeks} weeks,{" "}
-                <strong>{formatMoney(mainProjection.fees)}</strong> in fees total.
+                {formatMoney(mainProjection.cycleTotal)} over {weeks} weeks,{" "}
+                <strong>{formatMoney(mainProjection.totalFees)}</strong> in fees total.
               </p>
             </div>
           )}
 
-          {/* Comparison so the weeks choice is visible at a glance */}
-          {!needsTypedPot && !overrideInvalid && (
+          {/* The length comparison. This is the decision the screen exists to
+              support, and the roster version could not show it: because BOTH
+              the weekly pot and the number of weeks grow with length, the
+              total grows with the square — 30 weeks is 2.25× a 20-week
+              cycle, not 1.5×. */}
+          {!overrideInvalid && unitAmount !== null && (
             <table className="mt-3 w-full border-collapse text-xs tabular-nums">
               <thead>
                 <tr>
-                  {["Weeks", "Total", "Fees", "Fees/week"].map((h) => (
+                  {["Weeks", "Per week", "Total", "Fees"].map((h) => (
                     <th
                       key={h}
                       className="border-b border-gray-200 dark:border-gray-800 py-1.5 pr-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400"
@@ -322,7 +313,7 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
               </thead>
               <tbody data-testid="weeks-comparison">
                 {compareWeeks.map((w) => {
-                  const p = project({ weeks: w, feePercent: feePercentNum, baseline, potOverride });
+                  const p = projectAt(w);
                   if (!p) return null;
                   const isChosen = weeksValid && w === weeks;
                   return (
@@ -332,13 +323,13 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
                         {isChosen ? " ←" : ""}
                       </td>
                       <td className="border-b border-gray-100 dark:border-gray-800/60 py-1.5 pr-2">
-                        {formatMoney(p.total)}
+                        {formatMoney(p.weeklyPot)}
                       </td>
                       <td className="border-b border-gray-100 dark:border-gray-800/60 py-1.5 pr-2">
-                        {formatMoney(p.fees)}
+                        {formatMoney(p.cycleTotal)}
                       </td>
                       <td className="border-b border-gray-100 dark:border-gray-800/60 py-1.5">
-                        {formatMoney(p.feesPerWeek)}
+                        {formatMoney(p.totalFees)}
                       </td>
                     </tr>
                   );
@@ -348,28 +339,23 @@ export function NewCycleForm({ baseline }: { baseline: ProjectionBaseline }) {
           )}
 
           <div className="mt-3">
+            {/* Kept, because reality can differ from the structure — a slot
+                left deliberately empty, or a non-standard unit. It is an
+                override of a known figure now, not the source of one. */}
             <Field
-              label={
-                baseline && baseline.members.length > 0
-                  ? "Override the assumed weekly pot (optional)"
-                  : "Expected weekly pot"
-              }
+              label="Override the weekly pot (optional)"
               hint={
-                baseline && baseline.members.length > 0
-                  ? `Baseline: ${formatMoney(
-                      baseline.members.reduce((s, m) => s + m.weeklyAmount, 0),
-                    )}/week from ${baseline.cycleName}. Leave empty to use it.`
-                  : "The combined weekly contribution you expect from everyone."
+                weeksValid && unitAmount !== null
+                  ? `Structure says ${formatMoney(weeks * unitAmount)}/week (${weeks} × ${formatMoney(unitAmount)}). Leave empty to use it.`
+                  : "Leave empty to use weeks × unit amount."
               }
             >
               <AmountInput
                 value={fields.potOverrideDollars}
                 onChange={set("potOverrideDollars")}
-                ariaLabel="Expected weekly pot in dollars"
+                ariaLabel="Weekly pot override in dollars"
                 placeholder={
-                  baseline && baseline.members.length > 0
-                    ? (baseline.members.reduce((s, m) => s + m.weeklyAmount, 0) / 100).toString()
-                    : "20000"
+                  weeksValid && unitAmount !== null ? String((weeks * unitAmount) / 100) : "20000"
                 }
               />
             </Field>

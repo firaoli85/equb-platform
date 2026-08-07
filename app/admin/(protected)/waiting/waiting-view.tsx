@@ -8,6 +8,7 @@ import { updatePayout } from "@/app/actions/edits";
 import type { WaitingData } from "@/app/actions/waiting";
 import { AssignPayout } from "@/app/admin/(protected)/people/[id]/assign-payout";
 import { DatePicker } from "@/components/ui/date-picker";
+import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { Select } from "@/components/ui/controls";
 import { Alert, buttonCls, EmptyState, Pill } from "@/components/ui/primitives";
 import { StatCard } from "@/components/ui/stat-card";
@@ -372,6 +373,7 @@ function OwedRow({
                   onChange={setPaidAt}
                   ariaLabel={`Date ${row.name} collected the payout`}
                   className="w-48"
+                  bounds={moneyReceivedBounds()}
                 />
               </label>
               <button

@@ -5212,3 +5212,161 @@ https://nextjs.org/docs/messages/module-not-found
  GET /admin/settings 200 in 1431ms (next.js: 17ms, proxy.ts: 466ms, application-code: 947ms)
  GET /me/security 200 in 508ms (next.js: 13ms, proxy.ts: 197ms, application-code: 297ms)
  GET /me/security 200 in 520ms (next.js: 8ms, proxy.ts: 199ms, application-code: 313ms)
+ GET / 307 in 275ms (next.js: 134ms, proxy.ts: 16ms, application-code: 125ms)
+ GET /login 200 in 92ms (next.js: 15ms, proxy.ts: 6ms, application-code: 71ms)
+ POST /login 200 in 473ms (next.js: 7ms, proxy.ts: 7ms, application-code: 458ms)
+  └─ ƒ lookupMemberByPhone({"phone":"13015416005"}) in 441ms app/actions/member.ts
+ POST /login 200 in 979ms (next.js: 7ms, proxy.ts: 5ms, application-code: 967ms)
+  └─ ƒ signInWithPin({"phone":"+13015416005","pin":"6005"}) in 933ms app/actions/auth.ts
+ POST /login 200 in 786ms (next.js: 8ms, proxy.ts: 600ms, application-code: 178ms)
+  └─ ƒ setMyPin({"pin":"1966"}) in 166ms app/actions/auth.ts
+ GET /me 200 in 901ms (next.js: 7ms, proxy.ts: 199ms, application-code: 695ms)
+ GET /me/group 200 in 1122ms (next.js: 80ms, proxy.ts: 188ms, application-code: 854ms)
+ GET /me/group 200 in 511ms (next.js: 11ms, proxy.ts: 164ms, application-code: 336ms)
+ GET /me/collections 200 in 1166ms (next.js: 81ms, proxy.ts: 180ms, application-code: 905ms)
+ GET /me 200 in 800ms (next.js: 9ms, proxy.ts: 239ms, application-code: 551ms)
+ GET /login 200 in 45ms (next.js: 6ms, proxy.ts: 4ms, application-code: 34ms)
+ POST /me 200 in 1114ms (next.js: 16ms, proxy.ts: 619ms, application-code: 479ms)
+  └─ ƒ signOutAction() in 403ms app/actions/auth.ts
+ GET /login 200 in 24ms (next.js: 7ms, proxy.ts: 8ms, application-code: 9ms)
+ GET /login 200 in 34ms (next.js: 7ms, proxy.ts: 4ms, application-code: 23ms)
+ POST /login 200 in 186ms (next.js: 7ms, proxy.ts: 4ms, application-code: 175ms)
+  └─ ƒ lookupMemberByPhone({"phone":"13015416005"}) in 162ms app/actions/member.ts
+ GET /admin/login 200 in 86ms (next.js: 13ms, proxy.ts: 9ms, application-code: 64ms)
+ POST /admin/login 200 in 463ms (next.js: 11ms, proxy.ts: 6ms, application-code: 446ms)
+  └─ ƒ signInAdmin({"email":"firaoliseboka@gmail.com","password":"F248308966s"}) in 435ms app/actions/auth.ts
+ POST /admin/login 200 in 540ms (next.js: 7ms, proxy.ts: 5ms, application-code: 528ms)
+  └─ ƒ signInAdmin({"email":"firaoliseboka@gmail.com","password":"F248308966s$"}) in 491ms app/actions/auth.ts
+ GET /admin/cycle 200 in 849ms (next.js: 9ms, proxy.ts: 205ms, application-code: 636ms)
+ GET /admin/cycle 200 in 877ms (next.js: 9ms, proxy.ts: 367ms, application-code: 501ms)
+ GET /admin/cycle 200 in 551ms (next.js: 8ms, proxy.ts: 238ms, application-code: 305ms)
+ POST /admin/login 200 in 603ms (next.js: 8ms, proxy.ts: 188ms, application-code: 407ms)
+  └─ ƒ signInAdmin({"email":"firaoliseboka@gmail.com","password":"F248308966s$"}) in 389ms app/actions/auth.ts
+ POST /admin/cycle 200 in 830ms (next.js: 7ms, proxy.ts: 198ms, application-code: 624ms)
+ GET /admin/cycle 200 in 257ms (next.js: 14ms, proxy.ts: 233ms, application-code: 10ms)
+ GET /admin/cycle 200 in 587ms (next.js: 7ms, proxy.ts: 195ms, application-code: 386ms)
+ GET /admin/cycle 200 in 609ms (next.js: 27ms, proxy.ts: 208ms, application-code: 374ms)
+ GET /admin/cycle 200 in 645ms (next.js: 17ms, proxy.ts: 225ms, application-code: 403ms)
+ GET /admin/cycle 200 in 956ms (next.js: 54ms, proxy.ts: 208ms, application-code: 695ms)
+ GET /admin/participations/cmsf85on5002gb4kx9lj2zj05 200 in 1342ms (next.js: 1050ms, proxy.ts: 205ms, application-code: 87ms)
+ GET /admin/people/cmsf85om9002fb4kxxkjdvrk1 200 in 1117ms (next.js: 18ms, proxy.ts: 195ms, application-code: 904ms)
+ GET /admin/people/cmsf85om9002fb4kxxkjdvrk1 200 in 1059ms (next.js: 24ms, proxy.ts: 218ms, application-code: 817ms)
+ GET /admin/cycle/add 200 in 1149ms (next.js: 70ms, proxy.ts: 197ms, application-code: 882ms)
+ GET /admin/cycle/close 200 in 1455ms (next.js: 61ms, proxy.ts: 514ms, application-code: 880ms)
+ GET /admin/cycle/add 200 in 1322ms (next.js: 13ms, proxy.ts: 507ms, application-code: 803ms)
+ GET /login 200 in 78ms (next.js: 8ms, proxy.ts: 11ms, application-code: 59ms)
+ POST /login 200 in 449ms (next.js: 8ms, proxy.ts: 6ms, application-code: 436ms)
+  └─ ƒ lookupMemberByPhone({"phone":"5550009999"}) in 380ms app/actions/member.ts
+ POST /login 200 in 1928ms (next.js: 11ms, proxy.ts: 12ms, application-code: 1905ms)
+  └─ ƒ signInWithPin({"phone":"+15550009999","pin":"9999"}) in 1860ms app/actions/auth.ts
+ POST /login 200 in 447ms (next.js: 6ms, proxy.ts: 197ms, application-code: 244ms)
+  └─ ƒ setMyPin({"pin":"99999"}) in 223ms app/actions/auth.ts
+ GET /me 200 in 1015ms (next.js: 8ms, proxy.ts: 196ms, application-code: 811ms)
+ GET /me/group 200 in 1014ms (next.js: 7ms, proxy.ts: 182ms, application-code: 824ms)
+ GET /me/collections 200 in 896ms (next.js: 12ms, proxy.ts: 205ms, application-code: 679ms)
+ GET /me/collections 200 in 1169ms (next.js: 6ms, proxy.ts: 468ms, application-code: 695ms)
+ GET /me 200 in 853ms (next.js: 15ms, proxy.ts: 341ms, application-code: 498ms)
+ GET /admin/cycle/add 200 in 1594ms (next.js: 8ms, proxy.ts: 585ms, application-code: 1000ms)
+ GET /admin/payments 200 in 687ms (next.js: 62ms, proxy.ts: 199ms, application-code: 426ms)
+ GET /admin 200 in 1107ms (next.js: 76ms, proxy.ts: 199ms, application-code: 833ms)
+ GET /admin 200 in 958ms (next.js: 18ms, proxy.ts: 201ms, application-code: 739ms)
+ GET /admin 200 in 1061ms (next.js: 10ms, proxy.ts: 214ms, application-code: 838ms)
+ GET /admin 200 in 918ms (next.js: 8ms, proxy.ts: 187ms, application-code: 723ms)
+ GET /admin/balances 200 in 481ms (next.js: 87ms, proxy.ts: 198ms, application-code: 195ms)
+ GET /admin/wheel/setup 200 in 1254ms (next.js: 78ms, proxy.ts: 406ms, application-code: 771ms)
+ GET /admin/wheel/setup 200 in 737ms (next.js: 7ms, proxy.ts: 193ms, application-code: 537ms)
+ GET /admin/waiting 200 in 952ms (next.js: 68ms, proxy.ts: 202ms, application-code: 682ms)
+ GET /admin/waiting 200 in 852ms (next.js: 9ms, proxy.ts: 193ms, application-code: 651ms)
+ GET /admin/waiting 200 in 878ms (next.js: 6ms, proxy.ts: 198ms, application-code: 674ms)
+ GET /admin/collections 200 in 727ms (next.js: 69ms, proxy.ts: 186ms, application-code: 472ms)
+ GET /admin/payments 200 in 1330ms (next.js: 11ms, proxy.ts: 578ms, application-code: 742ms)
+ GET /admin/payments 200 in 550ms (next.js: 8ms, proxy.ts: 178ms, application-code: 364ms)
+ POST /admin/payments 200 in 721ms (next.js: 9ms, proxy.ts: 417ms, application-code: 295ms)
+  └─ ƒ getCellDetail({"participationId":"cmsf85nl0001cb4kxt00bacvw","weekNumber":14}) in 277ms app/actions/payments-view.ts
+ POST /admin/payments 200 in 451ms (next.js: 10ms, proxy.ts: 171ms, application-code: 269ms)
+  └─ ƒ getCellDetail({"participationId":"cmsf85nl0001cb4kxt00bacvw","weekNumber":14}) in 253ms app/actions/payments-view.ts
+ POST /admin/payments 200 in 404ms (next.js: 11ms, proxy.ts: 202ms, application-code: 191ms)
+  └─ ƒ previewAllocation({"amount":75000,"participationId":"cmsf85nl0001cb4kxt00bacvw"}) in 172ms app/actions/payments.ts
+ GET /admin/cycles/new 200 in 433ms (next.js: 64ms, proxy.ts: 210ms, application-code: 159ms)
+ GET /admin/cycles/new 200 in 409ms (next.js: 26ms, proxy.ts: 213ms, application-code: 171ms)
+ GET /admin/cycles/new 200 in 349ms (next.js: 8ms, proxy.ts: 189ms, application-code: 152ms)
+ GET /admin/cycles/new 200 in 331ms (next.js: 8ms, proxy.ts: 190ms, application-code: 134ms)
+ GET /admin/cycles/new 200 in 358ms (next.js: 10ms, proxy.ts: 195ms, application-code: 153ms)
+ GET /admin/cycles/new 200 in 360ms (next.js: 7ms, proxy.ts: 205ms, application-code: 148ms)
+ GET /login 200 in 651ms (next.js: 18ms, proxy.ts: 582ms, application-code: 51ms)
+ GET /admin/payments 200 in 1651ms (next.js: 20ms, proxy.ts: 718ms, application-code: 913ms)
+ GET /admin/cycles/new 200 in 382ms (next.js: 14ms, proxy.ts: 199ms, application-code: 169ms)
+ GET /login 200 in 1008ms (next.js: 12ms, proxy.ts: 948ms, application-code: 48ms)
+ GET /login 200 in 86ms (next.js: 10ms, proxy.ts: 8ms, application-code: 68ms)
+ POST /login 200 in 413ms (next.js: 7ms, proxy.ts: 6ms, application-code: 400ms)
+  └─ ƒ lookupMemberByPhone({"phone":"5550009999"}) in 379ms app/actions/member.ts
+ GET /login 200 in 105ms (next.js: 18ms, proxy.ts: 17ms, application-code: 69ms)
+ GET /admin/cycles/new 200 in 1010ms (next.js: 9ms, proxy.ts: 749ms, application-code: 253ms)
+ GET /login 200 in 85ms (next.js: 16ms, proxy.ts: 15ms, application-code: 55ms)
+ GET /admin/cycles/new 200 in 488ms (next.js: 27ms, proxy.ts: 235ms, application-code: 226ms)
+ GET /login 200 in 60ms (next.js: 8ms, proxy.ts: 11ms, application-code: 41ms)
+ GET /admin/cycles/new 200 in 905ms (next.js: 14ms, proxy.ts: 590ms, application-code: 301ms)
+ GET /login 200 in 85ms (next.js: 11ms, proxy.ts: 23ms, application-code: 52ms)
+ GET /admin/cycles/new 200 in 1167ms (next.js: 30ms, proxy.ts: 523ms, application-code: 614ms)
+ GET /login 200 in 52ms (next.js: 9ms, proxy.ts: 11ms, application-code: 33ms)
+ GET /admin/cycles/new 200 in 729ms (next.js: 19ms, proxy.ts: 387ms, application-code: 324ms)
+ GET /login 200 in 48ms (next.js: 9ms, proxy.ts: 9ms, application-code: 29ms)
+ GET /admin/cycles/new 200 in 1164ms (next.js: 23ms, proxy.ts: 585ms, application-code: 556ms)
+ GET /login 200 in 46ms (next.js: 7ms, proxy.ts: 11ms, application-code: 27ms)
+ GET /admin/cycles/new 200 in 833ms (next.js: 36ms, proxy.ts: 211ms, application-code: 586ms)
+ GET /login 200 in 45ms (next.js: 9ms, proxy.ts: 9ms, application-code: 27ms)
+ GET /admin/cycles/new 200 in 942ms (next.js: 23ms, proxy.ts: 563ms, application-code: 356ms)
+ GET /login 200 in 49ms (next.js: 8ms, proxy.ts: 9ms, application-code: 32ms)
+ GET /admin/cycles/new 200 in 395ms (next.js: 43ms, proxy.ts: 207ms, application-code: 145ms)
+ GET /login 200 in 42ms (next.js: 8ms, proxy.ts: 9ms, application-code: 25ms)
+ GET /admin/cycles/new 200 in 374ms (next.js: 19ms, proxy.ts: 195ms, application-code: 161ms)
+ GET /login 200 in 107ms (next.js: 15ms, proxy.ts: 19ms, application-code: 73ms)
+ GET /admin/cycles/new 200 in 642ms (next.js: 63ms, proxy.ts: 252ms, application-code: 327ms)
+ GET /login 200 in 50ms (next.js: 9ms, proxy.ts: 10ms, application-code: 31ms)
+ GET /admin/cycles/new 200 in 457ms (next.js: 63ms, proxy.ts: 199ms, application-code: 194ms)
+✓ Compiled in 636ms
+ GET /login 200 in 60ms (next.js: 17ms, proxy.ts: 13ms, application-code: 31ms)
+ GET /admin/cycles/new 200 in 869ms (next.js: 13ms, proxy.ts: 529ms, application-code: 327ms)
+ GET /login 200 in 44ms (next.js: 7ms, proxy.ts: 9ms, application-code: 28ms)
+ GET /admin/cycles/new 200 in 430ms (next.js: 12ms, proxy.ts: 284ms, application-code: 134ms)
+ GET /login 200 in 46ms (next.js: 6ms, proxy.ts: 10ms, application-code: 29ms)
+ GET /admin/cycles/new 200 in 873ms (next.js: 35ms, proxy.ts: 474ms, application-code: 364ms)
+ GET /login 200 in 62ms (next.js: 15ms, proxy.ts: 8ms, application-code: 38ms)
+⨯ ReferenceError: defaultWithinBounds is not defined
+    at eval (app\admin\(protected)\cycles\new\new-cycle-form.tsx:32:16)
+    at NewCycleForm (app\admin\(protected)\cycles\new\new-cycle-form.tsx:30:39)
+  30 |   const [fields, setFields] = useState(() => ({
+  31 |     ...INITIAL,
+> 32 |     startDate: defaultWithinBounds(startBounds),
+     |                ^
+  33 |   }));
+  34 |   const [saving, setSaving] = useState(false);
+  35 |   const [error, setError] = useState<string | null>(null); {
+  digest: '1751907118'
+}
+ GET /admin/cycles/new 500 in 1079ms (next.js: 15ms, proxy.ts: 243ms, application-code: 820ms)
+ GET /login 200 in 62ms (next.js: 15ms, proxy.ts: 11ms, application-code: 36ms)
+ GET /admin/cycles/new 200 in 1087ms (next.js: 20ms, proxy.ts: 711ms, application-code: 356ms)
+✓ Compiled in 334ms
+ GET /login 200 in 55ms (next.js: 9ms, proxy.ts: 14ms, application-code: 32ms)
+ GET /admin/cycles/new 200 in 369ms (next.js: 14ms, proxy.ts: 192ms, application-code: 163ms)
+✓ Compiled in 503ms
+ GET /login 200 in 382ms (next.js: 9ms, proxy.ts: 346ms, application-code: 27ms)
+ GET /admin/cycles/new 200 in 1379ms (next.js: 16ms, proxy.ts: 995ms, application-code: 368ms)
+✓ Compiled in 515ms
+ GET /login 200 in 54ms (next.js: 8ms, proxy.ts: 12ms, application-code: 34ms)
+ GET /admin/cycles/new 200 in 819ms (next.js: 25ms, proxy.ts: 468ms, application-code: 325ms)
+ GET /login 200 in 53ms (next.js: 13ms, proxy.ts: 8ms, application-code: 32ms)
+✓ Compiled in 571ms
+ GET /admin/cycles/new 200 in 785ms (next.js: 45ms, proxy.ts: 430ms, application-code: 310ms)
+ GET /login 200 in 45ms (next.js: 7ms, proxy.ts: 12ms, application-code: 27ms)
+✓ Compiled in 586ms
+ GET /admin/cycles/new 200 in 914ms (next.js: 19ms, proxy.ts: 565ms, application-code: 331ms)
+ GET /login 200 in 45ms (next.js: 9ms, proxy.ts: 9ms, application-code: 28ms)
+ GET /admin/cycles/new 200 in 1061ms (next.js: 14ms, proxy.ts: 701ms, application-code: 347ms)
+ GET /login 200 in 66ms (next.js: 10ms, proxy.ts: 11ms, application-code: 45ms)
+ GET /admin/cycles/new 200 in 1080ms (next.js: 7ms, proxy.ts: 773ms, application-code: 300ms)
+ GET /login 200 in 57ms (next.js: 8ms, proxy.ts: 11ms, application-code: 38ms)
+ GET /admin/cycles/new 200 in 802ms (next.js: 10ms, proxy.ts: 525ms, application-code: 267ms)
+ GET /login 200 in 44ms (next.js: 8ms, proxy.ts: 9ms, application-code: 28ms)
+ GET /admin/cycles/new 200 in 1020ms (next.js: 9ms, proxy.ts: 652ms, application-code: 359ms)

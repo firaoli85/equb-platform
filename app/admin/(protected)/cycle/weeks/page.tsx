@@ -28,10 +28,26 @@ export default async function WeeksPage() {
       </p>
       <h1 className="mb-6 text-xl font-semibold">Weeks — {cycle.name}</h1>
       <div className="max-w-2xl space-y-2">
-        {cycle.weeks.map((w) => (
+        {cycle.weeks.map((w, i) => (
           <WeekEditor
             key={w.id}
             plannedWeeks={cycle.plannedWeeks}
+            previousWeek={
+              i > 0
+                ? {
+                    weekNumber: cycle.weeks[i - 1].weekNumber,
+                    date: cycle.weeks[i - 1].date.toISOString().slice(0, 10),
+                  }
+                : null
+            }
+            nextWeek={
+              i < cycle.weeks.length - 1
+                ? {
+                    weekNumber: cycle.weeks[i + 1].weekNumber,
+                    date: cycle.weeks[i + 1].date.toISOString().slice(0, 10),
+                  }
+                : null
+            }
             week={{
               id: w.id,
               weekNumber: w.weekNumber,

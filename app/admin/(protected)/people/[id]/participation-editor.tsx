@@ -15,6 +15,7 @@ import {
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
+import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { Alert, buttonCls, Field, inputCls } from "@/components/ui/primitives";
 import {
   commitmentCap,
@@ -776,7 +777,12 @@ function EventRow({
         <Select value={method} onChange={setMethod} ariaLabel="Receipt method" options={METHOD_OPTIONS} disabled={busy} className="w-24" />
       </td>
       <td className="py-1.5 pr-2">
-        <DatePicker value={receivedAt} onChange={setReceivedAt} ariaLabel="Received date" />
+        <DatePicker
+          value={receivedAt}
+          onChange={setReceivedAt}
+          ariaLabel="Received date"
+          bounds={moneyReceivedBounds()}
+        />
       </td>
       <td className="py-1.5 pr-2">
         <input

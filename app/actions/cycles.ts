@@ -5,9 +5,18 @@ import { errorMessage } from "@/lib/action-result";
 import { redactCycleDetail } from "@/lib/presentation";
 import { getSetting } from "@/lib/settings";
 import { requireAdmin } from "@/lib/auth";
-import { parseDateInput } from "@/lib/format";
-import { generateWeekDates, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
+import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
+import { isWithinBounds, newCycleStartBounds, toIsoDay } from "@/lib/date-bounds";
+import { formatDateLongUTC, parseDateInput } from "@/lib/format";
+import { calculateFinishWeek, generateWeekDates, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
 import { prisma, serializableTransaction } from "@/lib/prisma";
+
+/**
+ * A refused start date. Thrown from inside the transaction so the write rolls
+ * back, then caught below and returned as the organizer-facing reason — not
+ * as "Could not save the cycle. <stack>".
+ */
+class CycleDateError extends Error {}
 
 export type CreateCycleInput = {
   name: string;
@@ -71,8 +80,46 @@ export async function createCycle(input: CreateCycleInput) {
     const cycle = await serializableTransaction(async (tx) => {
       const active = await tx.cycle.findFirst({
         where: { status: "ACTIVE" },
-        select: { id: true },
+        select: { id: true, name: true, startDate: true, plannedWeeks: true },
       });
+
+      // THE DATE RULE, enforced here and not only in the picker (a bound that
+      // lives in the UI is a hint, not a rule). Read inside the transaction so
+      // it sees the same active cycle the status decision does.
+      const activeCycle = active
+        ? await (async () => {
+            const weeks = await tx.week.findMany({
+              where: { cycleId: active.id },
+              orderBy: { weekNumber: "asc" },
+              select: { weekNumber: true, date: true },
+            });
+            const stored = storedWeekDates(weeks);
+            const finishWeek = calculateFinishWeek(1, active.plannedWeeks);
+            const planned = resolveWeekDate({
+              weekNumber: finishWeek,
+              stored,
+              cycleStartDate: active.startDate,
+            })?.date;
+            const lastRow = weeks.at(-1)?.date;
+            // 2.7: a cycle can run LONG, so its real end is the later of the
+            // planned finish and the last week row that exists.
+            const finalWeekDate =
+              planned && lastRow ? (lastRow > planned ? lastRow : planned) : (planned ?? lastRow);
+            return finalWeekDate
+              ? {
+                  name: active.name,
+                  finalWeekDate,
+                  finalWeekLabel: formatDateLongUTC(finalWeekDate),
+                }
+              : null;
+          })()
+        : null;
+
+      const bounds = newCycleStartBounds({ activeCycle });
+      if (!isWithinBounds(toIsoDay(startDate), bounds)) {
+        throw new CycleDateError(bounds.reason ?? "That start date is not available.");
+      }
+
       const created = await tx.cycle.create({
         data: {
           name,
@@ -102,6 +149,8 @@ export async function createCycle(input: CreateCycleInput) {
     revalidatePath("/admin/people");
     return { ok: true as const, data: cycle };
   } catch (e) {
+    // A refused date is a rule the organizer can act on, not a failure.
+    if (e instanceof CycleDateError) return { ok: false as const, error: e.message };
     console.error("createCycle failed:", e);
     return { ok: false as const, error: `Could not save the cycle. ${errorMessage(e)}` };
   }

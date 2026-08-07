@@ -6,6 +6,7 @@ import { forgiveBalance, recordLedgerPayment } from "@/app/actions/ledger";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Select } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
+import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { Alert, buttonCls, inputCls, Pill } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 
@@ -164,7 +165,13 @@ export function CarriedBalance({
             <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">
               When
             </span>
-            <DatePicker value={when} onChange={setWhen} ariaLabel="Date the money arrived" className="w-44" />
+            <DatePicker
+              value={when}
+              onChange={setWhen}
+              ariaLabel="Date the money arrived"
+              className="w-44"
+              bounds={moneyReceivedBounds()}
+            />
           </label>
           <label className="block flex-1 min-w-40">
             <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">

@@ -6,6 +6,7 @@ import { deletePayout, updatePayout } from "@/app/actions/edits";
 import { undoDraw } from "@/app/actions/wheel";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { DatePicker } from "@/components/ui/date-picker";
+import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { AmountInput, Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Card, Pill } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
@@ -400,7 +401,12 @@ function PayoutLine({
           </label>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">Date</span>
-            <DatePicker value={date} onChange={setDate} ariaLabel="Collection date" />
+            <DatePicker
+              value={date}
+              onChange={setDate}
+              ariaLabel="Collection date"
+              bounds={moneyReceivedBounds()}
+            />
           </label>
           <button
             type="button"
@@ -499,7 +505,12 @@ function PayoutLine({
             </label>
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">Date</span>
-              <DatePicker value={date} onChange={setDate} ariaLabel="Paid-at date" />
+              <DatePicker
+                value={date}
+                onChange={setDate}
+                ariaLabel="Paid-at date"
+                bounds={moneyReceivedBounds()}
+              />
             </label>
             <label className="block grow">
               <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">Notes</span>

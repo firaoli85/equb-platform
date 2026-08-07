@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { isWithinBounds, type DateBounds } from "@/lib/date-bounds";
 import { motionTokens } from "@/lib/motion-tokens";
 
 // The platform date picker — a drop-in for <input type="date"> (same
@@ -71,6 +72,7 @@ export function DatePicker({
   id,
   ariaLabel = "Date",
   className = "",
+  bounds = null,
 }: {
   /** YYYY-MM-DD or "" — the same contract as a native date input. */
   value: string;
@@ -78,6 +80,17 @@ export function DatePicker({
   id?: string;
   ariaLabel?: string;
   className?: string;
+  /**
+   * The range this date must fall inside, and WHY (lib/date-bounds.ts).
+   * Omit for the many dates that are legitimately unbounded — a note is
+   * recorded, a payment can be back-dated to whenever the money arrived.
+   *
+   * When present: out-of-range days are disabled, presets that fall outside
+   * disappear, typing an out-of-range date is refused, and the reason is
+   * shown in the panel. Enforcing a bound WITHOUT stating it just looks
+   * broken, so the two are one prop rather than two.
+   */
+  bounds?: DateBounds | null;
 }) {
   const reduce = useReducedMotion();
   const liveId = useId();
@@ -119,7 +132,16 @@ export function DatePicker({
     ];
   }, [view.year, view.month]);
 
+  /** One gate for every route into a value: click, preset, Enter, typing. */
+  const allowed = (d: Date) => isWithinBounds(toIso(d), bounds);
+
   function commit(d: Date, why = "selected") {
+    if (!allowed(d)) {
+      // Refused, and SAID so — a click that silently does nothing is the
+      // worst outcome here.
+      setAnnounce(bounds?.reason ?? `${fmtLong(d)} is not available.`);
+      return;
+    }
     onChange(toIso(d));
     setCursor(d);
     setAnnounce(`${fmtLong(d)} ${why}`);
@@ -188,6 +210,14 @@ export function DatePicker({
             setTyped(e.target.value);
             const parsed = parseTyped(e.target.value);
             if (parsed) {
+              if (!allowed(parsed)) {
+                // Typing is a route past the calendar; it gets the same gate.
+                // The text stays as typed so it can be corrected, but the
+                // value is not committed.
+                setCursor(parsed);
+                setAnnounce(bounds?.reason ?? `${fmtLong(parsed)} is not available.`);
+                return;
+              }
               onChange(toIso(parsed));
               setCursor(parsed);
               setAnnounce(`${fmtLong(parsed)} selected`);
@@ -246,7 +276,10 @@ export function DatePicker({
           >
             {/* ————— Presets rail ————— */}
             <div className="flex w-24 shrink-0 flex-col gap-0.5 border-r border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-white/[0.03] p-1.5">
-              {PRESETS.map((p) => (
+              {/* A preset that cannot be chosen is removed, not disabled: on a
+                  bounded field "Last week" is never the answer, and a row of
+                  dead buttons is noise. */}
+              {PRESETS.filter((p) => allowed(p.date())).map((p) => (
                 <button
                   key={p.label}
                   type="button"
@@ -352,25 +385,36 @@ export function DatePicker({
                       const isCursor = toIso(cursor) === iso;
                       const isPreview = hovered !== null && toIso(hovered) === iso;
                       const isToday = toIso(todayUtc()) === iso;
+                      const isBlocked = !allowed(d);
                       return (
                         <button
                           key={iso}
                           type="button"
                           tabIndex={-1}
-                          aria-label={fmtLong(d)}
+                          disabled={isBlocked}
+                          aria-label={
+                            isBlocked ? `${fmtLong(d)} — unavailable. ${bounds?.reason ?? ""}`.trim() : fmtLong(d)
+                          }
                           aria-pressed={isSelected}
                           onMouseEnter={() => setHovered(d)}
                           onClick={() => commit(d)}
-                          className={`m-auto flex h-9 w-9 items-center justify-center rounded-full text-[13px] tabular-nums transition-[background-color,color,transform] duration-100 ease-out active:scale-90 ${
-                            isSelected
-                              ? "bg-indigo-600 font-bold text-white"
-                              : isPreview
-                                ? "bg-indigo-100 dark:bg-indigo-900/60 font-semibold text-indigo-800 dark:text-indigo-200"
-                                : isCursor
-                                  ? "ring-2 ring-inset ring-indigo-400 dark:ring-indigo-500 font-semibold text-gray-800 dark:text-gray-200"
-                                  : isToday
-                                    ? "ring-1 ring-inset ring-gray-300 dark:ring-gray-600 text-gray-800 dark:text-gray-200"
-                                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5"
+                          className={`m-auto flex h-9 w-9 items-center justify-center rounded-full text-[13px] tabular-nums transition-[background-color,color,transform] duration-100 ease-out ${
+                            isBlocked
+                              ? // Struck through, not merely faded: at 30%
+                                // opacity a disabled day is easy to read as a
+                                // rendering glitch rather than a rule.
+                                "cursor-not-allowed text-gray-400 dark:text-gray-600 line-through decoration-1"
+                              : `active:scale-90 ${
+                                  isSelected
+                                    ? "bg-indigo-600 font-bold text-white"
+                                    : isPreview
+                                      ? "bg-indigo-100 dark:bg-indigo-900/60 font-semibold text-indigo-800 dark:text-indigo-200"
+                                      : isCursor
+                                        ? "ring-2 ring-inset ring-indigo-400 dark:ring-indigo-500 font-semibold text-gray-800 dark:text-gray-200"
+                                        : isToday
+                                          ? "ring-1 ring-inset ring-gray-300 dark:ring-gray-600 text-gray-800 dark:text-gray-200"
+                                          : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5"
+                                }`
                           }`}
                         >
                           {d.getUTCDate()}
@@ -381,6 +425,14 @@ export function DatePicker({
                   <p className="mt-1.5 border-t border-gray-100 dark:border-gray-800 pt-1.5 text-center text-[11px] tabular-nums text-gray-600 dark:text-gray-400">
                     {fmtLong(preview)}
                   </p>
+                  {/* The reason, always visible while a bound is in force.
+                      Enforcing without explaining is what makes a form feel
+                      broken rather than careful. */}
+                  {bounds?.reason && (
+                    <p className="mt-1 text-center text-[11px] text-amber-800 dark:text-amber-300 text-pretty">
+                      {bounds.reason}
+                    </p>
+                  )}
                 </>
               )}
             </div>

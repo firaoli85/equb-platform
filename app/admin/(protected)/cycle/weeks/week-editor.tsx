@@ -7,15 +7,21 @@ import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog"
 import { Checkbox } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Alert, buttonCls } from "@/components/ui/primitives";
+import { parseIsoDay, weekDateBounds } from "@/lib/date-bounds";
 import { formatDateLongUTC, parseDateInput } from "@/lib/format";
 
 export function WeekEditor({
   week,
   plannedWeeks,
+  previousWeek = null,
+  nextWeek = null,
 }: {
   week: { id: string; weekNumber: number; date: string; isSkipped: boolean; notes: string | null };
   /** The cycle length, so the LAST week can say it is the finish (2.22). */
   plannedWeeks: number;
+  /** The rows either side, so this date cannot jump out of sequence. */
+  previousWeek?: { weekNumber: number; date: string } | null;
+  nextWeek?: { weekNumber: number; date: string } | null;
 }) {
   const router = useRouter();
   const [date, setDate] = useState(week.date);
@@ -24,6 +30,18 @@ export function WeekEditor({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+
+  // 2.14: elapsed weeks are decided by each week's OWN stored date, so a
+  // date out of sequence does not merely look wrong — it changes who is in
+  // arrears. Bounded strictly between the neighbouring rows.
+  const bounds = weekDateBounds({
+    previousWeek: previousWeek
+      ? { weekNumber: previousWeek.weekNumber, date: parseIsoDay(previousWeek.date)! }
+      : null,
+    nextWeek: nextWeek
+      ? { weekNumber: nextWeek.weekNumber, date: parseIsoDay(nextWeek.date)! }
+      : null,
+  });
 
   const dirty = date !== week.date || isSkipped !== week.isSkipped || notes !== (week.notes ?? "");
   const skipChanged = isSkipped !== week.isSkipped;
@@ -57,7 +75,12 @@ export function WeekEditor({
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] px-3 py-2 text-sm shadow-sm">
       <span className="w-16 font-semibold text-gray-900 dark:text-white">Week {week.weekNumber}</span>
-      <DatePicker value={date} onChange={setDate} ariaLabel={`Date of week ${week.weekNumber}`} />
+      <DatePicker
+        value={date}
+        onChange={setDate}
+        ariaLabel={`Date of week ${week.weekNumber}`}
+        bounds={bounds}
+      />
       <Checkbox checked={isSkipped} onChange={setIsSkipped} label="skipped" />
       <input
         value={notes}
