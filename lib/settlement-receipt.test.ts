@@ -43,7 +43,7 @@ describe("deleting", () => {
 });
 
 describe("editing the amount", () => {
-  it("refuses a change, and names both places the money can be moved properly", () => {
+  it("refuses a change, and names the ONE place the money can be moved properly", () => {
     const refusal = settlementReceiptAmountRefusal({
       receipt: SETTLEMENT,
       amountBefore: 50_000,
@@ -51,9 +51,25 @@ describe("editing the amount", () => {
     });
     expect(refusal).not.toBeNull();
     expect(refusal).toContain("weekly amount");
-    expect(refusal).toContain("Collections");
     // It must say what IS still allowed, or it reads as "this row is frozen".
     expect(refusal).toContain("date, method and notes");
+  });
+
+  it("does NOT send the organizer to Collections — that advice invented money", () => {
+    // This refusal used to add "To correct the payout itself, edit the payout
+    // on Collections". Collections (updatePayout) had no settlement awareness,
+    // so following the instruction moved the payout half while this receipt
+    // stayed put: the member was handed the full net AND had the week paid.
+    // Two screens each told the organizer to go to the other one, and the
+    // round trip created the money.
+    const refusal = settlementReceiptAmountRefusal({
+      receipt: SETTLEMENT,
+      amountBefore: 50_000,
+      amountAfter: 1,
+    })!;
+    expect(refusal).not.toContain("Collections");
+    // One destination, and it is the one that moves both halves together.
+    expect(refusal).toContain("moves the payout with it");
   });
 
   it("refuses a RISE as well as a cut — both halves move together or neither does", () => {

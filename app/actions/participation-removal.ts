@@ -1,5 +1,6 @@
 "use server";
 
+import { reverseCarryDeduction } from "@/lib/carry-reversal";
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
@@ -220,7 +221,10 @@ export async function removeFromCycle(input: {
 
         // 1. Reverse every settlement FIRST, so the drawn weeks stop being
         //    credited from a payout that is about to disappear.
-        for (const id of payoutIds) await unsettlePayout(tx, id);
+        for (const id of payoutIds) {
+          await unsettlePayout(tx, id);
+          await reverseCarryDeduction(tx, id, "they were removed from the cycle");
+        }
 
         // 2. Delete the payouts explicitly rather than by cascade, so the
         //    money leaving the books is a deliberate act.

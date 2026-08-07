@@ -13,6 +13,8 @@ import {
 } from "@/lib/carry-balance";
 import { formatMoney } from "@/lib/format";
 import { ledgerBalance } from "@/lib/ledger";
+import { PRESENTATION_HIDDEN } from "@/lib/presentation";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma, serializableTransaction } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 
@@ -36,8 +38,33 @@ export type PayoutCarryOffer = {
   offer: CarryOffer;
 };
 
-async function loadPayoutContext(payoutId: string) {
-  return prisma.payout.findUnique({
+/**
+ * THE RE-READ MUST BE INSIDE THE TRANSACTION.
+ *
+ * This issued a query on the plain `prisma` client while being called from
+ * inside `serializableTransaction`, under a comment claiming it re-read
+ * "inside the transaction so a balance that moved since the panel rendered
+ * cannot be over-deducted". It did not: a separate pooled connection in its
+ * own autocommit snapshot registers NO read on ledger_entries, so Postgres SSI
+ * had no read-set to conflict on.
+ *
+ * The consequence, on a member holding TWO numbers and therefore two payouts —
+ * ordinary here, and four of the 27 live members are that shape: open both
+ * collect panels and deduct the same $1,000 balance from each. The two
+ * transactions touch different payout rows, so there is no write-write
+ * conflict, and neither read the ledger transactionally. Both commit. Two
+ * $1,000 PAYMENT entries against a $1,000 debt, `ledgerBalance` clamps the
+ * negative to zero, and every surface reads "settled" while the member is
+ * $1,000 short in cash.
+ *
+ * With the read inside the transaction the rw-dependency is detected, one side
+ * aborts 40001, and the retry re-reads a zero balance and refuses.
+ */
+async function loadPayoutContext(
+  db: Prisma.TransactionClient | typeof prisma,
+  payoutId: string,
+) {
+  return db.payout.findUnique({
     where: { id: payoutId },
     select: {
       id: true,
@@ -79,7 +106,8 @@ export async function payoutCarryOffer(input: { payoutId: string }): Promise<
     if (await getSetting("presentationMode")) {
       return { ok: false as const, error: "Hidden in presentation mode." };
     }
-    const payout = await loadPayoutContext(input.payoutId);
+    // A read, outside any transaction — the plain client is right here.
+    const payout = await loadPayoutContext(prisma, input.payoutId);
     if (!payout) return { ok: false as const, error: "Payout not found." };
 
     const participation = payout.luckyNumber.participation;
@@ -129,17 +157,39 @@ export async function deductCarryFromPayout(input: {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
+    // 2.4 — this names a member and moves their money. Every sibling action
+    // (recordLedgerPayment, forgiveBalance) has this guard; this one did not.
+    if (await getSetting("presentationMode")) {
+      return { ok: false as const, error: PRESENTATION_HIDDEN };
+    }
     const result = await serializableTransaction(async (tx) => {
       // 2.9/2.14: a CLOSED cycle's books are final. Resolved through
       // lib/cycle-guard so the check is one line and cannot be skipped
       // for want of plumbing — which is how 14 actions lost it.
       await refuseIfCycleClosed(tx, { payoutId: input.payoutId });
-      const payout = await loadPayoutContext(input.payoutId);
+      const payout = await loadPayoutContext(tx, input.payoutId);
       if (!payout) return { ok: false as const, error: "Payout not found." };
 
       const participation = payout.luckyNumber.participation;
       const person = participation.person;
       const balance = ledgerBalance(person.ledgerEntries);
+
+      // A COLLECTED payout is cash that has already left. Deducting from it
+      // would write a ledger PAYMENT recording a settlement that never
+      // happened — the member has the whole amount in hand AND the credit.
+      //
+      // The only thing stopping this was the Collections UI rendering the
+      // collect panel behind `status === "PENDING"`, which is precisely the
+      // UI-hiding this codebase forbids everywhere else.
+      if (payout.status === "COLLECTED") {
+        return {
+          ok: false as const,
+          error:
+            `That payout has already been handed over, so there is nothing left to deduct ` +
+            `from. Record the money against ${person.nameEnglishFirst}'s carried balance on ` +
+            `their own page instead — it is the same ledger, reached from the person.`,
+        };
+      }
 
       // THE ONE gate. Re-read inside the transaction so a balance that moved
       // since the panel rendered cannot be over-deducted.
@@ -165,6 +215,10 @@ export async function deductCarryFromPayout(input: {
           amount: applied.data.deducted,
           description: `Deducted from payout — ${participation.cycle.name}, number #${payout.luckyNumber.number}`,
           occurredAt: new Date(),
+          // THE LINK BACK. Without it nothing could reverse this half, so
+          // deleting, moving or resetting the payout left the balance reading
+          // as settled while the money never left (lib/carry-reversal.ts).
+          payoutId: payout.id,
         },
       });
 

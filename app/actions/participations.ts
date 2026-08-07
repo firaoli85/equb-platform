@@ -118,7 +118,13 @@ async function createParticipationWithNumbers(
       }
       // No number is being vacated here (nothing exists yet), so the holder
       // moves to the next free value rather than swapping.
-      const landedOn = await renumberHolder(tx, { cycleId: args.cycleId, holder, to: null });
+      // RESERVE every number this member is claiming, not just this one: the
+      // holder must not be renumbered onto any of them.
+      const landedOn = await renumberHolder(tx, {
+        cycleId: args.cycleId,
+        holder,
+        reserve: args.manualNumbers,
+      });
       taken.delete(number);
       taken.add(landedOn);
     }

@@ -70,6 +70,115 @@ export function chooseAutoNumbers(input: {
 }
 
 // ————————————————————————————————————————————————————————————————
+// THE CONTRIBUTION INVARIANT: a member's numbers ARE their weekly amount.
+// ————————————————————————————————————————————————————————————————
+//
+// `splitIntoLuckyNumbers` (lib/money.ts) slices a weekly contribution into the
+// amounts its numbers carry, and those amounts SUM BACK TO IT — a member at
+// $2,000/week with a $1,000 unit holds two $1,000 numbers and still pays
+// $2,000. That is the invariant, and nothing enforced it after creation.
+//
+// MONEY OUT WITH NO MONEY IN. `addLuckyNumber` created a number with any
+// amount from 1 cent to the Int4 ceiling and never touched
+// `participation.weeklyAmount`. Every payout is priced PER NUMBER
+// (`calculatePayout` in lib/wheel.ts reads `luckyNumber.amount`), so the
+// member's entitlement rose immediately — while their weekly bill, which
+// `lib/rebuild.ts` reads from `participation.weeklyAmount`, did not move at
+// all. `deleteLuckyNumber` did the same in reverse, silently.
+//
+// WHY THIS IS RECONCILED RATHER THAN QUESTIONED. 2.14: money is the truth and
+// everything else is derived. There is no second, independent source for "what
+// this member contributes" — it IS the sum of their numbers. So the stored
+// weekly is brought back to that sum and the receipts replay against it.
+//
+// WHY A DRAWN MEMBER IS REFUSED INSTEAD. Once a payout exists, changing what
+// they were entitled to is a SETTLEMENT (2.18/2.23), and `updateParticipation`
+// already implements it properly — the real figures, the choice of how the gap
+// is settled, the typed name, the ledger entry. Building a second settlement
+// path here would be exactly the second money route 2.19 forbids, so this
+// refuses and names the screen that does it correctly.
+
+export type WeeklyReconciliation = {
+  /** The weekly contribution the member's numbers actually add up to. */
+  impliedWeekly: number;
+  /** impliedWeekly − the participation's stored weekly. */
+  delta: number;
+  /** True when the stored weekly no longer matches the numbers. */
+  changed: boolean;
+  /** Why this cannot be done from the numbers list, or null. */
+  refusal: string | null;
+  /** One plain sentence for the audit entry. Empty when nothing changed. */
+  sentence: string;
+};
+
+/**
+ * What adding or removing a lucky number does to the member's weekly
+ * contribution. Pure, so the refusal, the audit entry and the write can never
+ * describe different money.
+ */
+export function reconcileWeeklyAmount(input: {
+  memberName: string;
+  /** What the participation stores today. */
+  storedWeekly: number;
+  /** The amounts of ALL their numbers AFTER the change. */
+  numberAmounts: readonly number[];
+  /** Payouts already recorded against any of their numbers. */
+  payoutCount: number;
+}): WeeklyReconciliation {
+  const impliedWeekly = input.numberAmounts.reduce((sum, a) => sum + a, 0);
+  const delta = impliedWeekly - input.storedWeekly;
+  if (delta === 0) {
+    return { impliedWeekly, delta, changed: false, refusal: null, sentence: "" };
+  }
+
+  const up = delta > 0;
+  const money = (c: number) =>
+    `$${(c / 100).toLocaleString("en-US", {
+      minimumFractionDigits: c % 100 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+  if (input.payoutCount > 0) {
+    return {
+      impliedWeekly,
+      delta,
+      changed: true,
+      refusal:
+        `${input.memberName} has already been drawn, and this would change their weekly ` +
+        `contribution from ${money(input.storedWeekly)} to ${money(impliedWeekly)} — which ` +
+        `changes what they were entitled to be paid. Make the change on their participation ` +
+        `instead: it settles the difference properly, with the real figures and your ` +
+        `confirmation. Nothing has been changed here.`,
+      sentence: "",
+    };
+  }
+
+  if (impliedWeekly < 1) {
+    return {
+      impliedWeekly,
+      delta,
+      changed: true,
+      refusal:
+        `That would leave ${input.memberName} with no lucky numbers and so no weekly ` +
+        `contribution at all. Remove them from the cycle instead, which keeps or clears ` +
+        `their money records deliberately. Nothing has been changed here.`,
+      sentence: "",
+    };
+  }
+
+  return {
+    impliedWeekly,
+    delta,
+    changed: true,
+    refusal: null,
+    sentence:
+      `${input.memberName}'s weekly contribution ${up ? "rises" : "falls"} from ` +
+      `${money(input.storedWeekly)} to ${money(impliedWeekly)} to match their numbers, ` +
+      `and their receipts are re-allocated against the new amount.`,
+  };
+}
+
+// ————————————————————————————————————————————————————————————————
 // A NUMBER ALREADY IN USE — say who has it, then offer a real choice.
 // ————————————————————————————————————————————————————————————————
 //

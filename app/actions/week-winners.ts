@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { carryReversalClause, reverseCarryDeduction } from "@/lib/carry-reversal";
 import { deleteDrawIfEmpty, freedWeekClause } from "@/lib/draw-cascade";
 import { settleWinnerWeeks, unsettlePayout } from "@/lib/draw-settlement";
 import { formatMoney } from "@/lib/format";
@@ -257,6 +258,11 @@ export async function removeWinnerFromWeek(input: { payoutId: string }) {
       // Reverse THIS payout's settlement only — that week becomes owed again
       // for this member, and nobody else is touched.
       const { reversed } = await unsettlePayout(tx, payout.id);
+      const carry = await reverseCarryDeduction(
+        tx,
+        payout.id,
+        "they were removed as a winner of that week",
+      );
       await tx.payout.delete({ where: { id: payout.id } });
       // The SlotMember is what makes the number drawn. Removing it is what
       // returns the number to the pool.
@@ -282,7 +288,8 @@ export async function removeWinnerFromWeek(input: { payoutId: string }) {
             : "") +
           (freed.deleted
             ? `.${freedWeekClause(freed, week.weekNumber)}`
-            : `. The week's other winners are unchanged.`),
+            : `. The week's other winners are unchanged.`) +
+          carryReversalClause(carry),
         before: {
           payoutId: payout.id,
           number: payout.luckyNumber.number,
@@ -378,6 +385,15 @@ export async function movePayoutToWeek(input: { payoutId: string; targetWeekId: 
 
       // 1. Give the old week its contribution back.
       const { reversed } = await unsettlePayout(tx, payout.id);
+      // ...and the carried balance, if any of it was deducted from this
+      // payout. The move writes netAmount back to gross − fee below, which
+      // hands the deduction back; without this the member would keep the
+      // credit on their ledger AND collect the full amount.
+      const movedCarry = await reverseCarryDeduction(
+        tx,
+        payout.id,
+        "the payout was moved to another week, which restores its full net",
+      );
 
       // 2. The destination needs a draw to join. An undrawn week gets one
       //    built here — a fresh slot (a slot wins at most once per cycle, so
@@ -416,6 +432,9 @@ export async function movePayoutToWeek(input: { payoutId: string; targetWeekId: 
         where: { id: payout.id },
         // netAmount is restored to gross-minus-fee; the new week's settlement
         // decrements it again below.
+        // Resetting the net to gross - fee gives back any carry deduction,
+        // so the ledger half has to come back too or they keep the credit AND
+        // collect the full amount.
         data: { drawId: targetDraw!.id, netAmount: payout.grossAmount - payout.feeAmount },
       });
       await tx.slotMember.deleteMany({

@@ -21,6 +21,10 @@ const member = (over: Partial<MemberFinal> = {}): MemberFinal => ({
   lastPaymentWeek: 20,
   drawnWeek: 5,
   receivedNet: 1_860_000,
+  // Awarded defaults to collected: the common case is a payout handed over.
+  // A test that cares about the difference sets both explicitly.
+  awardedNet: 1_860_000,
+  pendingNet: 0,
   settledFromPayout: 100_000,
   totalPaid: 2_000_000,
   ...over,
@@ -147,6 +151,8 @@ describe("buildArchiveData — 2.9: every figure precomputed into the record", (
     expect(archive.totals).toEqual({
       received: 3_200_000,
       paidOutNet: 1_860_000,
+      // Nothing pending in this scenario — both payouts were collected.
+      pendingNet: 0,
       stillHeld: 1_340_000,
       outstanding: 200_000,
       membersShort: 1,
@@ -189,5 +195,73 @@ describe("frozenCycleRefusal — audit H5: no money onto a closed cycle's weeks"
   it("lets an ACTIVE or DRAFT cycle through untouched", () => {
     expect(frozenCycleRefusal({ name: "Cycle 1", status: "ACTIVE" })).toBeNull();
     expect(frozenCycleRefusal({ name: "Cycle 2", status: "DRAFT" })).toBeNull();
+  });
+});
+
+describe("the archive's cash position — a PENDING payout is still held", () => {
+  // THE DEFECT. `receivedNet` summed every payout regardless of status, and
+  // buildArchiveData built paidOutNet from it. A payout recorded but not yet
+  // handed over therefore inflated "paid out" and understated "still held" by
+  // the same figure — permanently, because the archive is rendered verbatim
+  // and never recomputed. The same page then printed that payout's own row as
+  // "pending", so the record contradicted itself on one screen.
+  const collected = member({
+    participationId: "p-collected",
+    personId: "person-collected",
+    receivedNet: 1_860_000,
+    awardedNet: 1_860_000,
+    pendingNet: 0,
+  });
+  const pending = member({
+    participationId: "p-pending",
+    personId: "person-pending",
+    name: "Hana",
+    // Drawn in the final week, money not yet handed over.
+    receivedNet: 0,
+    awardedNet: 1_960_000,
+    pendingNet: 1_960_000,
+  });
+  const weeks = [
+    { weekNumber: 1, date: "2026-05-17", isSkipped: false, received: 4_000_000, draw: null },
+  ];
+
+  const archive = buildArchiveData({
+    cycleName: "Cycle 1 2026",
+    startDate: "2026-05-17",
+    closedAt: "2026-09-27T00:00:00.000Z",
+    plannedWeeks: 20,
+    feePercent: 2,
+    members: [collected, pending],
+    weeks,
+  });
+
+  it("counts only COLLECTED payouts as paid out", () => {
+    expect(archive.totals.paidOutNet).toBe(1_860_000);
+  });
+
+  it("states what was awarded but not handed over, rather than hiding it", () => {
+    expect(archive.totals.pendingNet).toBe(1_960_000);
+  });
+
+  it("STILL HELD includes the pending payout — the group has that cash", () => {
+    // $40,000 received − $18,600 actually handed over = $21,400 held.
+    // The old arithmetic reported $2,800, understating by exactly the pending
+    // payout, and the organizer's final record of the cash position was wrong.
+    expect(archive.totals.stillHeld).toBe(4_000_000 - 1_860_000);
+    expect(archive.totals.stillHeld).not.toBe(4_000_000 - (1_860_000 + 1_960_000));
+  });
+
+  it("the totals reconcile: paid out + pending = everything awarded", () => {
+    const awarded = [collected, pending].reduce((s, m) => s + m.awardedNet, 0);
+    expect(archive.totals.paidOutNet + archive.totals.pendingNet).toBe(awarded);
+  });
+
+  it("a member's own row still shows what they were AWARDED", () => {
+    // The member record must not lose the fact that they won: it is their
+    // statement of the cycle, and a $0 against a drawn week reads as an error.
+    const row = archive.members.find((m) => m.participationId === "p-pending")!;
+    expect(row.awardedNet).toBe(1_960_000);
+    expect(row.receivedNet).toBe(0);
+    expect(row.pendingNet).toBe(1_960_000);
   });
 });

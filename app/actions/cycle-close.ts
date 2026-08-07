@@ -106,8 +106,28 @@ function memberFinals(cycle: LoadedCycle, today: Date): MemberFinal[] {
       outstanding: standing.amountOutstanding,
       lastPaymentWeek: standing.lastPaymentWeek,
       drawnWeek: draw?.week.weekNumber ?? null,
+      // COLLECTED only — this is money that actually left the group. A
+      // PENDING payout has been awarded and not handed over, so it is still
+      // held; folding it in here inflated the archive's "paid out" and
+      // understated "still held" by the same figure, permanently.
       receivedNet: p.luckyNumbers.reduce(
+        (sum, n) =>
+          sum +
+          n.payouts
+            .filter((po) => po.status === "COLLECTED")
+            .reduce((s, po) => s + po.netAmount, 0),
+        0,
+      ),
+      awardedNet: p.luckyNumbers.reduce(
         (sum, n) => sum + n.payouts.reduce((s, po) => s + po.netAmount, 0),
+        0,
+      ),
+      pendingNet: p.luckyNumbers.reduce(
+        (sum, n) =>
+          sum +
+          n.payouts
+            .filter((po) => po.status !== "COLLECTED")
+            .reduce((s, po) => s + po.netAmount, 0),
         0,
       ),
       settledFromPayout,

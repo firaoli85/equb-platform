@@ -24,6 +24,7 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import {
   chooseAutoNumbers,
   describeNumberConflict,
+  reconcileWeeklyAmount,
   type NumberHolder,
 } from "@/lib/lucky-numbers";
 import { calculateFinishWeek, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
@@ -38,8 +39,10 @@ import {
 import {
   findNumberHolder,
   renumberHolder,
+  swapNumbers,
   takenNumbers,
 } from "@/lib/number-conflict";
+import { reverseCarryDeduction } from "@/lib/carry-reversal";
 import { personRemovalBlockers } from "@/lib/person-record";
 import {
   settlementReceiptAmountRefusal,
@@ -525,6 +528,7 @@ export async function removeParticipation(input: { participationId: string }) {
       let reversed = 0;
       for (const payout of payouts) {
         const result = await unsettlePayout(tx, payout.id);
+        await reverseCarryDeduction(tx, payout.id, "the payout was removed");
         reversed += result.reversed;
       }
 
@@ -663,8 +667,51 @@ export async function updateLuckyNumber(input: {
         where: { id: input.luckyNumberId },
         include: { participation: { include: { person: true } } },
       });
+      let amountNote = "";
+
+      // THE AMOUNT IS A SLICE, NOT A FIGURE OF ITS OWN.
+      //
+      // This wrote any amount from 1 to MAX_MONEY_CENTS and touched nothing
+      // else. Editing a $250 number to $2,500 in a 20-week cycle turned a
+      // $5,000 gross into a $50,000 gross — calculatePayout is
+      // amount x weeksCommitted — while the member still owed $250 a week.
+      // Money out that nobody funded.
+      //
+      // The SAME reconciliation addLuckyNumber and deleteLuckyNumber already
+      // use: the numbers and the weekly move together, or the edit is
+      // refused. A second mechanism here would be a second answer to one
+      // question.
+      if (before.amount !== input.amount) {
+        const siblings = await tx.luckyNumber.findMany({
+          where: { participationId: before.participationId },
+          select: { id: true, amount: true },
+        });
+        const payoutCount = await tx.payout.count({
+          where: { luckyNumber: { participationId: before.participationId } },
+        });
+        const reconciliation = reconcileWeeklyAmount({
+          memberName: before.participation.person.nameEnglishFirst,
+          storedWeekly: before.participation.weeklyAmount,
+          numberAmounts: siblings.map((sib) =>
+            sib.id === before.id ? input.amount : sib.amount,
+          ),
+          payoutCount,
+        });
+        if (reconciliation.refusal) return { refusal: reconciliation.refusal };
+        if (reconciliation.changed) {
+          await tx.participation.update({
+            where: { id: before.participationId },
+            data: { weeklyAmount: reconciliation.impliedWeekly },
+          });
+          await rebuildParticipationPayments(tx, before.participationId);
+          amountNote = ` ${reconciliation.sentence}`;
+        }
+      }
 
       let swapNote = "";
+      // The swap already wrote the number; the final update must not write it
+      // again from stale state.
+      let swapped = false;
       if (before.number !== input.number) {
         const holder = await findNumberHolder(tx, {
           cycleId: before.cycleId,
@@ -685,20 +732,27 @@ export async function updateLuckyNumber(input: {
           if (input.onConflict !== "replace" || conflict.replaceRefusal) {
             return { conflict };
           }
-          const landedOn = await renumberHolder(tx, {
+          // A TRUE SWAP — three statements, not two. The old code moved the
+          // holder onto `before.number` while this row still held it, so the
+          // unique index refused every single REPLACE and the organizer was
+          // shown "already taken" after choosing to take it.
+          await swapNumbers(tx, {
             cycleId: before.cycleId,
+            moving: { luckyNumberId: input.luckyNumberId, from: before.number },
             holder,
-            to: before.number,
           });
+          swapped = true;
           swapNote =
-            ` ${holder.memberName} held #${input.number} and was moved to #${landedOn} ` +
-            `by the organizer's REPLACE choice.`;
+            ` ${holder.memberName} held #${input.number} and took #${before.number} ` +
+            `in the swap, by the organizer's REPLACE choice.`;
         }
       }
 
       const after = await tx.luckyNumber.update({
         where: { id: input.luckyNumberId },
-        data: { number: input.number, amount: input.amount },
+        // The swap already moved the number; writing it again is harmless but
+        // stating it here keeps the non-swap path honest.
+        data: swapped ? { amount: input.amount } : { number: input.number, amount: input.amount },
       });
       await logAudit(tx, {
         entity: "LuckyNumber",
@@ -706,7 +760,7 @@ export async function updateLuckyNumber(input: {
         action: "update",
         summary:
           `Lucky number #${before.number} (${before.amount}c) -> #${after.number} (${after.amount}c) ` +
-          `for ${before.participation.person.nameEnglishFirst}.${swapNote}`,
+          `for ${before.participation.person.nameEnglishFirst}.${swapNote}${amountNote}`,
         before: { number: before.number, amount: before.amount },
         after: { number: after.number, amount: after.amount },
       });
@@ -715,6 +769,9 @@ export async function updateLuckyNumber(input: {
 
     // The conflict is a REFUSAL carrying the choice, not a failure: the
     // transaction rolled back and nothing was written.
+    // A refusal is not a crash: the transaction rolled back and the reason
+    // is the organizer’s to read, not a stack trace.
+    if (outcome.refusal) return { ok: false as const, error: outcome.refusal };
     const conflict = outcome.conflict ?? null;
     if (conflict) return { ok: false as const, error: conflict.message, conflict };
     revalidateAdmin();
@@ -756,6 +813,7 @@ export async function addLuckyNumber(input: {
         include: { person: true },
       });
 
+
       let swapNote = "";
       const holder = await findNumberHolder(tx, {
         cycleId: participation.cycleId,
@@ -773,15 +831,39 @@ export async function addLuckyNumber(input: {
         if (input.onConflict !== "replace" || conflict.replaceRefusal) {
           return { conflict };
         }
+        // RESERVE the number being added. Without it the holder is renumbered
+        // to "the next free value" — which, the instant they vacate, is the
+        // contested number itself, so they land straight back on it.
         const landedOn = await renumberHolder(tx, {
           cycleId: participation.cycleId,
           holder,
-          to: null,
+          reserve: [input.number],
         });
         swapNote =
           ` ${holder.memberName} held #${input.number} and was moved to #${landedOn} ` +
           `by the organizer's REPLACE choice.`;
       }
+
+      // MONEY OUT WITH NO MONEY IN. A number's amount IS a slice of the
+      // member's weekly contribution, and every payout is priced per number —
+      // so adding one raised their entitlement while their weekly bill, read
+      // from participation.weeklyAmount, never moved. The contribution is
+      // reconciled to what their numbers now add up to, or refused outright
+      // when a payout already exists and the difference is a settlement.
+      const existingAmounts = await tx.luckyNumber.findMany({
+        where: { participationId: input.participationId },
+        select: { amount: true },
+      });
+      const payoutCount = await tx.payout.count({
+        where: { luckyNumber: { participationId: input.participationId } },
+      });
+      const reconciliation = reconcileWeeklyAmount({
+        memberName: participation.person.nameEnglishFirst,
+        storedWeekly: participation.weeklyAmount,
+        numberAmounts: [...existingAmounts.map((n) => n.amount), input.amount],
+        payoutCount,
+      });
+      if (reconciliation.refusal) return { refusal: reconciliation.refusal };
 
       const created = await tx.luckyNumber.create({
         data: {
@@ -791,25 +873,47 @@ export async function addLuckyNumber(input: {
           amount: input.amount,
         },
       });
+      if (reconciliation.changed) {
+        await tx.participation.update({
+          where: { id: input.participationId },
+          data: { weeklyAmount: reconciliation.impliedWeekly },
+        });
+        // Their weekly bill changed, so every week they have paid re-allocates
+        // against it (2.15). Without this the grid keeps the old shape.
+        await rebuildParticipationPayments(tx, input.participationId);
+      }
       await logAudit(tx, {
         entity: "LuckyNumber",
         entityId: created.id,
         action: "create",
         summary:
           `Added lucky number #${created.number} (${created.amount}c) for ` +
-          `${participation.person.nameEnglishFirst}.${swapNote}`,
-        after: { number: created.number, amount: created.amount },
+          `${participation.person.nameEnglishFirst}.${swapNote}` +
+          (reconciliation.sentence ? ` ${reconciliation.sentence}` : ""),
+        after: {
+          number: created.number,
+          amount: created.amount,
+          weeklyAmountBefore: participation.weeklyAmount,
+          weeklyAmountAfter: reconciliation.impliedWeekly,
+        },
       });
       return { created };
     });
 
     // The conflict is a REFUSAL carrying the choice, not a failure: the
     // transaction rolled back and nothing was written.
+    // A refusal is not a crash: the transaction rolled back and the reason
+    // is the organizer’s to read, not a stack trace.
+    if (outcome.refusal) return { ok: false as const, error: outcome.refusal };
     const conflict = outcome.conflict ?? null;
     if (conflict) return { ok: false as const, error: conflict.message, conflict };
+    // The contribution refusal is the same shape: the transaction rolled back,
+    // so nothing was written and the reason names where to go instead.
+    if (outcome.refusal) return { ok: false as const, error: outcome.refusal };
     revalidateAdmin();
     revalidatePath("/admin/wheel");
     revalidatePath("/admin/wheel/setup");
+    revalidatePath("/admin/payments");
     return { ok: true as const, data: outcome.created };
   } catch (e) {
     if (isUnique(e)) {
@@ -841,8 +945,41 @@ export async function deleteLuckyNumber(input: { luckyNumberId: string }) {
           `#${target.number} has ${target._count.payouts} payout record(s) — delete those first so no money record is lost.`,
         );
       }
+      // The mirror of addLuckyNumber: a number's amount is a SLICE of the
+      // member's weekly contribution, so removing one leaves the stored weekly
+      // higher than their numbers add up to — they keep being billed for a
+      // number they no longer hold. Reconciled, or refused when it would
+      // leave them with nothing.
+      const participation = await tx.participation.findUniqueOrThrow({
+        where: { id: target.participationId },
+        include: { person: true, luckyNumbers: { select: { id: true, amount: true } } },
+      });
+      const reconciliation = reconcileWeeklyAmount({
+        memberName: participation.person.nameEnglishFirst,
+        storedWeekly: participation.weeklyAmount,
+        numberAmounts: participation.luckyNumbers
+          .filter((n) => n.id !== input.luckyNumberId)
+          .map((n) => n.amount),
+        // Their OTHER numbers' payouts: this number's own are already refused
+        // above, and a drawn member's entitlement change is a settlement.
+        payoutCount: await tx.payout.count({
+          where: {
+            luckyNumber: { participationId: target.participationId },
+            luckyNumberId: { not: input.luckyNumberId },
+          },
+        }),
+      });
+      if (reconciliation.refusal) throw new Error(reconciliation.refusal);
+
       const vacatedSlotIds = target.slotMembers.map((m) => m.slotId);
       await tx.luckyNumber.delete({ where: { id: input.luckyNumberId } });
+      if (reconciliation.changed) {
+        await tx.participation.update({
+          where: { id: target.participationId },
+          data: { weeklyAmount: reconciliation.impliedWeekly },
+        });
+        await rebuildParticipationPayments(tx, target.participationId);
+      }
 
       // WinnerPlanNumber cascades with the number. A plan left with NO numbers
       // matches the first eligible slot (`[].every(...)` is true) and silently
@@ -866,14 +1003,21 @@ export async function deleteLuckyNumber(input: { luckyNumberId: string }) {
           (plans.purged > 0
             ? `. ${plans.purged} winner plan(s) left with no numbers were deleted — an empty plan rigs the next draw`
             : "") +
-          (releasedSlots.count > 0 ? `. ${releasedSlots.count} emptied wheel slot(s) released` : ""),
-        before: { number: target.number, amount: target.amount },
+          (releasedSlots.count > 0 ? `. ${releasedSlots.count} emptied wheel slot(s) released` : "") +
+          (reconciliation.sentence ? ` ${reconciliation.sentence}` : ""),
+        before: {
+          number: target.number,
+          amount: target.amount,
+          weeklyAmountBefore: participation.weeklyAmount,
+          weeklyAmountAfter: reconciliation.impliedWeekly,
+        },
       });
       return { number: target.number, plansPurged: plans.purged };
     });
     revalidateAdmin();
     revalidatePath("/admin/wheel");
     revalidatePath("/admin/wheel/setup");
+    revalidatePath("/admin/payments");
     return { ok: true as const, data };
   } catch (e) {
     console.error("deleteLuckyNumber failed:", e);
@@ -1402,6 +1546,50 @@ export async function updatePayout(input: {
       // for want of plumbing — which is how 14 actions lost it.
       await refuseIfCycleClosed(tx, { payoutId: input.payoutId });
       const before = await tx.payout.findUniqueOrThrow({ where: { id: input.payoutId } });
+
+      // THE SETTLEMENT PAIR WAS ONE-SIDED.
+      //
+      // When the winner's own week was settled from this payout, netAmount was
+      // DECREMENTED by exactly the amount of a PaymentEvent that credits that
+      // week. lib/settlement-receipt.ts refuses any amount edit on that
+      // receipt and says so — and this action had no settlement awareness at
+      // all, so the other half was freely editable.
+      //
+      // The sequence that invents money: gross $1,000, fee $20, own week $500,
+      // so netAmount is stored as $480. Collections shows "$1,000 gross · $20
+      // fee · week N contribution $500 deducted" with the net field reading
+      // 480. The organizer corrects the gross to $1,100 and, computing net as
+      // gross − fee, types 1080. Week N is still credited $500 from a payout
+      // that no longer carries the deduction: they are handed the full net AND
+      // have that week paid. $500 out of nowhere, and every downstream figure
+      // — the archive, the cash position, updateParticipation's
+      // `alreadyReceived` — inherits it.
+      const settlements = await tx.paymentEvent.findMany({
+        where: { settlementPayoutId: input.payoutId },
+        select: { amount: true, pinnedWeek: { select: { weekNumber: true } } },
+      });
+      const settled = settlements.reduce((sum, s) => sum + s.amount, 0);
+      const moneyChanged =
+        before.grossAmount !== input.grossAmount ||
+        before.feeAmount !== input.feeAmount ||
+        before.netAmount !== input.netAmount;
+      if (settled > 0 && moneyChanged) {
+        const weeks = settlements
+          .map((s) => s.pinnedWeek?.weekNumber)
+          .filter((w): w is number => w !== undefined)
+          .sort((a, b) => a - b);
+        return {
+          refusal:
+            `This payout already has ${formatMoney(settled)} deducted from it for ` +
+            `${weeks.length === 1 ? `week ${weeks[0]}` : `weeks ${weeks.join(", ")}`} — the ` +
+            `winner does not pay the week they win, and that deduction is a receipt crediting ` +
+            `that week. Editing the figures here would move one half of the pair and leave the ` +
+            `other, inventing ${formatMoney(settled)}. Change their weekly amount on the ` +
+            `participation instead: it resizes the settlement and moves the payout with it. ` +
+            `Status, method, paid-on and notes can still be corrected here.`,
+        };
+      }
+
       const after = await tx.payout.update({
         where: { id: input.payoutId },
         data: {
@@ -1411,7 +1599,16 @@ export async function updatePayout(input: {
           status: input.status,
           method: input.method,
           paidAt,
-          notes: input.notes?.trim() || null,
+          // AN OMITTED FIELD IS NOT AN INSTRUCTION TO ERASE.
+          //
+          // This read `input.notes?.trim() || null`, so a caller that does not
+          // send notes cleared the column. The Waiting screen's "Mark
+          // collected" sends gross, fee, net, status, method and paidAt and no
+          // notes — its row type has no notes field — so one click there
+          // silently destroyed whatever the organizer had written. The same
+          // button on Collections passes them through and preserved it: the
+          // same logical action lost data on one screen and not the other.
+          ...(input.notes === undefined ? {} : { notes: input.notes.trim() || null }),
         },
       });
       await logAudit(tx, {
@@ -1436,11 +1633,15 @@ export async function updatePayout(input: {
           paidAt: after.paidAt,
         },
       });
-      return after;
+      return { payout: after };
     });
+    // A refusal is a rolled-back transaction carrying a reason, not a crash.
+    if ("refusal" in data && data.refusal) {
+      return { ok: false as const, error: data.refusal };
+    }
     revalidateAdmin();
     revalidatePath("/admin/collections");
-    return { ok: true as const, data };
+    return { ok: true as const, data: data.payout! };
   } catch (e) {
     console.error("updatePayout failed:", e);
     return { ok: false as const, error: `Could not save. ${errorMessage(e)}` };
@@ -1477,6 +1678,14 @@ export async function deletePayout(input: { payoutId: string }) {
         include: { luckyNumber: true, draw: { include: { week: true } } },
       });
       const { reversed } = await unsettlePayout(tx, input.payoutId);
+      // The OTHER half of a carry deduction. unsettlePayout reverses the
+      // winner-week settlement because that half has an FK; this reverses the
+      // ledger PAYMENT for the same reason, now that it has one too.
+      const carry = await reverseCarryDeduction(
+        tx,
+        input.payoutId,
+        "the payout was deleted",
+      );
       await tx.payout.delete({ where: { id: input.payoutId } });
       const freed = target.draw
         ? await deleteDrawIfEmpty(tx, target.draw.id)

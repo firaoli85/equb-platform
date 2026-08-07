@@ -23,8 +23,25 @@ export type MemberFinal = {
   lastPaymentWeek: number | null;
   /** Their draw, if any of their numbers ever won. */
   drawnWeek: number | null;
-  /** Net actually handed over across their payouts (post-settlement). */
+  /**
+   * Net ACTUALLY HANDED OVER — COLLECTED payouts only.
+   *
+   * This summed every payout regardless of status, and the archive built its
+   * paidOutNet from it. A payout recorded but not yet handed over therefore
+   * inflated "paid out" and understated "still held" by the same figure, in a
+   * record that is rendered verbatim and never recomputed — while the same
+   * archive page printed that payout's own row as "pending". The document
+   * contradicted itself on one screen.
+   */
   receivedNet: number;
+  /**
+   * Net AWARDED across every payout, collected or not. Kept separate so the
+   * archive can state what was still outstanding at the moment of closing
+   * rather than silently folding it into money that had gone out.
+   */
+  awardedNet: number;
+  /** Awarded but not yet handed over at close. Always awardedNet - receivedNet. */
+  pendingNet: number;
   /** Win-week contributions settled from their payouts. */
   settledFromPayout: number;
   totalPaid: number;
@@ -162,7 +179,10 @@ export type ArchiveData = {
   weeks: ArchiveWeek[];
   totals: {
     received: number;
+    /** COLLECTED payout nets only — money that actually left. */
     paidOutNet: number;
+    /** Drawn and awarded, but not handed over when the cycle closed. */
+    pendingNet: number;
     stillHeld: number;
     outstanding: number;
     membersShort: number;
@@ -180,7 +200,11 @@ export function buildArchiveData(input: {
   weeks: readonly ArchiveWeek[];
 }): ArchiveData {
   const received = input.weeks.reduce((sum, w) => sum + w.received, 0);
+  // COLLECTED only. A pending payout is money the group is STILL HOLDING, not
+  // money it has paid out — counting it as paid out is what made the archive
+  // disagree with its own payout rows.
   const paidOutNet = input.members.reduce((sum, m) => sum + m.receivedNet, 0);
+  const pendingNet = input.members.reduce((sum, m) => sum + m.pendingNet, 0);
   const outstanding = input.members.reduce((sum, m) => sum + m.outstanding, 0);
   return {
     version: 1,
@@ -194,6 +218,7 @@ export function buildArchiveData(input: {
     totals: {
       received,
       paidOutNet,
+      pendingNet,
       stillHeld: received - paidOutNet,
       outstanding,
       membersShort: input.members.filter((m) => m.outstanding > 0).length,

@@ -5,6 +5,7 @@ import {
   removalRefusal,
   type ParticipationAttachments,
 } from "./participation-removal";
+import { calculateFee, calculateGross } from "./money";
 
 // Removing someone from a cycle used to be a bare cascade delete: no preview,
 // no choices, no guards. A dependency map of the schema found it left FOUR
@@ -36,14 +37,61 @@ const drawn: ParticipationAttachments = {
 };
 
 describe("the fee attributable to them", () => {
-  it("is 2% of what their numbers gross over the cycle", () => {
+  it("is 2% of what they contribute over the cycle", () => {
     // $500 × 20 = $10,000 gross, 2% = $200.
     expect(feeAttributable(base)).toBe(20_000);
   });
 
-  it("scales with the number of lucky numbers they hold", () => {
-    const two = { ...base, numbers: [{ number: 19, drawn: false }, { number: 20, drawn: false }] };
-    expect(feeAttributable(two)).toBe(40_000);
+  it("does NOT scale with the number of lucky numbers they hold", () => {
+    // THE DEFECT THIS PINS. `feeAttributable` multiplied gross by
+    // `numbers.length`, so anyone contributing more than the unit amount had
+    // their fee reported double — on the red typed-name confirmation, and then
+    // written into the permanent audit entry.
+    //
+    // A member's numbers are SLICES of their weekly amount, not copies of it:
+    // splitIntoLuckyNumbers($2,000, unit $1,000) → [$1,000, $1,000], and the
+    // participation still stores weeklyAmount = $2,000. Holding two numbers
+    // does not double what you pay in, so it cannot double the fee.
+    //
+    // The old test used $500/week across two numbers at a $1,000 unit — a
+    // state the split can never produce — which is how it pinned the bug as
+    // intended behaviour.
+    const twoThousand: ParticipationAttachments = {
+      ...base,
+      weeklyAmount: 200_000, // $2,000/wk — the shape of live member Mulugeta
+      numbers: [
+        { number: 2, drawn: false },
+        { number: 22, drawn: false },
+      ],
+    };
+    // $2,000 × 20 = $40,000 gross, 2% = $800. NOT $1,600.
+    expect(feeAttributable(twoThousand)).toBe(80_000);
+  });
+
+  it("agrees with calculateGross, which is what the rest of the platform uses", () => {
+    // The one assertion that keeps the two derivations from drifting apart:
+    // whatever the fee is here, it must be the fee on the gross the payout
+    // arithmetic computes (lib/money.ts).
+    for (const [weekly, weeks] of [
+      [50_000, 20],
+      [200_000, 20],
+      [37_500, 13],
+      [100_000, 1],
+    ] as const) {
+      const a: ParticipationAttachments = {
+        ...base,
+        weeklyAmount: weekly,
+        weeksCommitted: weeks,
+        // The number count is deliberately varied and must not matter.
+        numbers: Array.from({ length: Math.max(1, Math.round(weekly / 100_000)) }, (_, i) => ({
+          number: i + 1,
+          drawn: false,
+        })),
+      };
+      expect(feeAttributable(a), `${weekly}c × ${weeks}`).toBe(
+        calculateFee(calculateGross(weekly, weeks), 2),
+      );
+    }
   });
 });
 

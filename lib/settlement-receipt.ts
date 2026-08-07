@@ -70,9 +70,13 @@ export function settlementReceiptAmountRefusal(args: {
     "That receipt is a payout settlement, not a payment — it is the winner's own week " +
     "taken out of their payout, and the payout was reduced by exactly this figure. " +
     "Changing it here would move one half of that pair and leave the other behind. " +
+    // ONE destination, not two. This used to add "To correct the payout itself,
+    // edit the payout on Collections" — and Collections had no settlement
+    // awareness, so following that advice invented exactly the money this
+    // refusal exists to protect. Editing the weekly amount is the only path
+    // that moves both halves, so it is the only one named.
     "To change what the week costs, edit their weekly amount on the participation — " +
-    "that resizes the settlement and moves the payout with it. To correct the payout " +
-    "itself, edit the payout on Collections. The date, method and notes on this row " +
-    "can still be corrected."
+    "that resizes this receipt and moves the payout with it, as one operation. " +
+    "The date, method and notes on this row can still be corrected."
   );
 }

@@ -59,29 +59,102 @@ export async function takenNumbers(
   return new Set(rows.map((r) => r.number));
 }
 
+// THE PARK, AND THE TWO THINGS IT IS FOR.
+//
+// `@@unique([cycleId, number])` is a plain index — Postgres cannot defer a
+// plain unique index at all — so it is checked after EVERY statement, not at
+// commit. Any rearrangement of numbers therefore needs a value nothing can be
+// using to pass through: one above the cycle's highest. Every update below is
+// inside the caller's serializable transaction, so the parked value is never
+// observable and a failure rolls the whole rearrangement back.
+//
+// THE BUG THIS SHAPE REPLACES. There used to be one function taking
+// `to: number | null`, and it was wrong in both of its callers:
+//
+//   REPLACE on an EDIT (a swap). It parked the holder and moved them onto
+//   `before.number` — but the row being edited still HELD `before.number`; it
+//   does not move until afterwards. So the second statement hit the unique
+//   index every time, P2002 was caught, and the organizer who pressed
+//   "Replace — take #22 and move Meheret" was shown "Number 22 is already
+//   taken in this cycle" — the exact dead-end sentence the feature exists to
+//   replace. Parking the holder frees the CONTESTED number; nothing freed the
+//   number the holder was being moved onto. A swap needs three moves, not two.
+//
+//   REPLACE on an ADD/CREATE. With `to: null` it chose the next free value —
+//   and the holder's own number had just been freed, so "the next free value"
+//   was frequently the contested number itself. The holder was renumbered
+//   straight back onto it, and the member who asked for it could not have it.
+//   Whether it fired depended on whether a lower number happened to be free,
+//   which is why a fixture holding #10, #11 and #20 passed and a real cycle
+//   numbered 1, 2, 3 did not.
+
 /**
- * Move the holder off the number so it can be given to someone else, and
- * return where they landed.
+ * Move the holder off their number to the next free value, and return where
+ * they landed.
  *
- * The two-step park exists because @@unique([cycleId, number]) is checked per
- * statement, not deferred: the holder sits briefly on a number nothing can be
- * using (one above the cycle's highest) before the contested number changes
- * hands. Both updates are inside the caller's serializable transaction, so the
- * parked value is never observable.
+ * `reserve` is the numbers the CALLER is about to claim. They are not free,
+ * even though nothing holds them yet, and landing the holder on one is the
+ * defect described above.
  */
 export async function renumberHolder(
   tx: Prisma.TransactionClient,
-  args: { cycleId: string; holder: NumberHolder; to: number | null },
+  args: { cycleId: string; holder: NumberHolder; reserve?: readonly number[] },
 ): Promise<number> {
+  const reserve = args.reserve ?? [];
   const taken = await takenNumbers(tx, args.cycleId);
-  const park = Math.max(0, ...taken) + 1;
+  const park = Math.max(0, ...taken, ...reserve) + 1;
   await tx.luckyNumber.update({ where: { id: args.holder.luckyNumberId }, data: { number: park } });
+
+  // Their own number is free now — but it may be one the caller is claiming.
   taken.delete(args.holder.number);
-  const destination =
-    args.to ?? chooseAutoNumbers({ count: 1, taken: new Set([...taken, park]) })[0];
+  const blocked = new Set<number>([...taken, ...reserve, park]);
+  const destination = chooseAutoNumbers({ count: 1, taken: blocked })[0];
+
   await tx.luckyNumber.update({
     where: { id: args.holder.luckyNumberId },
     data: { number: destination },
   });
   return destination;
+}
+
+/**
+ * A true SWAP: `moving` gives up its number to `holder`, and takes the
+ * holder's in exchange.
+ *
+ * Three statements, because two cannot do it: at every point between them the
+ * unique index must hold, so one of the two rows has to be parked out of the
+ * way first.
+ *
+ *   1. `moving` parks, freeing its number
+ *   2. `holder` moves onto the freed number
+ *   3. `moving` takes the number the holder just left
+ *
+ * Nobody ends up without a number, which is the point of offering a swap
+ * rather than simply renumbering the loser.
+ */
+export async function swapNumbers(
+  tx: Prisma.TransactionClient,
+  args: {
+    cycleId: string;
+    /** The row being edited — it currently holds `from`. */
+    moving: { luckyNumberId: string; from: number };
+    /** The row holding the number `moving` wants. */
+    holder: NumberHolder;
+  },
+): Promise<void> {
+  const taken = await takenNumbers(tx, args.cycleId);
+  const park = Math.max(0, ...taken) + 1;
+
+  await tx.luckyNumber.update({
+    where: { id: args.moving.luckyNumberId },
+    data: { number: park },
+  });
+  await tx.luckyNumber.update({
+    where: { id: args.holder.luckyNumberId },
+    data: { number: args.moving.from },
+  });
+  await tx.luckyNumber.update({
+    where: { id: args.moving.luckyNumberId },
+    data: { number: args.holder.number },
+  });
 }

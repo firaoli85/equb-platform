@@ -85,7 +85,19 @@ export type RemovalConsequences = {
 
 /** The fee attributable to this member — 2% of what their payouts grossed. */
 export function feeAttributable(a: ParticipationAttachments): number {
-  const gross = a.numbers.length * a.weeklyAmount * a.weeksCommitted;
+  // NOT multiplied by the number count. `weeklyAmount` is already the whole
+  // weekly contribution; the lucky numbers are SLICES of it
+  // (lib/money.ts splitIntoLuckyNumbers returns amounts that sum to it), so a
+  // member at $2,000/week with a $1,000 unit holds two numbers and still pays
+  // $2,000 a week — not $4,000.
+  //
+  // This read `a.numbers.length * a.weeklyAmount * ...` and reported double the
+  // fee for anyone contributing more than the unit amount, on a red
+  // typed-name confirmation and then into the permanent audit entry. It was
+  // invisible on 23 of the 27 live participations because they hold one number
+  // each — and the test that pinned it used a fixture ($500/week across two
+  // numbers at a $1,000 unit) that the split can never produce.
+  const gross = a.weeklyAmount * a.weeksCommitted;
   return calculateFee(Math.max(0, gross), a.feePercent);
 }
 

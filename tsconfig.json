@@ -6,6 +6,10 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // The verification scripts are .mts run through tsx and import each other
+    // by filename. noEmit is already on, so nothing is compiled — this only
+    // lets the typechecker follow those imports instead of reporting them.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",

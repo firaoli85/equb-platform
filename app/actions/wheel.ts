@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { carryReversalClause, reverseCarryDeduction } from "@/lib/carry-reversal";
 import { refuseIfCycleClosed } from "@/lib/cycle-guard";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { formatMoney } from "@/lib/format";
@@ -794,6 +795,14 @@ export async function undoDraw(input: { drawId: string }) {
       });
 
       const { reversed, count } = await unsettleDraw(tx, draw.id);
+      // The other half of a carry deduction, per payout — undoing the draw
+      // destroys the payouts, and without this the members would keep the
+      // credit on their carried ledger for money that never left.
+      let carryRestored = 0;
+      for (const p of draw.payouts) {
+        const back = await reverseCarryDeduction(tx, p.id, "the draw was undone");
+        carryRestored += back.restored;
+      }
       await tx.payout.deleteMany({ where: { drawId: draw.id } });
       await tx.draw.delete({ where: { id: draw.id } });
 
@@ -817,6 +826,7 @@ export async function undoDraw(input: { drawId: string }) {
             ? ` (${consequences.collectedCount} already collected: ${formatMoney(consequences.collectedNet)})`
             : "") +
           (count > 0 ? `; ${count} week-settlement(s) reversed (${formatMoney(reversed)} owed again)` : "") +
+          carryReversalClause({ restored: carryRestored, entries: carryRestored > 0 ? 1 : 0 }) +
           (plan ? "; the fulfilled winner plan is PLANNED again" : ""),
         before: {
           weekNumber: draw.week.weekNumber,

@@ -373,6 +373,7 @@ model Payout {
   luckyNumber   LuckyNumber   @relation(fields: [luckyNumberId], references: [id], onDelete: Cascade)
   draw          Draw?         @relation(fields: [drawId], references: [id], onDelete: SetNull)
   settlementEvents PaymentEvent[]
+  ledgerEntries    LedgerEntry[]
   @@map("payouts")
 }
 
@@ -427,7 +428,22 @@ model LedgerEntry {
   /** The day it HAPPENED, which is not always the day it was typed in. */
   occurredAt  DateTime        @default(now())
   createdAt   DateTime        @default(now())
+  // THE PAYOUT THIS CAME OUT OF, for a carry deduction (D-23).
+  //
+  // A deduction is ONE fact in TWO rows: the payout is smaller AND the person
+  // ledger says they paid. The ledger half had no link to the payout half, so
+  // nothing could reverse it — and five paths destroy or reset a payout
+  // (delete, move, undo the draw, replace on a manual assign, remove from the
+  // cycle). Each left a PAYMENT entry reading "Deducted from payout — number
+  // #19" pointing at a payout that no longer exists, with the balance still
+  // showing as settled.
+  //
+  // Exactly the role PaymentEvent.settlementPayoutId plays for the winner-week
+  // settlement, which IS reversible for precisely this reason.
+  payoutId    String?
   person      Person          @relation(fields: [personId], references: [id])
+  payout      Payout?         @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  @@index([payoutId])
   @@map("ledger_entries")
 }
 

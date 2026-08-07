@@ -23,7 +23,8 @@ const { PrismaClient } = await import("../lib/generated/prisma/client");
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DIRECT_URL! }),
 });
-const { findNumberHolder, renumberHolder, takenNumbers } = await import("../lib/number-conflict");
+const { findNumberHolder, renumberHolder, swapNumbers, takenNumbers } =
+  await import("../lib/number-conflict");
 const { chooseAutoNumbers, describeNumberConflict } = await import("../lib/lucky-numbers");
 
 const TAG = "NumberConflict Fixture";
@@ -49,7 +50,15 @@ async function wipe() {
   await prisma.person.deleteMany({ where: { nameEnglishLast: TAG } });
 }
 
-/** Two members: Holder has #10 and #11, Rival has #20. */
+/**
+ * Two members: Holder has #10 and #11, Rival has #20.
+ *
+ * THIS FIXTURE HID TWO REAL BUGS, and the shape is why. With #1..#9 free,
+ * "the next free number" was never the contested one, so the create-path
+ * REPLACE looked correct when it was not. A real cycle numbers sequentially
+ * from 1 (lib/lucky-numbers.ts), so nothing below is free — which is the case
+ * the SEQUENTIAL section at the end of this script now covers.
+ */
 async function build() {
   const cycle = await prisma.cycle.create({
     data: {
@@ -125,7 +134,7 @@ async function main() {
 
   console.log("\nREPLACE moves the holder — through a real unique index\n");
   const landedOn = await prisma.$transaction(async (tx) =>
-    renumberHolder(tx, { cycleId: cycle.id, holder: found!, to: null }),
+    renumberHolder(tx, { cycleId: cycle.id, holder: found!, reserve: [10] }),
   );
   const after = await prisma.luckyNumber.findMany({
     where: { cycleId: cycle.id },
@@ -227,6 +236,108 @@ async function main() {
     fresh[0] === 1 && fresh[1] === 2,
     fresh.join(","),
   );
+
+  // ————————————————————————————————————————————————————————————————
+  // THE CASE THE ORIGINAL FIXTURE HID.
+  //
+  // Everything above ran on a cycle numbered 10, 11, 20 — so #1..#9 were free
+  // and "the next free number" was never the contested one. A real cycle is
+  // numbered sequentially from 1, and on that shape BOTH replace paths were
+  // dead:
+  //
+  //   the SWAP moved the holder onto a number this row still held → P2002 →
+  //     "Number N is already taken in this cycle", the exact dead end the
+  //     feature exists to replace;
+  //   the CREATE path renumbered the holder straight back onto the contested
+  //     number, so the member who asked for it still could not have it.
+  //
+  // Both are reproduced here on 1, 2, 3 — no gaps, nothing free below.
+  // ————————————————————————————————————————————————————————————————
+  console.log("\nA SEQUENTIALLY NUMBERED cycle — nothing free below\n");
+
+  const third = await prisma.cycle.create({
+    data: {
+      name: TAG,
+      startDate: new Date(Date.UTC(2026, 8, 6)),
+      plannedWeeks: 4,
+      unitAmount: 100_000,
+      feePercent: 2,
+      status: "DRAFT",
+    },
+  });
+  const seqMk = async (name: string, numbers: number[]) => {
+    const person = await prisma.person.create({
+      data: { nameAmharic: name, nameEnglishFirst: name, nameEnglishLast: TAG },
+    });
+    const part = await prisma.participation.create({
+      data: {
+        cycleId: third.id,
+        personId: person.id,
+        weeklyAmount: 100_000 * numbers.length,
+        startWeek: 1,
+        weeksCommitted: 4,
+      },
+    });
+    for (const n of numbers) {
+      await prisma.luckyNumber.create({
+        data: { cycleId: third.id, participationId: part.id, number: n, amount: 100_000 },
+      });
+    }
+    return part;
+  };
+  await seqMk("Abebe", [1, 2]);
+  await seqMk("Meheret", [3]);
+
+  // THE SWAP: Abebe edits his #1 to #3, which Meheret holds. REPLACE must
+  // leave Abebe on #3 and Meheret on #1 — nobody without a number.
+  let swapError: string | null = null;
+  try {
+    await prisma.$transaction(async (tx) => {
+      const moving = await tx.luckyNumber.findFirstOrThrow({
+        where: { cycleId: third.id, number: 1 },
+      });
+      const h = await findNumberHolder(tx, { cycleId: third.id, number: 3 });
+      await swapNumbers(tx, {
+        cycleId: third.id,
+        moving: { luckyNumberId: moving.id, from: 1 },
+        holder: h!,
+      });
+    });
+  } catch (e) {
+    swapError = e instanceof Error ? e.message : String(e);
+  }
+  check("the SWAP completes against a real unique index", swapError === null, swapError ?? "");
+
+  const swapped = new Map(
+    (
+      await prisma.luckyNumber.findMany({
+        where: { cycleId: third.id },
+        select: {
+          number: true,
+          participation: { select: { person: { select: { nameEnglishFirst: true } } } },
+        },
+      })
+    ).map((n) => [n.number, n.participation.person.nameEnglishFirst]),
+  );
+  check("the mover took the contested number", swapped.get(3) === "Abebe", String(swapped.get(3)));
+  check("the holder took the vacated one", swapped.get(1) === "Meheret", String(swapped.get(1)));
+  check("nobody was left without a number", swapped.size === 3, `${swapped.size} numbers`);
+  check("the mover's OTHER number is untouched", swapped.get(2) === "Abebe");
+
+  // THE CREATE PATH: a new member claims #3 with nothing free below it.
+  const landedSeq = await prisma.$transaction(async (tx) => {
+    const h = await findNumberHolder(tx, { cycleId: third.id, number: 3 });
+    return renumberHolder(tx, { cycleId: third.id, holder: h!, reserve: [3] });
+  });
+  check(
+    `the holder did NOT land back on the contested number (landed on #${landedSeq})`,
+    landedSeq !== 3,
+    `landed on #${landedSeq}`,
+  );
+  const freedNow = await prisma.luckyNumber.findFirst({
+    where: { cycleId: third.id, number: 3 },
+  });
+  check("#3 is genuinely free for the new member", freedNow === null);
 }
 
 try {

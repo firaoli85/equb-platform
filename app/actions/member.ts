@@ -24,15 +24,53 @@ import { createClient } from "@/lib/supabase/server";
 // amounts, numbers, and payout are theirs to see; nobody else's ever
 // appear in these payloads.
 
+/**
+ * WHICH PARTICIPATION THE MEMBER'S PORTAL SHOWS.
+ *
+ * Live cycle first. When there is none, THEIR LAST ONE — whatever its status.
+ *
+ * THE DEFECT THIS CLOSES. Every member query was gated on
+ * `cycle: { status: "ACTIVE" }`, so the instant the organizer closed a cycle
+ * all 27 members lost their entire record: `/me` rendered 0 weeks paid, 0 late,
+ * 0 total, plus "You are not in the current cycle. Contact the organizer to
+ * join." A member who completed all 20 weeks and a member now carrying a
+ * $2,000 debt saw the identical empty screen — on the very day the closing
+ * statement told them to go and look.
+ *
+ * Ground truth 2.18 already said otherwise: *"Closed members stay visible —
+ * not removed from the cycle. They keep access to their own record and can see
+ * where they stopped. Dignity, and a useful record for them."* That applies to
+ * a closed CYCLE exactly as it applies to a closed participation, which is why
+ * neither status is filtered here.
+ */
+async function portalParticipation(
+  personId: string,
+): Promise<{ id: string; readOnly: boolean } | null> {
+  const live = await prisma.participation.findFirst({
+    where: { personId, status: "ACTIVE", cycle: { status: "ACTIVE" } },
+    select: { id: true },
+  });
+  if (live) return { id: live.id, readOnly: false };
+
+  const last = await prisma.participation.findFirst({
+    where: { personId },
+    orderBy: [{ cycle: { startDate: "desc" } }, { createdAt: "desc" }],
+    select: { id: true },
+  });
+  return last ? { id: last.id, readOnly: true } : null;
+}
+
 export async function getMyPortal() {
   try {
     const linked = await linkCurrentUserToPerson();
     if (!linked.ok) return { ok: false as const, error: "signed-out" };
     const person = linked.data;
 
-    const participation = await prisma.participation.findFirst({
-      where: { personId: person.id, status: "ACTIVE", cycle: { status: "ACTIVE" } },
-      include: {
+    const which = await portalParticipation(person.id);
+    const participation = which
+      ? await prisma.participation.findUnique({
+          where: { id: which.id },
+          include: {
         cycle: { include: { weeks: { orderBy: { weekNumber: "asc" } } } },
         payments: { include: { week: { select: { weekNumber: true, isSkipped: true } } } },
         // EVERY receipt: their total contributed is the sum of these (2.14).
@@ -54,8 +92,9 @@ export async function getMyPortal() {
             },
           },
         },
-      },
-    });
+          },
+        })
+      : null;
 
     const base = {
       person: {
@@ -143,6 +182,11 @@ export async function getMyPortal() {
         participation: {
           id: participation.id,
           cycleName: participation.cycle.name,
+          // 2.18 — a closed cycle is still THEIR record. The portal renders it
+          // as a final statement rather than pretending they were never in a
+          // cycle, which is what it did before.
+          cycleClosed: participation.cycle.status === "CLOSED",
+          cycleClosedAt: participation.cycle.closedAt?.toISOString() ?? null,
           cycleWeek,
           startWeek: participation.startWeek,
           finishWeek,
