@@ -59,13 +59,32 @@ export function firebaseClientConfigured(): boolean {
   return Boolean(c.apiKey && c.authDomain && c.projectId && c.appId);
 }
 
-let cachedApp: FirebaseApp | null = null;
+// INITIALISED AT MODULE LOAD, exactly as the working build does it
+// (equb-app/src/lib/firebase.ts):
+//
+//     const app = getApps().length === 0 ? initializeApp(cfg) : getApps()[0];
+//     export const auth = getAuth(app);
+//
+// This was the last structural difference between the two apps. Here it used
+// to be LAZY — initializeApp and getAuth ran inside the click handler, a few
+// milliseconds before RecaptchaVerifier was constructed and
+// signInWithPhoneNumber was called. Doing it at module load means Firebase is
+// ready from the moment the login page's JS evaluates, and reCAPTCHA has the
+// whole time the member spends typing their number to load and settle,
+// instead of being started and used in the same tick.
+//
+// The one thing NOT copied verbatim is the crash on missing config: this
+// platform renders /login for deployments with no Firebase at all (2.28), so
+// a missing config yields null rather than throwing at import time.
+const app: FirebaseApp | null = firebaseClientConfigured()
+  ? getApps().length === 0
+    ? initializeApp(config())
+    : getApps()[0]
+  : null;
+
+const auth: Auth | null = app ? getAuth(app) : null;
 
 /** The Firebase Auth instance, or null when SMS login is not configured. */
 export function firebaseAuth(): Auth | null {
-  if (!firebaseClientConfigured()) return null;
-  if (!cachedApp) {
-    cachedApp = getApps().length === 0 ? initializeApp(config()) : getApps()[0];
-  }
-  return getAuth(cachedApp);
+  return auth;
 }

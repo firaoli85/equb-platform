@@ -257,6 +257,53 @@ emerald = good/complete, gray = neutral.
 
 ---
 
+## 10b. Overlays
+
+> **Every modal and sheet is portalled to `document.body` and positioned against
+> the viewport. A transform on ANY ancestor silently breaks `position: fixed`.**
+
+**The mechanism, because it is invisible.** Any element with a non-`none`
+`transform`, `filter`, `perspective`, `will-change: transform`, or
+`contain: paint` becomes the **containing block** for its `position: fixed`
+descendants. `inset-0` then resolves against *that element*, not the viewport.
+
+**How it actually failed here.** A confirmation on `/admin/collections` rendered
+near the bottom of the document. It already used `position: fixed`. The breaker
+was `<div class="animate-fade-in-up-2">`, whose finished CSS animation leaves:
+
+```
+transform: matrix(1, 0, 0, 1, 0, 0)
+```
+
+An **identity** transform — visually nothing at all, and still enough. Measured
+at `scrollY 1019` in a 569px viewport, the panel's top sat at **−191px**.
+
+Nobody adding a fade-in animation to a card would expect it to move a dialog on
+another part of the page. That is why the rule is *always portal*, not *avoid
+transforms*.
+
+**Required of every modal / sheet:**
+
+1. `createPortal` into `document.body` — never rendered inline at the trigger.
+2. Overlay `position: fixed; inset: 0`, high z-index, centred with flexbox.
+3. Body scroll locked while open, and the **exact** scroll position restored on
+   close. `overflow: hidden` alone does not hold iOS Safari; pin the body with
+   `position: fixed; top: -{scrollY}px` and put it back.
+4. Focus trapped inside; Escape closes; **focus returns to the trigger**.
+5. Long content scrolls **inside** the panel (`max-h-[85dvh]` + `overflow-y-auto`),
+   never pushing past the top and bottom of the screen.
+6. At 390px: full width minus margins, never wider than the viewport.
+
+**Anchored popovers (select, date picker) are a different case.** They use
+`position: absolute` inside their own `relative` wrapper, so they resolve
+against that wrapper and ancestor transforms do **not** move them. Their failure
+mode is *clipping*, not mispositioning: an ancestor with `overflow: hidden|auto`
+cuts them off. `Table` wraps its children in `overflow-x-auto`, so a popover
+rendered inside a table is at risk and needs portalling with measured anchor
+positioning.
+
+---
+
 ## 11. Layout and responsive
 
 - **Breakpoints:** 390 (mobile), 768 (tablet), 1280 (admin desktop).

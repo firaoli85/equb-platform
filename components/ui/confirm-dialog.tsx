@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "@/lib/motion-tokens";
 
@@ -9,6 +10,28 @@ import { motionTokens } from "@/lib/motion-tokens";
 // default; the destructive button is unmistakably destructive; HIGH-STAKES
 // actions require typing a confirmation phrase before the button enables.
 // Focus-trapped, Escape cancels, tokens in both themes.
+//
+// PORTALLED TO BODY, and this is not optional.
+//
+// Reported from real use: scrolled down /admin/collections, opened a
+// confirmation, and it rendered near the bottom of the DOCUMENT instead of
+// centred on screen. Measured at scrollY 1019 in a 569px viewport, the panel's
+// top was at −191px — entirely above the fold.
+//
+// The cause was NOT `position: absolute`. The dialog already used
+// `position: fixed`. It was rendered inline inside
+// `<div class="animate-fade-in-up-2">`, whose finished CSS animation leaves
+//
+//     transform: matrix(1, 0, 0, 1, 0, 0)
+//
+// an IDENTITY transform — visually nothing, but any non-`none` transform makes
+// that element the containing block for its fixed-position descendants. So
+// `inset-0` resolved against a card partway down the page rather than the
+// viewport.
+//
+// Rendering into document.body removes every ancestor from the equation, which
+// is the only fix that cannot be broken again by someone adding an animation
+// to an unrelated wrapper.
 
 export type ConfirmSpec = {
   title: string;
@@ -66,6 +89,11 @@ export function ConfirmDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [typed, setTyped] = useState("");
+  // createPortal needs a real document; on the server there is none.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  /** Whatever had focus when the dialog opened, so it can be handed back. */
+  const returnFocusTo = useRef<HTMLElement | null>(null);
 
   const open = spec !== null;
   const phraseOk = !spec?.requirePhrase || typed.trim() === spec.requirePhrase;
@@ -83,6 +111,11 @@ export function ConfirmDialog({
       setTyped("");
       return;
     }
+    // Remember the trigger so focus can go back to it on close — otherwise
+    // focus falls to the top of the document and a keyboard user has to tab
+    // all the way back to where they were.
+    returnFocusTo.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     // Cancel is the safe default focus.
     cancelRef.current?.focus();
 
@@ -110,14 +143,37 @@ export function ConfirmDialog({
       }
     }
     document.addEventListener("keydown", onKey);
+
+    // SCROLL LOCK that restores the exact position.
+    //
+    // `overflow: hidden` alone does not hold the page still on iOS Safari, and
+    // pinning the body with `position: fixed` collapses it to the top — the
+    // page appears to jump to the beginning behind the dialog and stays there
+    // after closing. Capturing scrollY, offsetting the body by it, and putting
+    // it back on close keeps the page exactly where it was.
+    const scrollY = window.scrollY;
+    const { overflow, position, top, width } = document.body.style;
     document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
+
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      document.body.style.overflow = overflow;
+      document.body.style.position = position;
+      document.body.style.top = top;
+      document.body.style.width = width;
+      // `instant` — an animated scroll here reads as the page lurching after
+      // the dialog closes.
+      window.scrollTo({ top: scrollY, behavior: "instant" as ScrollBehavior });
+      returnFocusTo.current?.focus?.();
     };
   }, [open, onCancel]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence>
       {open && spec && (
         <>
@@ -128,10 +184,12 @@ export function ConfirmDialog({
             exit={{ opacity: 0, transition: { duration: motionTokens.duration.fast * 0.65 } }}
             transition={{ duration: motionTokens.duration.fast }}
             onClick={onCancel}
-            className="fixed inset-0 z-50 bg-black/50"
+            className="fixed inset-0 z-[100] bg-black/50"
             aria-hidden="true"
           />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          {/* Centred against the VIEWPORT. p-4 gives the panel margins at
+              390px so it is never wider than the screen. */}
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 pointer-events-none">
             <motion.div
               key="panel"
               ref={panelRef}
@@ -147,7 +205,11 @@ export function ConfirmDialog({
                 transition: { duration: motionTokens.duration.fast * 0.65, ease: motionTokens.easing.smooth },
               }}
               transition={{ duration: motionTokens.duration.fast, ease: motionTokens.easing.smooth }}
-              className="pointer-events-auto w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] p-5 shadow-xl shadow-black/20 dark:shadow-black/60"
+              // max-h + overflow: a long consequence list scrolls INSIDE the
+              // dialog rather than pushing it past the top and bottom of the
+              // screen, which is what makes a tall confirmation unreadable on
+              // a phone.
+              className="pointer-events-auto flex max-h-[85dvh] w-full max-w-md flex-col overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] p-5 shadow-xl shadow-black/20 dark:shadow-black/60"
             >
               <h2 className="text-base font-black text-gray-900 dark:text-white">{spec.title}</h2>
 
@@ -241,6 +303,7 @@ export function ConfirmDialog({
           </div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

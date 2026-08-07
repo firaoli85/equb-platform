@@ -175,10 +175,30 @@ export function securityHeaders(input: PolicyInput): HeaderPair[] {
     // legacy header for older browsers.
     { key: "X-Frame-Options", value: "DENY" },
     { key: "X-Content-Type-Options", value: "nosniff" },
-    // Member and admin URLs carry person ids — never leak a path to another
-    // origin. Next's Server Action CSRF check uses Origin, not Referer, so
-    // nothing in the app depends on referrers being sent.
-    { key: "Referrer-Policy", value: "no-referrer" },
+    // Member and admin URLs carry person ids — never leak a PATH to another
+    // origin. That is what this header is for, and it still holds: cross-origin
+    // requests send the bare origin and nothing else.
+    //
+    // NOT "no-referrer", though it was until this was measured. reCAPTCHA
+    // validates the site key against the requesting DOMAIN, and it reads that
+    // domain from the Referer header on its own script and iframe loads. With
+    // "no-referrer" those requests arrive with no Referer at all, so the token
+    // reCAPTCHA issues is not bound to an authorised domain and Google's
+    // verification rejects it — surfacing as auth/invalid-app-credential from
+    // accounts:sendVerificationCode, with a well-formed token and no CSP
+    // violation anywhere to explain it.
+    //
+    // Measured, not reasoned: the same login flow was captured on this app and
+    // on the previous build that works. Every field of the sendVerificationCode
+    // request was identical — same apiKey, same clientType, same
+    // recaptchaVersion, same site key. The ONLY difference was that reCAPTCHA
+    // received "Referer: http://localhost:3010/" there and nothing here.
+    //
+    // "strict-origin-when-cross-origin" is the browser default: full URL
+    // same-origin, origin only cross-origin, nothing at all on an
+    // https→http downgrade. reCAPTCHA gets the domain it needs; person ids
+    // still never leave this origin.
+    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     {
       key: "Permissions-Policy",
       value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",

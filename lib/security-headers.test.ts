@@ -36,7 +36,25 @@ describe("audit H6 — the four required headers are present", () => {
       "max-age=63072000; includeSubDomains; preload",
     );
     expect(headers["X-Frame-Options"]).toBe("DENY");
-    expect(headers["Referrer-Policy"]).toBe("no-referrer");
+    expect(headers["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
+  });
+
+  // REGRESSION. "no-referrer" was sent here until it was measured against the
+  // working build: it strips the Referer from reCAPTCHA's own script and iframe
+  // loads, reCAPTCHA cannot then bind its token to an authorised domain, and
+  // SMS login dies with auth/invalid-app-credential — a failure with no CSP
+  // violation and no malformed field to point at. The policy must still hide
+  // the PATH (person ids live there); it must not hide the origin.
+  it("does not strip the Referer entirely — reCAPTCHA needs the origin to issue a valid token", () => {
+    const policy = asMap(prod)["Referrer-Policy"];
+    expect(policy).not.toBe("no-referrer");
+    expect(policy).not.toBe("same-origin");
+    // The surviving policies all send the origin cross-origin and withhold the path.
+    expect(["strict-origin", "strict-origin-when-cross-origin", "origin"]).toContain(policy);
+  });
+
+  it("uses the same Referrer-Policy in development, so localhost matches production", () => {
+    expect(asMap(dev)["Referrer-Policy"]).toBe(asMap(prod)["Referrer-Policy"]);
   });
 
   it("adds the standard companions: nosniff, Permissions-Policy, no DNS prefetch", () => {
