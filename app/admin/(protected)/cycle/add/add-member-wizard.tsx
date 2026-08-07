@@ -8,6 +8,7 @@ import {
   type SavedParticipation,
 } from "@/app/actions/participations";
 import { recordCarryDecision } from "@/app/actions/ledger";
+import { NumberConflictPanel } from "@/components/admin/number-conflict-panel";
 import { Radio } from "@/components/ui/controls";
 import {
   commitmentCap,
@@ -19,7 +20,11 @@ import {
   weeksToFinishWithGroup,
 } from "@/lib/commitment";
 import { formatDateLongUTC, formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
-import { chooseAutoNumbers, validateManualNumbers } from "@/lib/lucky-numbers";
+import {
+  chooseAutoNumbers,
+  validateManualNumbers,
+  type NumberConflict,
+} from "@/lib/lucky-numbers";
 import {
   calculateFee,
   calculateFinishWeek,
@@ -142,6 +147,10 @@ export function AddMemberWizard({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A typed number already in use: the server hands back WHO holds it and what
+  // is free, and this panel turns that into the two real options. Nothing is
+  // applied until one of them is pressed.
+  const [conflict, setConflict] = useState<NumberConflict | null>(null);
 
   const selectedPerson = people.find((p) => p.id === personId) ?? null;
   const displayName =
@@ -261,7 +270,7 @@ export function AddMemberWizard({
     setStep(next);
   }
 
-  async function handleSave() {
+  async function handleSave(onConflict?: "replace") {
     if (!step1Valid || !step2Valid || !step3Valid) return;
     setError(null);
     setSaving(true);
@@ -273,6 +282,8 @@ export function AddMemberWizard({
         weeksCommitted,
         extendPastPlannedEnd: extendPastEnd,
         numbers: manualNumbers ? parsedManual : undefined,
+        // Absent unless the organizer has pressed REPLACE on the panel below.
+        onConflict,
       };
       const result =
         mode === "existing"
@@ -285,9 +296,17 @@ export function AddMemberWizard({
               phone: newPerson.phone || undefined,
             });
       if (!result.ok) {
+        // A NUMBER ALREADY IN USE IS A CHOICE, NOT A DEAD END. The server hands
+        // back who holds it, whether it can be taken, and which number is
+        // free; the panel turns that into the two real options.
+        if ("conflict" in result && result.conflict) {
+          setConflict(result.conflict);
+          return;
+        }
         setError(result.error);
         return;
       }
+      setConflict(null);
       // 2.18: the decision about their carried balance goes into the record.
       // Nothing about the balance changes — "deduct" is an intention, and the
       // deduction itself is still OFFERED at payout time, never automatic.
@@ -296,13 +315,13 @@ export function AddMemberWizard({
           personId: selectedPerson.id,
           // D-2: the intention is stored against THIS participation, so it
           // resurfaces as a pre-ticked offer when they are paid out.
-          participationId: result.data.id,
+          participationId: result.data!.id,
           cycleName: cycle.name,
           choice: carryChoice,
           balance: carried,
         });
       }
-      setSaved(result.data);
+      setSaved(result.data!);
       router.refresh();
     } catch {
       setError(
@@ -599,6 +618,8 @@ export function AddMemberWizard({
                         const next = [...numberInputs];
                         next[i] = e.target.value;
                         setNumberInputs(next);
+                        // Editing the number answers the conflict by itself.
+                        setConflict(null);
                       }}
                       className="w-24 rounded border border-gray-400 px-2 py-1"
                     />
@@ -779,6 +800,28 @@ export function AddMemberWizard({
             </p>
           )}
 
+          {/* A number already in use is a choice, not a dead end — the same
+              panel the member profile shows, from the same server reply. */}
+          {conflict && (
+            <NumberConflictPanel
+              conflict={conflict}
+              busy={saving}
+              onReplace={() => void handleSave("replace")}
+              onKeep={(suggested) => {
+                // Write the free number into the field it clashed on, so the
+                // organizer sees exactly what they are about to save.
+                const at = parsedManual.findIndex((n) => n === conflict.number);
+                if (at >= 0) {
+                  const next = [...numberInputs];
+                  next[at] = String(suggested);
+                  setNumberInputs(next);
+                }
+                setConflict(null);
+              }}
+              onDismiss={() => setConflict(null)}
+            />
+          )}
+
           <div className="flex gap-3">
             <button type="button" onClick={() => goToStep(3)} className="rounded border border-gray-400 px-4 py-2 text-sm">
               Back
@@ -786,7 +829,7 @@ export function AddMemberWizard({
             <button
               type="button"
               disabled={saving}
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             >
               {saving ? "Saving…" : "Save"}

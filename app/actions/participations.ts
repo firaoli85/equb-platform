@@ -6,7 +6,13 @@ import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { chooseAutoNumbers, validateManualNumbers } from "@/lib/lucky-numbers";
+import {
+  chooseAutoNumbers,
+  describeNumberConflict,
+  validateManualNumbers,
+  type NumberConflict,
+} from "@/lib/lucky-numbers";
+import { findNumberHolder, renumberHolder, takenNumbers } from "@/lib/number-conflict";
 import { calculateFinishWeek, splitIntoLuckyNumbers } from "@/lib/money";
 import {
   ensureWeeksThrough,
@@ -32,6 +38,11 @@ export type ParticipationFields = {
    * cycle before saving, with the unique constraint as durable backstop.
    */
   numbers?: number[];
+  /**
+   * The organizer's answer when a typed number is already in use. Absent =
+   * ASK, never assume: the action returns the conflict and writes nothing.
+   */
+  onConflict?: "replace";
 };
 
 export type AddToCycleInput = ParticipationFields & {
@@ -75,8 +86,45 @@ async function createParticipationWithNumbers(
     unitAmount: number;
     manualNumbers?: number[];
     preferredNumbers?: number[];
+    onConflict?: "replace";
   },
 ) {
+  const amounts = splitIntoLuckyNumbers(args.weeklyAmount, args.unitAmount);
+  const taken = await takenNumbers(tx, args.cycleId);
+
+  // THE CONFLICT IS RESOLVED BEFORE ANYTHING IS CREATED.
+  //
+  // A taken number used to produce "Number 22 is already taken in this cycle"
+  // — true, and useless: it does not say who has it, and it leaves the
+  // organizer guessing. The member profile already offered REPLACE or KEEP;
+  // the wizard, where most numbers are first assigned, did not. Same rule, one
+  // module (lib/number-conflict.ts + lib/lucky-numbers.ts).
+  //
+  // Ordered first so the participation row is never created for a save that is
+  // about to be refused — the transaction would roll back either way, but a
+  // returned conflict is not an exception and must not leave a half-built
+  // record behind it.
+  let conflict: NumberConflict | null = null;
+  if (args.manualNumbers) {
+    for (const number of args.manualNumbers) {
+      const holder = await findNumberHolder(tx, { cycleId: args.cycleId, number });
+      if (!holder) continue;
+      const described = describeNumberConflict({ number, holder, taken });
+      // REPLACE is refused outright when the number is drawn or carries a
+      // payout — that number IS the record of a week they won.
+      if (args.onConflict !== "replace" || described.replaceRefusal) {
+        conflict = described;
+        break;
+      }
+      // No number is being vacated here (nothing exists yet), so the holder
+      // moves to the next free value rather than swapping.
+      const landedOn = await renumberHolder(tx, { cycleId: args.cycleId, holder, to: null });
+      taken.delete(number);
+      taken.add(landedOn);
+    }
+    if (conflict) return { conflict };
+  }
+
   const participation = await tx.participation.create({
     data: {
       cycleId: args.cycleId,
@@ -86,13 +134,6 @@ async function createParticipationWithNumbers(
       weeksCommitted: args.weeksCommitted,
     },
   });
-
-  const amounts = splitIntoLuckyNumbers(args.weeklyAmount, args.unitAmount);
-  const existing = await tx.luckyNumber.findMany({
-    where: { cycleId: args.cycleId },
-    select: { number: true },
-  });
-  const taken = new Set(existing.map((n) => n.number));
 
   let numbers: number[];
   if (args.manualNumbers) {
@@ -166,7 +207,7 @@ async function createParticipationWithNumbers(
       numbersChosenBy: args.manualNumbers ? "organizer" : "auto",
     },
   });
-  return full;
+  return { participation: full };
 }
 
 /**
@@ -233,7 +274,7 @@ export async function addToCycle(input: AddToCycleInput) {
 
     // Serializable so two concurrent saves can never read the same free
     // lucky numbers and both assign them.
-    const participation = await serializableTransaction(async (tx) => {
+    const outcome = await serializableTransaction(async (tx) => {
       await ensureWeeksThrough(
         tx,
         cycle,
@@ -248,13 +289,19 @@ export async function addToCycle(input: AddToCycleInput) {
         unitAmount: cycle.unitAmount,
         manualNumbers: input.numbers,
         preferredNumbers: preferred,
+        onConflict: input.onConflict,
       });
     });
+
+    // A conflict is a REFUSAL carrying the choice, not a failure: the
+    // transaction rolled back and nothing was written.
+    const conflict = outcome.conflict ?? null;
+    if (conflict) return { ok: false as const, error: conflict.message, conflict };
 
     revalidatePath("/admin/cycle");
     revalidatePath("/admin/cycle/add");
     revalidatePath("/admin/people");
-    return { ok: true as const, data: participation };
+    return { ok: true as const, data: outcome.participation };
   } catch (e) {
     if (isDuplicateParticipation(e)) {
       return { ok: false as const, error: "This person is already in this cycle." };
@@ -286,7 +333,7 @@ export async function addNewPersonToCycle(input: AddNewPersonToCycleInput) {
     const capError = validateCommitmentCap(cycle, input);
     if (capError) return { ok: false as const, error: capError };
 
-    const participation = await serializableTransaction(async (tx) => {
+    const outcome = await serializableTransaction(async (tx) => {
       await ensureWeeksThrough(
         tx,
         cycle,
@@ -309,13 +356,17 @@ export async function addNewPersonToCycle(input: AddNewPersonToCycleInput) {
         unitAmount: cycle.unitAmount,
         // A brand-new person has no previous cycle to carry numbers from.
         manualNumbers: input.numbers,
+        onConflict: input.onConflict,
       });
     });
+
+    const conflict = outcome.conflict ?? null;
+    if (conflict) return { ok: false as const, error: conflict.message, conflict };
 
     revalidatePath("/admin/cycle");
     revalidatePath("/admin/cycle/add");
     revalidatePath("/admin/people");
-    return { ok: true as const, data: participation };
+    return { ok: true as const, data: outcome.participation };
   } catch (e) {
     console.error("addNewPersonToCycle failed:", e);
     return { ok: false as const, error: `Could not save. ${errorMessage(e)}` };

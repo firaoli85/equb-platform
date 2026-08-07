@@ -11,6 +11,12 @@
 //   - removing ONE winner returns ONLY that number and leaves the others
 //   - moving a payout carries its settlement: old week owed again, new settled
 //   - nothing is orphaned afterwards
+//   - THE LAST WINNER LEAVING frees the week entirely: the Draw is deleted, the
+//     emptied slot is released, and the week accepts a NEW draw — which is the
+//     only honest proof it is selectable again, since @@unique([weekId]) is
+//     what refused it while the half-state survived. This is the defect the
+//     organizer hit on live week 6; every step above deliberately left another
+//     winner behind, so none of them exercised it.
 
 import { config } from "dotenv";
 config({ path: ".env.local", quiet: true });
@@ -21,6 +27,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DIRECT_URL! }),
 });
 const { settleWinnerWeeks, unsettlePayout } = await import("../lib/draw-settlement");
+const { deleteDrawIfEmpty } = await import("../lib/draw-cascade");
 const { calculatePayout } = await import("../lib/wheel");
 const { formatMoney } = await import("../lib/format");
 
@@ -251,6 +258,66 @@ const orphanEvents = await prisma.paymentEvent.count({
   where: { settlementPayoutId: abebePayout.id },
 });
 check("no settlement events left pointing at the deleted payout", orphanEvents === 0);
+
+// ————————————————— 5. THE LAST WINNER LEAVES —————————————————
+//
+// THE DEFECT THE ORGANIZER HIT, reproduced. Every step above left the week
+// with another winner, so the Draw survived legitimately and the cascade was
+// never exercised. This is the case that broke live week 6: the week's ONLY
+// winner leaves, and the Draw has nothing left to record.
+//
+// A Draw with zero payouts is worse than useless. @@unique([weekId]) means the
+// week can never be drawn again, every picker labels it "already drawn" with
+// no amount, and any number still in its slot is out of the pool for good.
+
+console.log("\n5. The LAST winner leaves week 2 — the week must become UNDRAWN");
+
+// Week 2 now holds nobody (Abebe was removed in step 3), so its draw is the
+// half-state. Run the cascade the app runs on every edit.
+const freed = await prisma.$transaction(async (tx) => deleteDrawIfEmpty(tx, draw2.id));
+
+check("the cascade reports the draw as deleted", freed.deleted);
+check("and names the week it freed", freed.weekNumber === 2, String(freed.weekNumber));
+
+const draw2After = await prisma.draw.findUnique({ where: { id: draw2.id } });
+check("the Draw row is GONE", draw2After === null);
+
+const slot2After = await prisma.slot.findUnique({ where: { id: slot2.id } });
+check("the emptied slot was released, freeing its position", slot2After === null);
+
+// The week is selectable again — proven by actually drawing it, which
+// @@unique([weekId]) would have refused while the old draw survived.
+const proofSlot = await prisma.slot.create({
+  data: {
+    cycleId: cycle.id,
+    position: 90,
+    members: { create: [{ luckyNumberId: abebe.luckyNumber.id }] },
+  },
+});
+let redrawn = false;
+try {
+  const proofDraw = await prisma.draw.create({ data: { weekId: week2.id, slotId: proofSlot.id } });
+  redrawn = true;
+  await prisma.draw.delete({ where: { id: proofDraw.id } });
+} catch {
+  redrawn = false;
+}
+await prisma.slot.delete({ where: { id: proofSlot.id } });
+check("week 2 accepts a NEW draw — it is genuinely selectable again", redrawn);
+
+// And week 1, which still holds Hana, must be untouched by all of this.
+const week1Draw = await prisma.draw.findFirst({ where: { weekId: week1.id } });
+check("week 1's draw SURVIVED — a week with a winner is never freed", week1Draw !== null);
+
+const stillEmpty = await prisma.draw.findMany({
+  where: { week: { cycleId: cycle.id } },
+  include: { payouts: { select: { id: true } } },
+});
+check(
+  "no draw in the cycle holds zero payouts",
+  stillEmpty.every((d) => d.payouts.length > 0),
+  `${stillEmpty.filter((d) => d.payouts.length === 0).length} empty`,
+);
 
 // ————————————————— Cleanup —————————————————
 

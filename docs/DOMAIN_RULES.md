@@ -464,6 +464,59 @@ never fires), **plus a source guard** proven non-vacuous by planting an
 
 ---
 
+## 16. Actions cascade, and surfaces read live state
+
+> **No row may survive the thing that gave it meaning, and every screen must show the
+> state as it is now.**
+
+Two halves of one rule, and the live defect that named it failed both.
+
+**The defect.** Week 6's only winner was moved to week 7. The payout moved, the slot
+membership moved, and the `Draw` stayed behind. `Draw` has `@@unique([weekId])`, so week 6
+was then counted as drawn (no new draw possible, every picker labelled it "already drawn"),
+holding nothing (so the label quoted no money while every other drawn week did), and
+impossible to assign to. The number in its slot was out of the pool permanently.
+
+**The cascade.** A `Draw` is the recorded fact that a slot WON a week. Once its last payout
+leaves — by move, by remove, or by deleting the payout — no win is recorded, so the draw
+goes with it. Deleting the draw is what returns the numbers: drawn-ness is *derived* from
+`draw.slot.members` (`lib/wheel.ts` `eligibleNumbers`), never stored on the number. Four
+paths can empty a draw and three had no cleanup, so the rule lives in one place —
+`deleteDrawIfEmpty` in `lib/draw-cascade.ts` — with the fulfilled winner plan restored to
+PLANNED and an emptied slot released, in that order.
+
+**The vacuous-plan trap, found on live week 11.** `WinnerPlanNumber` cascades when a
+`LuckyNumber` is deleted, so removing a member can hollow out a PLANNED plan without the
+organizer touching it. `selectWinningSlot` matches with `plan.luckyNumberIds.every(...)`,
+and **`[].every(...)` is vacuously TRUE** — an emptied plan therefore matches the FIRST
+eligible slot and silently decides the draw, audited as an intentional "planned" win rather
+than a spin. There is no honest reading of a plan with no numbers, so `purgeEmptyWinnerPlans`
+deletes it.
+
+**Surfaces read live state.** Both week pickers build from every week of the cycle with its
+current draw and payout totals — not from the payout groups above them, which never offered
+a free week and kept listing a week the organizer had just emptied. A week freed a moment
+ago is selectable immediately. **Moving a winner into an UNDRAWN week is allowed**; only a
+week carrying a committed plan is refused, with the reason (2.3).
+
+**A number already in use is a choice, not a dead end.** "Number 22 is already taken in
+this cycle" is true and useless: it names neither the holder nor a way forward. Every
+assignment path now returns WHO holds it, whether it can be taken, and which number is
+free — REPLACE renumbers the holder through a two-step park (`@@unique([cycleId, number])`
+is checked per statement, not deferred), KEEP writes the free number into the field.
+REPLACE is refused when the number is drawn or carries a payout: that number IS the record
+of a week they won.
+
+**Pinned by:** `lib/draw-cascade.test.ts` and `lib/week-winners.test.ts` (48 tests);
+`lib/lucky-numbers.test.ts` including a source guard — proven non-vacuous by planting
+`const holder = null` — that both assignment paths *call* the shared resolver rather than
+merely importing it, that the park exists in one place, and that both screens show the one
+panel; `scripts/verify-number-conflict.mts` (18 checks against a real unique index);
+`scripts/audit-empty-draws.mts` (live, read-only) and `scripts/repair-empty-draws.mts`
+(dry-run by default) for data that predates the fix.
+
+---
+
 ## Rules with no test
 
 **This list is the work.** Each entry is a rule that is real, is implemented, and is

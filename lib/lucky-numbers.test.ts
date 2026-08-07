@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   chooseAutoNumbers,
@@ -181,5 +183,76 @@ describe("a lucky number already in use — say so, then offer replace or keep",
       vacating: 5,
     });
     expect(c.message).toContain("Meheret would take #5");
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// GUARD — every path that assigns a lucky number offers the same choice.
+//
+// The replace/keep choice was built on the member profile's number rows and
+// nowhere else, so the ADD-MEMBER WIZARD — where most numbers are first
+// assigned — still answered "Number 22 is already taken in this cycle": true,
+// and useless, since it names neither the holder nor a way forward.
+//
+// This scans the actions that create or renumber a LuckyNumber and fails when
+// one resolves a clash by itself instead of through the shared module.
+// ————————————————————————————————————————————————————————————————
+
+const GUARD_ROOT = join(import.meta.dirname, "..");
+
+describe("GUARD — a taken number is never a bare error", () => {
+  // Every action file that writes a LuckyNumber the organizer can name.
+  const ASSIGNING_PATHS = [
+    "app/actions/participations.ts",
+    "app/actions/edits.ts",
+  ];
+
+  it("both assignment paths resolve conflicts through the shared module", () => {
+    for (const file of ASSIGNING_PATHS) {
+      const source = readFileSync(join(GUARD_ROOT, file), "utf8");
+      // CALLS, not names. Matching the bare identifier made this guard
+      // vacuous: the import line alone satisfied it, so replacing the lookup
+      // with `const holder = null` still passed. Proven by planting exactly
+      // that and watching it go green.
+      expect(source, `${file} must find out WHO holds the number`).toMatch(
+        /findNumberHolder\(/,
+      );
+      expect(source, `${file} must offer the choice, not just report the clash`).toMatch(
+        /describeNumberConflict\(/,
+      );
+      expect(source, `${file} must be able to act on REPLACE`).toMatch(/renumberHolder\(/);
+      // The organizer's answer is threaded from their input, never defaulted:
+      // a hardcoded "replace" would silently renumber someone.
+      expect(source, `${file} must not assume the answer`).not.toMatch(
+        /onConflict:\s*["'`]replace["'`]/,
+      );
+    }
+  });
+
+  it("the two-step park lives in ONE place, so no path can duplicate a number", () => {
+    // renumberHolder parks the holder above the cycle's highest number before
+    // handing the contested one over, because @@unique([cycleId, number]) is
+    // checked per statement rather than deferred. A second copy of that logic
+    // is a second chance to get it wrong.
+    const shared = readFileSync(join(GUARD_ROOT, "lib/number-conflict.ts"), "utf8");
+    expect(shared).toContain("Math.max(0, ...taken) + 1");
+
+    for (const file of ASSIGNING_PATHS) {
+      const source = readFileSync(join(GUARD_ROOT, file), "utf8");
+      expect(source, `${file} re-implements the park instead of importing it`).not.toContain(
+        "Math.max(0, ...taken) + 1",
+      );
+    }
+  });
+
+  it("the UI offers the choice in one component, shown by both screens", () => {
+    for (const file of [
+      "app/admin/(protected)/cycle/add/add-member-wizard.tsx",
+      "app/admin/(protected)/people/[id]/participation-editor.tsx",
+    ]) {
+      expect(readFileSync(join(GUARD_ROOT, file), "utf8"), file).toContain(
+        "NumberConflictPanel",
+      );
+    }
   });
 });

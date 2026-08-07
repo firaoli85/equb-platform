@@ -35,6 +35,11 @@ import {
   settlementDescriptionPrefix,
   settlementLedgerTag,
 } from "@/lib/settlement";
+import {
+  findNumberHolder,
+  renumberHolder,
+  takenNumbers,
+} from "@/lib/number-conflict";
 import { personRemovalBlockers } from "@/lib/person-record";
 import {
   settlementReceiptAmountRefusal,
@@ -629,66 +634,9 @@ export async function removeParticipation(input: { participationId: string }) {
 // Nothing happens without the organizer choosing, and no path can duplicate:
 // @@unique([cycleId, number]) is the durable backstop under all of it.
 
-/** Who holds a number in this cycle right now, or null. */
-async function findNumberHolder(
-  tx: Prisma.TransactionClient,
-  args: { cycleId: string; number: number; excludeLuckyNumberId?: string },
-): Promise<NumberHolder | null> {
-  const existing = await tx.luckyNumber.findFirst({
-    where: {
-      cycleId: args.cycleId,
-      number: args.number,
-      ...(args.excludeLuckyNumberId ? { id: { not: args.excludeLuckyNumberId } } : {}),
-    },
-    include: {
-      participation: { include: { person: true } },
-      slotMembers: { include: { slot: { include: { draws: { select: { id: true } } } } } },
-      _count: { select: { payouts: true } },
-    },
-  });
-  if (!existing) return null;
-  return {
-    luckyNumberId: existing.id,
-    number: existing.number,
-    participationId: existing.participationId,
-    memberName: existing.participation.person.nameEnglishFirst,
-    drawn: existing.slotMembers.some((m) => m.slot.draws.length > 0),
-    payoutCount: existing._count.payouts,
-  };
-}
-
-/** Every number in use in this cycle — what "free" is measured against. */
-async function takenNumbers(tx: Prisma.TransactionClient, cycleId: string): Promise<Set<number>> {
-  const rows = await tx.luckyNumber.findMany({ where: { cycleId }, select: { number: true } });
-  return new Set(rows.map((r) => r.number));
-}
-
-/**
- * Move the holder off the number so it can be given to someone else, and
- * return where they landed.
- *
- * The two-step park exists because @@unique([cycleId, number]) is checked per
- * statement, not deferred: the holder sits briefly on a number nothing can be
- * using (one above the cycle's highest) before the contested number changes
- * hands. Both updates are inside the caller's serializable transaction, so the
- * parked value is never observable.
- */
-async function renumberHolder(
-  tx: Prisma.TransactionClient,
-  args: { cycleId: string; holder: NumberHolder; to: number | null },
-): Promise<number> {
-  const taken = await takenNumbers(tx, args.cycleId);
-  const park = Math.max(0, ...taken) + 1;
-  await tx.luckyNumber.update({ where: { id: args.holder.luckyNumberId }, data: { number: park } });
-  taken.delete(args.holder.number);
-  const destination =
-    args.to ?? chooseAutoNumbers({ count: 1, taken: new Set([...taken, park]) })[0];
-  await tx.luckyNumber.update({
-    where: { id: args.holder.luckyNumberId },
-    data: { number: destination },
-  });
-  return destination;
-}
+// findNumberHolder / takenNumbers / renumberHolder now live in
+// lib/number-conflict.ts — the add-member wizard needs the identical rule, and
+// a rule that lives in one action file is a rule the next path will not have.
 
 export async function updateLuckyNumber(input: {
   luckyNumberId: string;

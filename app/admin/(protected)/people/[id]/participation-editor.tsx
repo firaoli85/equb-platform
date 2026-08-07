@@ -12,6 +12,7 @@ import {
   updatePaymentEvent,
   updatePaymentRow,
 } from "@/app/actions/edits";
+import { NumberConflictPanel } from "@/components/admin/number-conflict-panel";
 import { RemoveFromCycle } from "@/components/admin/remove-from-cycle";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
@@ -742,7 +743,7 @@ export function ParticipationEditor(props: {
 
         {conflict && (
           <NumberConflictPanel
-            pending={conflict}
+            conflict={conflict.conflict}
             busy={busy}
             onDismiss={() => setConflict(null)}
             onReplace={() => {
@@ -754,14 +755,14 @@ export function ParticipationEditor(props: {
                 keep: conflict.keep,
               });
             }}
-            onKeep={() => {
-              conflict.keep(conflict.conflict.suggestedNumber);
+            onKeep={(suggested) => {
+              conflict.keep(suggested);
               setConflict(null);
               setBanner({
                 kind: "ok",
                 text:
                   `#${conflict.conflict.number} stays with ${conflict.conflict.holder.memberName}. ` +
-                  `The field now reads #${conflict.conflict.suggestedNumber} — press save to use it.`,
+                  `The field now reads #${suggested} — press save to use it.`,
               });
             }}
           />
@@ -843,67 +844,8 @@ type PendingConflict = {
   keep: (suggested: number) => void;
 };
 
-/**
- * The conflict panel: WHO holds the number, and the two things that can be
- * done about it. When the number cannot be taken (drawn, or carrying a
- * payout) only KEEP is offered, with the reason stated rather than a disabled
- * button the organizer has to guess at.
- */
-function NumberConflictPanel({
-  pending,
-  busy,
-  onReplace,
-  onKeep,
-  onDismiss,
-}: {
-  pending: PendingConflict;
-  busy: boolean;
-  onReplace: () => void;
-  onKeep: () => void;
-  onDismiss: () => void;
-}) {
-  const c = pending.conflict;
-  return (
-    <div
-      role="alert"
-      data-testid="number-conflict"
-      className="space-y-2 rounded-2xl border-2 border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-gray-900 dark:text-gray-100"
-    >
-      <h3 className="font-black">
-        #{c.number} already belongs to {c.holder.memberName}
-      </h3>
-      <p>{c.message}</p>
-      <div className="flex flex-wrap gap-2 pt-1">
-        {c.replaceRefusal === null && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onReplace}
-            className={buttonCls.primary + " !text-xs"}
-          >
-            Replace — take #{c.number} and move {c.holder.memberName}
-          </button>
-        )}
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onKeep}
-          className={buttonCls.secondary + " !text-xs"}
-        >
-          Keep — leave #{c.number} with {c.holder.memberName}, use #{c.suggestedNumber}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onDismiss}
-          className={buttonCls.ghost + " !text-xs"}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
+// The conflict panel moved to components/admin/number-conflict-panel.tsx —
+// the add-member wizard shows the identical choice from the identical reply.
 
 function LuckyRow({
   n,
