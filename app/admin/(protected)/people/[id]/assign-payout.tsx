@@ -141,7 +141,7 @@ export function AssignPayout({
   const blocked = week?.kind === "blocked" ? week : null;
   const canConfirm = week !== null && !blocked && selected.length > 0 && !busy;
 
-  async function doAssign() {
+  async function doAssign(typedPhrase: string) {
     setBusy(true);
     setMsg(null);
     try {
@@ -150,7 +150,13 @@ export function AssignPayout({
         weekId,
         luckyNumberIds: [...chosen],
         notes,
-        replaceConfirmation: needsPhrase ? options?.confirmPhrase : undefined,
+        // WHAT THE ORGANIZER TYPED, not the phrase this component already
+        // holds. It sent `options.confirmPhrase` — its own copy of the
+        // expected value — so the server's nameConfirmed gate passed
+        // unconditionally. Only the dialog made a human type anything, and
+        // a replayed or retried call destroyed collected payouts with no
+        // confirmation at all.
+        replaceConfirmation: needsPhrase ? typedPhrase : undefined,
       });
       if (!result.ok) setMsg({ kind: "err", text: `Not assigned: ${result.error}` });
       else {
@@ -367,7 +373,7 @@ export function AssignPayout({
       <ConfirmDialog
         spec={confirm}
         busy={busy}
-        onConfirm={() => void doAssign()}
+        onConfirm={(typedPhrase) => void doAssign(typedPhrase)}
         onCancel={() => setConfirm(null)}
       />
     </div>

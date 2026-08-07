@@ -268,3 +268,42 @@ describe("manualPayoutPreview — the same arithmetic a drawn payout uses", () =
     });
   });
 });
+
+describe("a committed number cannot be assigned manually (2.3)", () => {
+  const free = { id: "n1", number: 12, amount: 100_000, alreadyDrawn: false };
+
+  it("REFUSES a number a plan has reserved for another week, and names it", () => {
+    // THE DEFECT. The only per-number guard was `alreadyDrawn`, so #12 —
+    // committed to week 9 — could be assigned to week 5 with no warning.
+    // The plan then sat PLANNED on week 9 holding a drawn number:
+    // selectWinningSlot throws, and on the SHARED draw screen that surfaces
+    // only as the neutral error (2.4). The manual fallback is blocked too,
+    // because weekChoice marks a planned undrawn week as blocked. Week 9
+    // becomes undrawable live on Zoom, and only cancelling the plan recovers
+    // it.
+    const refusal = numbersRefusal([{ ...free, committedToWeek: 9 }]);
+    expect(refusal).not.toBeNull();
+    expect(refusal).toContain("#12");
+    expect(refusal).toContain("week 9");
+    // It must point at the undo, not merely refuse.
+    expect(refusal).toContain("wheel setup");
+  });
+
+  it("allows an uncommitted number — the ordinary case is untouched", () => {
+    expect(numbersRefusal([free])).toBeNull();
+    expect(numbersRefusal([{ ...free, committedToWeek: null }])).toBeNull();
+  });
+
+  it("catches a committed number sitting among free ones", () => {
+    const refusal = numbersRefusal([
+      free,
+      { id: "n2", number: 27, amount: 100_000, alreadyDrawn: false, committedToWeek: 15 },
+    ]);
+    expect(refusal).toContain("#27");
+    expect(refusal).toContain("week 15");
+  });
+
+  it("the already-drawn refusal still fires", () => {
+    expect(numbersRefusal([{ ...free, alreadyDrawn: true }])).not.toBeNull();
+  });
+});

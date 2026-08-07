@@ -1,6 +1,7 @@
 "use server";
 
-import { restoreFulfilledPlan } from "@/lib/draw-cascade";
+import { reverseCarryDeduction } from "@/lib/carry-reversal";
+import { resolvePlanForNewDraw } from "@/lib/draw-cascade";
 // MANUAL PAYOUT (2.2 organizer discretion): the organizer decides to pay a
 // member out — an emergency, an agreement — with no spin.
 //
@@ -83,6 +84,20 @@ export async function getManualPayoutOptions(participationId: string) {
       include: { slot: { include: { members: { select: { luckyNumberId: true } } } } },
     });
     const drawnIds = new Set(draws.flatMap((d) => d.slot.members.map((m) => m.luckyNumberId)));
+    // Which numbers a PLANNED plan has reserved, and for which week — so the
+    // picker can say it BEFORE the organizer presses assign (2.10).
+    const plannedForPicker = await prisma.winnerPlan.findMany({
+      where: { cycleId: participation.cycleId, status: "PLANNED", weekId: { not: null } },
+      include: {
+        numbers: { select: { luckyNumberId: true } },
+        week: { select: { weekNumber: true } },
+      },
+    });
+    const committedWeekForPicker = new Map<string, number>();
+    for (const plan of plannedForPicker) {
+      if (!plan.week) continue;
+      for (const n of plan.numbers) committedWeekForPicker.set(n.luckyNumberId, plan.week.weekNumber);
+    }
 
     // Settlement amounts per payout, so the consequence sentence quotes what
     // would actually reopen rather than guessing (2.23: computed, never
@@ -146,6 +161,11 @@ export async function getManualPayoutOptions(participationId: string) {
             number: n.number,
             amount: n.amount,
             alreadyDrawn: drawnIds.has(n.id),
+            // The picker offered a committed number cheerfully and the refusal
+            // arrived only after pressing assign — even though this action
+            // already knew how to compute the set, twenty lines away in the
+            // write path.
+            committedToWeek: committedWeekForPicker.get(n.id) ?? null,
             gross: payout.gross,
             fee: payout.fee,
             net: payout.net,
@@ -267,15 +287,29 @@ export async function assignPayoutManually(input: {
       } | null = null;
       if (existing) {
         const { reversed } = await unsettleDraw(tx, existing.id);
+        // A carried-balance deduction taken out of one of these payouts has to
+        // come back too. LedgerEntry.payoutId is the link that makes that
+        // possible; without it the member's balance stayed permanently reduced
+        // by money that came out of a payout that no longer exists — and that
+        // she never received either, because the payout is gone.
+        let carryRestored = 0;
+        for (const p of existing.payouts) {
+          const back = await reverseCarryDeduction(
+            tx,
+            p.id,
+            "the week's draw was replaced by a manual assignment",
+          );
+          carryRestored += back.restored;
+        }
         await tx.payout.deleteMany({ where: { drawId: existing.id } });
         await tx.draw.delete({ where: { id: existing.id } });
-        // Only if it still has numbers — an emptied plan resurrected to
-        // PLANNED matches the FIRST eligible slot and decides the next draw
-        // while the audit log calls it intentional.
-        const planResult = await restoreFulfilledPlan(tx, {
-          cycleId: week.cycleId,
-          weekId: week.id,
-        });
+        // DELIBERATELY NOT restoreFulfilledPlan here. That is for undoing a
+        // draw and leaving the week open, so the intent can still fire. This
+        // path creates a NEW draw on the same week a few lines below, and
+        // Draw.@@unique([weekId]) means a plan left PLANNED there could never
+        // be fulfilled — while its numbers stayed frozen out of every
+        // reshuffle forever. The plan is resolved against the draw that
+        // actually happens, after it happens (resolvePlanForNewDraw below).
         undone = {
           payoutCount: existing.payouts.length,
           totalNet: existing.payouts.reduce((s, p) => s + p.netAmount, 0),
@@ -284,7 +318,7 @@ export async function assignPayoutManually(input: {
             .map((m) => m.luckyNumber.number)
             .sort((a, b) => a - b),
           reversed,
-          planRestored: planResult.restored,
+          planRestored: false,
         };
         await logAudit(tx, {
           entity: "Draw",
@@ -296,7 +330,9 @@ export async function assignPayoutManually(input: {
             `${undone.payoutCount} payout(s) totalling ${formatMoney(undone.totalNet)} removed` +
             (undone.collectedCount > 0 ? ` (${undone.collectedCount} already collected)` : "") +
             (reversed > 0 ? `; ${formatMoney(reversed)} of week settlement reversed (owed again)` : "") +
-            (undone.planRestored ? "; the fulfilled winner plan is PLANNED again" : ""),
+            // The plan is resolved against the NEW draw, below — saying it
+            // was "PLANNED again" here asserted an intent that could not survive.
+            "",
           before: {
             weekNumber: week.weekNumber,
             payouts: existing.payouts.map((p) => ({
@@ -325,12 +361,37 @@ export async function assignPayoutManually(input: {
       const alreadyDrawn = new Set(
         numbers.filter((n) => n.slotMembers.some((m) => m.slot.draws.length > 0)).map((n) => n.id),
       );
+      // ...and one COMMITTED to a plan for another week is out of the pool for
+      // the same reason (2.3). The only per-number guard here was
+      // `alreadyDrawn`, so a number reserved for week 9 could be assigned to
+      // week 5 with no warning — leaving that plan pointing at a drawn number,
+      // and week 9 undrawable live on Zoom with a message that explains
+      // nothing. The frozen set below was built but used ONLY for slot-mates,
+      // and it explicitly excluded the chosen numbers.
+      const committedPlans = await tx.winnerPlan.findMany({
+        where: {
+          cycleId: week.cycleId,
+          status: "PLANNED",
+          weekId: { not: null },
+          NOT: { weekId: week.id },
+        },
+        include: {
+          numbers: { select: { luckyNumberId: true } },
+          week: { select: { weekNumber: true } },
+        },
+      });
+      const committedWeekByNumber = new Map<string, number>();
+      for (const plan of committedPlans) {
+        if (!plan.week) continue;
+        for (const n of plan.numbers) committedWeekByNumber.set(n.luckyNumberId, plan.week.weekNumber);
+      }
       const numbersProblem = numbersRefusal(
         numbers.map((n) => ({
           id: n.id,
           number: n.number,
           amount: n.amount,
           alreadyDrawn: alreadyDrawn.has(n.id),
+          committedToWeek: committedWeekByNumber.get(n.id) ?? null,
         })),
       );
       if (numbersProblem) return { error: numbersProblem };
@@ -385,6 +446,15 @@ export async function assignPayoutManually(input: {
       const note = input.notes?.trim() || null;
       const draw = await tx.draw.create({
         data: { weekId: week.id, slotId: slot.id, assignedManually: true, notes: note },
+      });
+      // 2.3 — a locked plan is never overwritten SILENTLY. Fulfilled when the
+      // assignment matched what it committed, cancelled with the reason when
+      // it did not. Never left planned on a week that now holds a draw.
+      const planOutcome = await resolvePlanForNewDraw(tx, {
+        cycleId: week.cycleId,
+        weekId: week.id,
+        slotNumberIds: ids,
+        how: "a manual payout assignment",
       });
 
       const payouts = [];

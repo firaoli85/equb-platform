@@ -235,6 +235,62 @@ export async function restoreFulfilledPlan(
 }
 
 /**
+ * Resolve the winner plan for a week that has JUST been given a new draw.
+ *
+ * `restoreFulfilledPlan` is for undoing a draw and leaving the week open, so
+ * the intent can still fire. This is the opposite case: a draw is being
+ * created on the week in the same breath, and `Draw.@@unique([weekId])` means
+ * a plan left PLANNED there can never be fulfilled — ever.
+ *
+ * THE DEFECT. The manual-assign replace path copied `undoDraw`'s
+ * FULFILLED → PLANNED restore, then created a new Draw on the same week 110
+ * lines later in the same transaction. The plan was left PLANNED, pointing at
+ * a drawn week, holding numbers that stayed in `committedNumberIds` forever —
+ * so reshuffle froze their whole slot and any later manual assignment of a
+ * slot-mate was refused. The audit line even said "the fulfilled winner plan
+ * is PLANNED again", asserting an intent survived that could not.
+ *
+ * So the plan is resolved against the draw that actually happened:
+ *   every planned number is in the new slot  → FULFILLED, the intent was met
+ *   otherwise                                → CANCELLED, with the reason
+ *
+ * Never silently: 2.3 says a locked plan is never overwritten without saying
+ * so, and the audit entry is where that is said.
+ */
+export async function resolvePlanForNewDraw(
+  tx: Prisma.TransactionClient,
+  args: { cycleId: string; weekId: string; slotNumberIds: readonly string[]; how: string },
+): Promise<{ fulfilled: boolean; cancelled: boolean }> {
+  const plan = await tx.winnerPlan.findFirst({
+    where: { cycleId: args.cycleId, weekId: args.weekId, status: { in: ["PLANNED", "FULFILLED"] } },
+    include: { numbers: { select: { luckyNumberId: true } }, week: { select: { weekNumber: true } } },
+  });
+  if (!plan) return { fulfilled: false, cancelled: false };
+
+  const inSlot = new Set(args.slotNumberIds);
+  const met = plan.numbers.length > 0 && plan.numbers.every((n) => inSlot.has(n.luckyNumberId));
+
+  await tx.winnerPlan.update({
+    where: { id: plan.id },
+    data: { status: met ? "FULFILLED" : "CANCELLED" },
+  });
+  await logAudit(tx, {
+    entity: "WinnerPlan",
+    entityId: plan.id,
+    action: "update",
+    summary: met
+      ? `The winner plan for week ${plan.week?.weekNumber ?? "?"} is FULFILLED — ${args.how} ` +
+        `matched the numbers it committed.`
+      : `The winner plan for week ${plan.week?.weekNumber ?? "?"} is CANCELLED: ${args.how} ` +
+        `gave that week to different numbers. It could not be left planned — a week holds at ` +
+        `most one draw, so the plan could never fire, while its numbers stayed frozen out of ` +
+        `every reshuffle (2.3).`,
+    before: { status: plan.status, numbers: plan.numbers.length },
+  });
+  return { fulfilled: met, cancelled: !met };
+}
+
+/**
  * Delete winner plans left with ZERO numbers, and say how many went.
  *
  * THE TRAP THIS CLOSES (found live, on week 11). `WinnerPlanNumber` cascades

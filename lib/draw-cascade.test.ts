@@ -161,10 +161,33 @@ describe("GUARD — a plan is never resurrected empty", () => {
     expect(source).toContain("empty .every()");
   });
 
-  it("every resurrection path goes through it", () => {
+  it("every path that touches a plan's status goes through the shared module", () => {
+    // TWO resolvers, because there are two genuinely different cases:
+    //
+    //   restoreFulfilledPlan   the draw is undone and the week is left OPEN,
+    //                          so the intent can still fire — restore it,
+    //                          unless it has been hollowed out.
+    //   resolvePlanForNewDraw  a NEW draw lands on the week in the same
+    //                          transaction. Draw.@@unique([weekId]) means a
+    //                          plan left PLANNED there can never fire, so it
+    //                          is fulfilled or cancelled against what actually
+    //                          happened — never left dangling.
+    //
+    // Using the wrong one is what stranded a plan on a drawn week, with its
+    // numbers frozen out of every reshuffle forever, while the audit entry
+    // claimed "the fulfilled winner plan is PLANNED again".
     for (const file of ["app/actions/wheel.ts", "app/actions/manual-payout.ts"]) {
       const source = readFileSync(join(GUARD_ROOT, file), "utf8");
-      expect(source, file).toMatch(/restoreFulfilledPlan\(/);
+      expect(source, file).toMatch(/restoreFulfilledPlan\(|resolvePlanForNewDraw\(/);
     }
+  });
+
+  it("resolvePlanForNewDraw never leaves a plan PLANNED on a drawn week", () => {
+    const source = readFileSync(join(GUARD_ROOT, "lib/draw-cascade.ts"), "utf8");
+    // It writes exactly one of FULFILLED or CANCELLED, chosen by whether the
+    // draw matched what the plan committed.
+    expect(source).toMatch(/met \? "FULFILLED" : "CANCELLED"/);
+    // And it says which, and why — 2.3: never silently.
+    expect(source).toContain("could never fire");
   });
 });

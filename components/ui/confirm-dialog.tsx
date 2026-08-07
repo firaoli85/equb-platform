@@ -81,7 +81,16 @@ export function ConfirmDialog({
   busy = false,
 }: {
   spec: ConfirmSpec | null;
-  onConfirm: () => void;
+  /**
+   * Receives what the human ACTUALLY TYPED into the phrase box.
+   *
+   * Callers that need a server-side typed-name check must forward this rather
+   * than the phrase they already hold: `assignPayoutManually` sent
+   * `options.confirmPhrase` — its own copy of the expected value — so its
+   * `nameConfirmed` gate passed unconditionally and a replayed call could
+   * destroy collected payouts with nothing typed at all.
+   */
+  onConfirm: (typedPhrase: string) => void;
   onCancel: () => void;
   busy?: boolean;
 }) {
@@ -288,7 +297,7 @@ export function ConfirmDialog({
                 </button>
                 <button
                   type="button"
-                  onClick={onConfirm}
+                  onClick={() => onConfirm(typed)}
                   disabled={busy || !phraseOk}
                   className={
                     spec.destructive === false

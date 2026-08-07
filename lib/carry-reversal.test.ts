@@ -66,7 +66,11 @@ describe("GUARD — destroying a payout reverses its carry deduction", () => {
   const EXEMPT: Record<string, string> = {
     // Creates payouts; there is nothing yet to reverse.
     addWinnerToWeek: "creates a payout, never destroys one",
-    assignPayoutManually: "creates; its replace path deletes through undoDraw",
+    // assignPayoutManually was exempted here with the reason "its replace path
+    // deletes through undoDraw". That was simply WRONG — it calls
+    // `tx.payout.deleteMany` directly, and the exemption is what let the guard
+    // pass while the action still stranded a carry deduction. An EXEMPT entry
+    // is a claim about the code, and this one was never checked.
     recordDraw: "creates",
     spinWheel: "creates",
     // This IS the deduction.

@@ -39,6 +39,17 @@ export type ManualPayoutWeek = {
 };
 
 export type ManualPayoutNumber = {
+  /**
+   * The week a PLANNED winner plan commits this number to, if any.
+   *
+   * The only per-number guard here was `alreadyDrawn`, so a number reserved
+   * for week 9 could be assigned to week 5 with no warning at all. The plan
+   * then sat PLANNED on week 9 holding a drawn number: selectWinningSlot
+   * throws, the shared draw screen shows only the neutral error, and the
+   * manual fallback is blocked too because weekChoice marks a planned undrawn
+   * week as blocked. Week 9 becomes undrawable live on Zoom.
+   */
+  committedToWeek?: number | null;
   id: string;
   number: number;
   /** Cents this number carries each week. */
@@ -162,6 +173,15 @@ export function firstFreeWeek(choices: readonly WeekChoice[]): WeekChoice | null
 
 /** Why these numbers cannot be assigned, or null. */
 export function numbersRefusal(chosen: readonly ManualPayoutNumber[]): string | null {
+  const committed = chosen.find((n) => n.committedToWeek != null);
+  if (committed) {
+    return (
+      `#${committed.number} is committed to week ${committed.committedToWeek} by a winner plan. ` +
+      `Assigning it here would draw it now and leave that plan pointing at a number that has ` +
+      `already won — week ${committed.committedToWeek} could then never be drawn at all. Cancel ` +
+      `the plan on the wheel setup page first (2.3).`
+    );
+  }
   if (chosen.length === 0) return "Choose at least one lucky number to pay out.";
   const drawn = chosen.filter((n) => n.alreadyDrawn);
   if (drawn.length > 0) {
