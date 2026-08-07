@@ -122,7 +122,7 @@ export default async function BalancesPage() {
 
                 <Link
                   href={`/admin/people/${r.personId}?tab=payout`}
-                  className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-800 dark:text-gray-200 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.97]"
+                  className="min-h-11 md:min-h-8 rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-800 dark:text-gray-200 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.97]"
                 >
                   Settle
                 </Link>

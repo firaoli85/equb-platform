@@ -43,7 +43,7 @@ export function ViewToggle({
       onClick={() => onChange(v)}
       aria-pressed={mode === v}
       aria-label={`${label} view`}
-      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] ${
+      className={`min-h-11 md:min-h-8 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] ${
         mode === v
           ? "bg-white dark:bg-[#1f1f1f] text-indigo-700 dark:text-indigo-300 shadow-sm"
           : "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"

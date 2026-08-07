@@ -21,7 +21,7 @@ export function WaitingSummary({ data }: { data: WaitingData }) {
     <Card className="animate-fade-in-up-3">
       <CardHeader
         title={
-          <Link href="/admin/waiting" className="hover:underline">
+          <Link href="/admin/waiting" className="inline-flex min-h-11 md:min-h-8 items-center hover:underline">
             Who is waiting
           </Link>
         }
@@ -29,7 +29,7 @@ export function WaitingSummary({ data }: { data: WaitingData }) {
         right={
           <Link
             href="/admin/waiting"
-            className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:underline"
+            className="inline-flex min-h-11 md:min-h-8 items-center text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:underline"
           >
             See everyone →
           </Link>

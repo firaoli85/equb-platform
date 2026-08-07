@@ -55,6 +55,26 @@ It was not a crash and no test caught it.
 | Desktop pointer targets | **32 × 32 px** |
 | Gap between adjacent targets | **≥ 8 px** |
 
+**What counts as a target.** Buttons, inputs, selects, checkboxes, and any link that acts
+as a control. **Not** an inline text link inside a sentence or a data-table cell — a
+member's name in a 28-row table is *text that happens to navigate*, and forcing it to
+44px would make the table unreadable, which is a worse outcome than the one the rule
+protects against. Where such a link is the row's main action, the **row** carries the
+target size.
+
+This distinction is stated because the loop's probe reported 589 "failures" on one
+screen, nearly all of them table-cell names — a rule that flags everything gets ignored.
+
+**Documented exceptions**, each a decision rather than an oversight:
+
+| Exception | Why |
+|---|---|
+| A link whose whole content is a **person's name** inside a list row | Text that navigates. The row is the target; inflating the name to 44px would double the height of a 28-member list and bury the figures next to it |
+| The **payments grid** cells at mobile (36 × 32) | A 20-week × 28-member grid cannot have 44px cells on a 390px screen. The Members view is the mobile answer, and the screen offers both behind an explicit toggle. The grid is a desktop instrument, where its cells clear the 32px pointer floor |
+
+An exception is only an exception when the alternative path exists and the user can reach
+it. If the toggle ever disappears, the grid exception dies with it.
+
 `touch-action: manipulation` on every tappable control, to drop the 300 ms delay.
 Expand a small visual target with padding or a pseudo-element rather than shrinking the
 touchable area — but expanded areas must not overlap.

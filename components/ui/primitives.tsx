@@ -82,13 +82,13 @@ export function Pill({
 
 export const buttonCls = {
   primary:
-    "inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-700 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
+    "inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-0 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-700 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
   secondary:
-    "inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#141414] px-4 py-2 text-sm font-semibold text-gray-800 dark:text-gray-200 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
+    "inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-0 items-center justify-center gap-1.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#141414] px-4 py-2 text-sm font-semibold text-gray-800 dark:text-gray-200 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
   ghost:
-    "inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-gray-600 dark:text-gray-300 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
+    "inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-0 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-gray-600 dark:text-gray-300 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-100 dark:hover:bg-white/5 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
   danger:
-    "inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-300 dark:border-red-800 px-4 py-2 text-sm font-semibold text-red-700 dark:text-red-400 transition-[background-color,transform] duration-150 ease-out hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
+    "inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-0 items-center justify-center gap-1.5 rounded-xl border border-red-300 dark:border-red-800 px-4 py-2 text-sm font-semibold text-red-700 dark:text-red-400 transition-[background-color,transform] duration-150 ease-out hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
   /**
    * A destructive action that is ALWAYS on screen (one per row) rather than
    * one the organizer went looking for. It stays unmistakably red and keeps
@@ -97,7 +97,7 @@ export const buttonCls = {
    * weight belongs in the confirmation, not the list.
    */
   dangerQuiet:
-    "inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-red-700 dark:text-red-400 transition-[background-color,transform] duration-150 ease-out hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
+    "inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-0 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-red-700 dark:text-red-400 transition-[background-color,transform] duration-150 ease-out hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none",
 } as const;
 
 // ————— Tables (Twenty-density: quiet rows, tabular figures) —————
@@ -154,7 +154,7 @@ export const trHoverCls =
 // ————— Fields (2.10: state is visible) —————
 
 export const inputCls =
-  "w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3.5 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600";
+  "w-full min-h-11 md:min-h-9 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3.5 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600";
 
 export function Field({
   label,

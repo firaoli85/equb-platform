@@ -111,7 +111,7 @@ export function PaymentsMembers({
             type="button"
             onClick={() => onFilterChange(f.key)}
             aria-pressed={filter === f.key}
-            className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] ${
+            className={`min-h-11 md:min-h-8 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] ${
               filter === f.key
                 ? "border-indigo-400 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300"
                 : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5"

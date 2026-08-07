@@ -182,7 +182,7 @@ export default async function CommandCenterPage() {
       <Card className="animate-fade-in-up-2">
         <CardHeader
           title={
-            <Link href="/admin/this-week" className="hover:underline">
+            <Link href="/admin/this-week" className="inline-flex min-h-11 md:min-h-8 items-center hover:underline">
               This week
             </Link>
           }
@@ -248,7 +248,7 @@ export default async function CommandCenterPage() {
                 <li key={`locked-${m.personId}`}>
                   <Link
                     href={`/admin/people/${m.personId}`}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
+                    className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {m.name}
@@ -264,7 +264,7 @@ export default async function CommandCenterPage() {
                 <li key={m.participationId}>
                   <Link
                     href={`/admin/participations/${m.participationId}`}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
+                    className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {m.name}
@@ -282,7 +282,7 @@ export default async function CommandCenterPage() {
                 <li key={p.id}>
                   <Link
                     href="/admin/collections"
-                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
+                    className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {p.who}
@@ -303,12 +303,16 @@ export default async function CommandCenterPage() {
                 <li key={w.weekNumber}>
                   <Link
                     href="/admin/cycle/weeks"
-                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
+                    className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
-                      Week {w.weekNumber} closed with money outstanding
+                      {/* "overdue", not "outstanding" — one word per concept
+                          (UI_STANDARDS rule 8). This week's window has closed
+                          unpaid, which is exactly what overdue means
+                          everywhere else on the platform. */}
+                      Week {w.weekNumber} closed with money overdue
                     </span>
-                    <Pill tone="problem">{formatMoney(w.shortfall)} outstanding</Pill>
+                    <Pill tone="problem">{formatMoney(w.shortfall)} overdue</Pill>
                     <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>

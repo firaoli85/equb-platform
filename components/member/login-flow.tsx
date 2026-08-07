@@ -367,12 +367,19 @@ export function LoginFlow() {
         return;
       }
 
-      // 3. The verifier. It is created ONCE and reused: the container is a
-      //    single node that lives outside the animated tree, and constructing
-      //    a second verifier against a container that already holds a
-      //    rendered widget is a documented way to get an argument-error. The
-      //    SDK calls verifier._reset() itself after each attempt, which is
-      //    what makes reuse the supported path.
+      // 3. The verifier — a FRESH one per attempt.
+      //
+      //    This is the one place this implementation diverged from the build
+      //    that works in production (equb-app), and reuse is the shape that
+      //    produces auth/invalid-app-credential: that error means the backend
+      //    rejected the reCAPTCHA token, and a verifier carried over from a
+      //    previous attempt hands over a token that was already consumed (or
+      //    expired while an unsolved challenge sat open). The SDK's own
+      //    _reset() in its finally block is not enough to make the next
+      //    attempt's token fresh.
+      //
+      //    So: clear the old one, build a new one, exactly as the working
+      //    app does.
       if (!document.getElementById(RECAPTCHA_CONTAINER_ID)) {
         console.error(
           `[SMS send] #${RECAPTCHA_CONTAINER_ID} is not in the DOM — RecaptchaVerifier cannot mount.`,
@@ -381,11 +388,14 @@ export function LoginFlow() {
         setSmsStep("idle");
         return;
       }
-      if (!recaptcha.current) {
-        recaptcha.current = new RecaptchaVerifier(auth, RECAPTCHA_CONTAINER_ID, {
-          size: "invisible",
-        });
+      try {
+        recaptcha.current?.clear();
+      } catch {
+        // Never rendered, or already cleared — nothing to undo.
       }
+      recaptcha.current = new RecaptchaVerifier(auth, RECAPTCHA_CONTAINER_ID, {
+        size: "invisible",
+      });
 
       console.info(`[SMS send] requesting a code for ${l.phone}…`);
 

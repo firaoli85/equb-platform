@@ -209,7 +209,7 @@ export function WeekActionPanel({
             <p>
               <strong>Deferring does not cancel the debt.</strong> {target.memberName} still owes{" "}
               {formatMoney(target.amountDue)} for week {target.weekNumber}; it still counts in
-              their outstanding total and their weeks behind. What changes is that the week
+              their overdue total and their weeks behind. What changes is that the week
               stops reading LATE and they drop out of the chasing messages.
             </p>
             <p>An audit entry records the decision.</p>
