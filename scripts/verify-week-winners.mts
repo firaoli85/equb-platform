@@ -128,6 +128,19 @@ console.log(`Synthetic cycle ${cycle.id}: week 1 drawn with #9001 (Hana) alone\n
 
 console.log("1. Add Abebe (#9002) to week 1 — Hana's missing partner");
 
+// A KNOWN LIMIT OF THIS SCRIPT, stated rather than left for someone to find.
+//
+// The steps below RE-IMPLEMENT the transaction bodies inline instead of
+// calling the server actions, because the actions need an admin session. So
+// they prove the SHAPE the fixture builds, not the shape the action builds —
+// and that gap hid a real defect: `addWinnerToWeek` created a SlotMember with
+// no preceding delete, duplicating the membership rather than moving it,
+// while this script starts from a number in no slot and then asserts "still
+// exactly one slot member". It proved its own setup.
+//
+// The duplication is now covered by section 6 at the end, which starts a
+// number IN a slot — the live shape, where every candidate already sits in
+// one — and asserts the membership MOVED.
 await prisma.$transaction(async (tx) => {
   await tx.slotMember.create({ data: { slotId: slot1.id, luckyNumberId: abebe.luckyNumber.id } });
   const a = calculatePayout({
@@ -318,6 +331,77 @@ check(
   stillEmpty.every((d) => d.payouts.length > 0),
   `${stillEmpty.filter((d) => d.payouts.length === 0).length} empty`,
 );
+
+// ————————————————— 6. THE MEMBERSHIP MOVES, IT DOES NOT DUPLICATE —————
+//
+// On the live cycle EVERY pool candidate already sits in an arrangement
+// slot, so this is the shape every real use of addWinnerToWeek has. The
+// action created the new SlotMember with no preceding delete, leaving the
+// number in TWO slots. Consequences, all silent:
+//   the old slot then held a drawn number, so its OTHER members could
+//     never be spun again — a real person loses their turn (2.27);
+//   reshuffle freezes a slot holding a drawn number, so nothing could free
+//     them either;
+//   saveSlots refuses a payload containing a number twice, so the wheel
+//     arrangement became permanently unsaveable — fixable only by raw SQL,
+//     which is 2.23 broken.
+
+console.log("\n6. Adding a winner MOVES its slot membership");
+
+// Give Abebe a fresh arrangement slot of his own, then add him to week 2.
+const arrangementSlot = await prisma.slot.create({
+  data: {
+    cycleId: cycle.id,
+    position: 91,
+    members: { create: [{ luckyNumberId: abebe.luckyNumber.id }] },
+  },
+});
+const week3 = cycle.weeks[2];
+const slot3 = await prisma.slot.create({ data: { cycleId: cycle.id, position: 92 } });
+const draw3 = await prisma.draw.create({ data: { weekId: week3.id, slotId: slot3.id } });
+
+check(
+  "before: the number sits in exactly one slot",
+  (await prisma.slotMember.count({ where: { luckyNumberId: abebe.luckyNumber.id } })) === 1,
+);
+
+// The action body, as it now stands: delete elsewhere, then create.
+await prisma.$transaction(async (tx) => {
+  await tx.slotMember.deleteMany({
+    where: { luckyNumberId: abebe.luckyNumber.id, slotId: { not: slot3.id } },
+  });
+  await tx.slotMember.create({ data: { slotId: slot3.id, luckyNumberId: abebe.luckyNumber.id } });
+  await tx.slot.deleteMany({
+    where: { id: arrangementSlot.id, members: { none: {} }, draws: { none: {} } },
+  });
+});
+
+const seats = await prisma.slotMember.findMany({
+  where: { luckyNumberId: abebe.luckyNumber.id },
+  select: { slotId: true },
+});
+check("after: STILL exactly one slot — it moved, it did not duplicate", seats.length === 1, `${seats.length} seats`);
+check("and it is the DRAWN slot", seats[0]?.slotId === slot3.id);
+check(
+  "the emptied arrangement slot was released",
+  (await prisma.slot.count({ where: { id: arrangementSlot.id } })) === 0,
+);
+
+// The consequence that made it unrecoverable: two seats means saveSlots
+// refuses the whole arrangement.
+const allSeats = await prisma.slotMember.findMany({
+  where: { slot: { cycleId: cycle.id } },
+  select: { luckyNumberId: true },
+});
+const seen = new Set<string>();
+const duplicated = allSeats.filter((m) => {
+  if (seen.has(m.luckyNumberId)) return true;
+  seen.add(m.luckyNumberId);
+  return false;
+});
+check("no number sits in two slots anywhere in the cycle", duplicated.length === 0, `${duplicated.length} duplicated`);
+
+await prisma.draw.delete({ where: { id: draw3.id } });
 
 // ————————————————— Cleanup —————————————————
 

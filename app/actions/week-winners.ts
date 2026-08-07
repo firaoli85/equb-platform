@@ -78,6 +78,39 @@ async function drawnNumberIds(
   return new Set(draws.flatMap((d) => d.slot.members.map((m) => m.luckyNumberId)));
 }
 
+/**
+ * Numbers committed to a PLANNED winner plan for a week OTHER than this one,
+ * mapped to the week number they are committed to.
+ *
+ * 2.3: a committed number is treated exactly like a drawn one. Drawing it
+ * early leaves the plan pointing at a number that has already won, and the
+ * planned week can then never be drawn at all — selectWinningSlot throws, and
+ * on the shared draw screen that surfaces only as the neutral error.
+ */
+async function committedElsewhere(
+  tx: Parameters<typeof settleWinnerWeeks>[0],
+  args: { cycleId: string; exceptWeekId: string },
+): Promise<Map<string, number>> {
+  const plans = await tx.winnerPlan.findMany({
+    where: {
+      cycleId: args.cycleId,
+      status: "PLANNED",
+      weekId: { not: null },
+      NOT: { weekId: args.exceptWeekId },
+    },
+    include: {
+      numbers: { select: { luckyNumberId: true } },
+      week: { select: { weekNumber: true } },
+    },
+  });
+  const map = new Map<string, number>();
+  for (const plan of plans) {
+    if (!plan.week) continue;
+    for (const n of plan.numbers) map.set(n.luckyNumberId, plan.week.weekNumber);
+  }
+  return map;
+}
+
 function toWeekWinners(
   week: Awaited<ReturnType<typeof loadDrawContext>>,
   planned = false,
@@ -143,18 +176,58 @@ export async function addWinnerToWeek(input: { weekId: string; luckyNumberId: st
         startWeek: luckyNumber.participation.startWeek,
         weeklyAmount: luckyNumber.participation.weeklyAmount,
       };
+      const thisWeekPlanned =
+        (await tx.winnerPlan.count({
+          where: { cycleId: week.cycleId, weekId: week.id, status: "PLANNED" },
+        })) > 0;
       const refusal = addWinnerRefusal({
-        week: toWeekWinners(week),
+        // `planned` defaulted to false here, so a plan committed to THIS week
+        // was silently overwritten — the very thing movePayoutRefusal refuses
+        // by name for the move path.
+        week: toWeekWinners(week, thisWeekPlanned),
         candidate,
         drawnNumberIds: await drawnNumberIds(tx, week.cycleId),
+        committedElsewhere: await committedElsewhere(tx, {
+          cycleId: week.cycleId,
+          exceptWeekId: week.id,
+        }),
       });
       if (refusal) refuse(refusal);
 
-      // The pair, together: the SlotMember makes the number DRAWN and makes
-      // the settlement see this payout; the Payout is the money.
+      // MOVE THE MEMBERSHIP — DO NOT DUPLICATE IT.
+      //
+      // This created the new SlotMember with no preceding delete, so the
+      // number kept its seat in the arrangement slot it was already in AND
+      // gained one in the drawn slot. On the live cycle every candidate is
+      // already in a slot, so this happened on every single use. Three things
+      // followed:
+      //
+      //   1. the original slot then contained a DRAWN number, so it dropped
+      //      out of eligibleSlots and its other members could never be spun
+      //      again — a real person silently loses their turn (2.27);
+      //   2. reshuffle freezes any slot holding a drawn number, so nothing
+      //      could free those slot-mates either;
+      //   3. the wheel arrangement became permanently unsaveable —
+      //      `saveSlots` refuses a payload containing a number twice, and the
+      //      UI cannot move or delete a frozen number, so only raw SQL could
+      //      fix it. That is 2.23 broken.
+      const previous = await tx.slotMember.findMany({
+        where: { luckyNumberId: luckyNumber.id, slotId: { not: week.draw!.slotId } },
+        select: { slotId: true },
+      });
+      await tx.slotMember.deleteMany({
+        where: { luckyNumberId: luckyNumber.id, slotId: { not: week.draw!.slotId } },
+      });
       await tx.slotMember.create({
         data: { slotId: week.draw!.slotId, luckyNumberId: luckyNumber.id },
       });
+      // A slot the number has just left, with nobody else in it and no draw of
+      // its own, is clutter holding a @@unique([cycleId, position]) seat.
+      for (const p of previous) {
+        await tx.slot.deleteMany({
+          where: { id: p.slotId, members: { none: {} }, draws: { none: {} } },
+        });
+      }
       const amounts = calculatePayout({
         luckyNumber: { id: luckyNumber.id, amount: luckyNumber.amount },
         participation: { weeksCommitted: luckyNumber.participation.weeksCommitted },

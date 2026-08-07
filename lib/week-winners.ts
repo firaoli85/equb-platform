@@ -176,6 +176,17 @@ export function addWinnerRefusal(input: {
   candidate: WinnerCandidate;
   /** Every number already drawn anywhere in the cycle. */
   drawnNumberIds: ReadonlySet<string>;
+  /**
+   * Numbers committed to a PLANNED winner plan for a DIFFERENT week, and
+   * the week each is committed to.
+   *
+   * This had no plan awareness at all, so adding a number committed to week
+   * Y left a PLANNED plan pointing at a now-drawn number, and week Y could
+   * never be drawn again: selectWinningSlot throws, and on the shared draw
+   * screen the organizer sees only the neutral error (2.4). 2.3 is explicit
+   * that a committed number is out of the pool.
+   */
+  committedElsewhere?: ReadonlyMap<string, number>;
 }): string | null {
   if (input.drawnNumberIds.has(input.candidate.luckyNumberId)) {
     // 2.27: a number leaves the pool when drawn and never comes back while
@@ -184,6 +195,15 @@ export function addWinnerRefusal(input: {
   }
   if (input.week.payouts.some((p) => p.luckyNumberId === input.candidate.luckyNumberId)) {
     return `#${input.candidate.number} is already a winner of week ${input.week.weekNumber}.`;
+  }
+  const committedTo = input.committedElsewhere?.get(input.candidate.luckyNumberId);
+  if (committedTo !== undefined) {
+    return (
+      `#${input.candidate.number} is committed to week ${committedTo} by a winner plan. ` +
+      `Adding it here would draw it now and leave that plan pointing at a number that has ` +
+      `already won — week ${committedTo} could then never be drawn. Cancel the plan on the ` +
+      `wheel setup page first (2.3 — a locked plan is never overwritten silently).`
+    );
   }
   const finishWeek = input.candidate.startWeek + input.candidate.weeksCommitted - 1;
   if (input.week.weekNumber < input.candidate.startWeek || input.week.weekNumber > finishWeek) {

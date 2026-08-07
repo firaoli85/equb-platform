@@ -126,14 +126,91 @@ describe("selectWinningSlot — plan first, then chance (2.2/2.3)", () => {
     expect(selection).toEqual({ slotId: "s2", reason: "planned", planId: "p1" });
   });
 
-  it("no plan for this week -> uniformly random among eligible slots", () => {
+  it("no plan for this week -> random among the slots NOT committed elsewhere", () => {
+    // This test used to assert s3 with all three slots in the pool, and it
+    // still passes — for a different reason, which is why it is rewritten
+    // rather than left alone. The point is now the exclusion.
     const selection = selectWinningSlot({
       eligibleSlots: slots,
       winnerPlans: [{ id: "p1", weekId: "w9", luckyNumberIds: ["b", "c"] }],
       weekId: "w10",
       random: () => 0.99,
     });
+    // s2 is committed to w9, so the pool is [s1, s3] and 0.99 lands on s3.
     expect(selection).toEqual({ slotId: "s3", reason: "random" });
+  });
+
+  it("CHANCE NEVER CONSUMES A NUMBER COMMITTED TO A LATER WEEK (2.3)", () => {
+    // THE DEFECT. 2.3 says committed numbers are treated exactly like drawn
+    // ones — "excluded from the shuffle pool, their slot frozen" — and that
+    // was implemented for the shuffle but not for the spin.
+    //
+    // #5 is planned for week 15. Weeks are drawn in order, so week 12 comes
+    // up first, finds no plan of its own, and rolled over every eligible slot
+    // including #5's. When it landed there, plan P was left PLANNED, pointing
+    // at week 15, holding an already-drawn number — and week 15 could then
+    // never be spun at all: the plan throws, and on the SHARED draw screen
+    // the organizer sees only the neutral error (2.4).
+    //
+    // random() = 0 picks the first slot in the pool. With the committed slot
+    // excluded, that can never be s2 — however the dice fall.
+    for (const roll of [0, 0.34, 0.5, 0.67, 0.999]) {
+      const selection = selectWinningSlot({
+        eligibleSlots: slots,
+        winnerPlans: [{ id: "p1", weekId: "w15", luckyNumberIds: ["b", "c"] }],
+        weekId: "w12",
+        random: () => roll,
+      });
+      expect(selection.slotId, `roll ${roll}`).not.toBe("s2");
+      expect(selection.reason).toBe("random");
+    }
+  });
+
+  it("a partly-committed slot is excluded — one committed number is enough", () => {
+    // s2 holds b and c; only c is committed. The slot still cannot be spun,
+    // because landing on it would draw c.
+    const selection = selectWinningSlot({
+      eligibleSlots: slots,
+      winnerPlans: [{ id: "p1", weekId: "w15", luckyNumberIds: ["c"] }],
+      weekId: "w12",
+      random: () => 0.5,
+    });
+    expect(selection.slotId).not.toBe("s2");
+  });
+
+  it("a plan with NO week assigned commits nothing and never blocks", () => {
+    // An unassigned or open-partner plan is not a commitment to a week, and
+    // 2.3 says those numbers stay on the wheel.
+    const selection = selectWinningSlot({
+      eligibleSlots: [{ id: "s2", luckyNumberIds: ["b", "c"] }],
+      winnerPlans: [{ id: "p1", weekId: null, luckyNumberIds: ["b", "c"] }],
+      weekId: "w12",
+      random: () => 0,
+    });
+    expect(selection).toEqual({ slotId: "s2", reason: "random" });
+  });
+
+  it("says so plainly when EVERY remaining slot is committed to a later week", () => {
+    // Better than picking one anyway, and better than a bare throw: the
+    // operational pages show this privately, and the draw screen shows the
+    // neutral message (2.4).
+    expect(() =>
+      selectWinningSlot({
+        eligibleSlots: [{ id: "s2", luckyNumberIds: ["b", "c"] }],
+        winnerPlans: [{ id: "p1", weekId: "w15", luckyNumberIds: ["b", "c"] }],
+        weekId: "w12",
+      }),
+    ).toThrow(/committed to a later week/);
+  });
+
+  it("the plan for THIS week still fires, even though it is a commitment", () => {
+    // The exclusion must not lock a plan out of its own week.
+    const selection = selectWinningSlot({
+      eligibleSlots: slots,
+      winnerPlans: [{ id: "p1", weekId: "w9", luckyNumberIds: ["b", "c"] }],
+      weekId: "w9",
+    });
+    expect(selection).toEqual({ slotId: "s2", reason: "planned", planId: "p1" });
   });
 
   it("a plan whose numbers are not together in an eligible slot fails loudly", () => {

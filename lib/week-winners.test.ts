@@ -419,3 +419,78 @@ describe("freedWeek — the week left with no winner at all", () => {
     ).toBeNull();
   });
 });
+
+describe("adding a winner respects committed plans (2.3)", () => {
+  const candidate = {
+    luckyNumberId: "ln-5",
+    number: 5,
+    amount: 100_000,
+    participationId: "p-5",
+    memberName: "Tsion",
+    weeksCommitted: 20,
+    startWeek: 1,
+    weeklyAmount: 100_000,
+  };
+  const week: WeekWinners = {
+    weekId: "w12",
+    weekNumber: 12,
+    undrawn: false,
+    isSkipped: false,
+    planned: false,
+    payouts: [],
+  };
+
+  it("REFUSES a number committed to another week, and names that week", () => {
+    // THE DEFECT. addWinnerRefusal had no plan awareness at all, so adding
+    // #5 — committed to week 15 — drew it now and left the plan pointing at a
+    // number that had already won. selectWinningSlot then throws for week 15
+    // forever, and on the SHARED draw screen that surfaces only as the
+    // neutral error, so the organizer cannot even see why.
+    const refusal = addWinnerRefusal({
+      week,
+      candidate,
+      drawnNumberIds: new Set<string>(),
+      committedElsewhere: new Map([["ln-5", 15]]),
+    });
+    expect(refusal).not.toBeNull();
+    expect(refusal).toContain("week 15");
+    expect(refusal).toContain("#5");
+    // It must say where to undo the commitment, not merely refuse.
+    expect(refusal).toContain("wheel setup");
+  });
+
+  it("allows a number committed to THIS week — that is the plan firing", () => {
+    expect(
+      addWinnerRefusal({
+        week,
+        candidate,
+        drawnNumberIds: new Set<string>(),
+        // committedElsewhere excludes this week by construction.
+        committedElsewhere: new Map(),
+      }),
+    ).toBeNull();
+  });
+
+  it("allows an uncommitted number — the ordinary case still works", () => {
+    expect(
+      addWinnerRefusal({
+        week,
+        candidate,
+        drawnNumberIds: new Set<string>(),
+        committedElsewhere: new Map([["ln-99", 15]]),
+      }),
+    ).toBeNull();
+  });
+
+  it("the drawn check still wins over the commitment check", () => {
+    // Order matters for the message: "already drawn" is the more useful
+    // sentence when both are true.
+    const refusal = addWinnerRefusal({
+      week,
+      candidate,
+      drawnNumberIds: new Set(["ln-5"]),
+      committedElsewhere: new Map([["ln-5", 15]]),
+    });
+    expect(refusal).toContain("already been drawn");
+  });
+});

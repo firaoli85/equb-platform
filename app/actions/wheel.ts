@@ -617,12 +617,22 @@ export async function spinWheel(input: { weekId: string }) {
       weekId: input.weekId,
     });
 
+    // A SPIN IS NOT A DRAW. This records which slot the wheel landed on; the
+    // draw itself is recorded by `recordDraw`, in its own transaction, when
+    // the animation finishes. So there is nothing to be atomic WITH here —
+    // but the entry must say that, or a reader two years from now sees "Week
+    // 12 spin: random" with no draw beside it and cannot tell whether the
+    // draw failed or the organizer simply re-spun.
     await prisma.auditLog.create({
       data: {
         entity: "Wheel",
         entityId: input.weekId,
         action: "update",
-        summary: `Week ${week.weekNumber} spin: ${selection.reason}${selection.planId ? ` (plan ${selection.planId})` : ""}`,
+        summary:
+          `Week ${week.weekNumber} spin landed on a slot: ${selection.reason}` +
+          `${selection.planId ? ` (plan ${selection.planId})` : ""}. ` +
+          `This records the SPIN only — the draw is recorded separately when the ` +
+          `wheel stops, so a spin with no draw after it means it was not confirmed.`,
       },
     });
 

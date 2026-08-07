@@ -151,9 +151,46 @@ export function selectWinningSlot(input: {
     }
     return { slotId: slot.id, reason: "planned", planId: plan.id };
   }
+
+  // A NUMBER COMMITTED TO ANOTHER WEEK IS OUT OF THIS WEEK'S POOL.
+  //
+  // Ground truth 2.3: "Committed numbers are treated exactly like already-drawn
+  // numbers: excluded from the shuffle pool, their slot frozen." That was
+  // implemented for the SHUFFLE and not for the SPIN, so chance could consume a
+  // number the organizer had committed to a later week.
+  //
+  // What that cost: plan #5 for week 15; weeks are drawn in order so week 12
+  // comes up next; no plan targets week 12, so the spin rolled over every
+  // eligible slot — including #5's. Chance lands on it. `recordDraw` consults
+  // only the plan for the week being drawn, so nothing cancels or marks plan
+  // P. It sits PLANNED, targeting week 15, holding a number that is already
+  // drawn — a row that has outlived its own possibility. When week 15 arrives
+  // the plan cannot find its numbers in any eligible slot and throws, and
+  // because that happens on the SHARED draw screen the organizer sees only the
+  // neutral error (2.4). Week 15 cannot be spun at all until someone leaves
+  // the Zoom call and cancels the plan.
+  //
+  // A plan with no week assigned commits nothing to any week and never blocks.
+  const committedElsewhere = new Set(
+    input.winnerPlans
+      .filter((p) => p.weekId !== null && p.weekId !== input.weekId)
+      .flatMap((p) => p.luckyNumberIds),
+  );
+  const spinnable = input.eligibleSlots.filter(
+    (s) => !s.luckyNumberIds.some((id) => committedElsewhere.has(id)),
+  );
+  if (spinnable.length === 0) {
+    // Said plainly, because the operational screens show it privately and the
+    // draw screen must never explain itself (2.4).
+    throw new Error(
+      "Every slot still on the wheel is committed to a later week, so there is nobody left " +
+        "for this one to land on. Cancel or re-week a plan on the setup page first.",
+    );
+  }
+
   const random = input.random ?? Math.random;
-  const index = Math.floor(random() * input.eligibleSlots.length);
-  return { slotId: input.eligibleSlots[Math.min(index, input.eligibleSlots.length - 1)].id, reason: "random" };
+  const index = Math.floor(random() * spinnable.length);
+  return { slotId: spinnable[Math.min(index, spinnable.length - 1)].id, reason: "random" };
 }
 
 // ————————————————— Draw-screen display order (2.4, audit H3c) —————————————————
