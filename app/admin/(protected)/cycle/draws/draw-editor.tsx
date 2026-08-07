@@ -29,16 +29,23 @@ export function DrawEditor({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
-  const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
+  // The confirm handler carries what the organizer TYPED, so an action with
+  // a server-side typed-name check gets the real value rather than a copy of
+  // the expected one.
+  const [onConfirm, setOnConfirm] = useState<((typed: string) => void) | null>(null);
 
-  function ask(spec: ConfirmSpec, fn: () => Promise<{ ok: boolean; error?: string }>, okText: string) {
+  function ask(
+    spec: ConfirmSpec,
+    fn: (typedPhrase: string) => Promise<{ ok: boolean; error?: string }>,
+    okText: string,
+  ) {
     setConfirm(spec);
-    setOnConfirm(() => () => {
+    setOnConfirm(() => (typedPhrase: string) => {
       void (async () => {
         setBusy(true);
         setMsg(null);
         try {
-          const result = await fn();
+          const result = await fn(typedPhrase);
           if (!result.ok) setMsg({ kind: "err", text: result.error ?? "Failed." });
           else {
             setMsg({ kind: "ok", text: okText });
@@ -183,7 +190,7 @@ export function DrawEditor({
                 confirmLabel: `Undo the draw for week ${undo.weekNumber}`,
                 requirePhrase: undo.highStakes ? cycleName : undefined,
               },
-              () => undoDraw({ drawId: draw.id }),
+              (typedPhrase) => undoDraw({ drawId: draw.id, typedName: typedPhrase }),
               `✓ Week ${undo.weekNumber}'s draw undone — the numbers are back on the wheel.`,
             )
           }
@@ -200,7 +207,7 @@ export function DrawEditor({
       <ConfirmDialog
         spec={confirm}
         busy={busy}
-        onConfirm={() => onConfirm?.()}
+        onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
           setConfirm(null);
           setOnConfirm(null);

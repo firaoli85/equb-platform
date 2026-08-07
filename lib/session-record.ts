@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "./generated/prisma/client";
 
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
@@ -226,4 +227,33 @@ export async function revokeCurrentSession(reason = "Signed out"): Promise<void>
     console.error("revokeCurrentSession failed:", e);
   }
   await clearSessionCookie();
+}
+
+/**
+ * End every session this member has open, from the organizer's side.
+ *
+ * THE GAP THIS CLOSES. A member reports that someone else got into her
+ * account. The organizer opens her Settings tab, sees the intruder's row under
+ * "Recent sign-ins" with a green "Signed in" pill, and does the one thing that
+ * page offers: Reset PIN. That cleared `pinHash` and nothing else — the
+ * intruder's SignInSession row still read revokedAt = null and his Supabase
+ * cookies still validated, so he kept full access to /me for up to seven more
+ * idle days. There was no action anywhere in the codebase that could end a
+ * member's session.
+ *
+ * Changing a credential must end the sessions that credential opened. The rows
+ * are REVOKED, never deleted — the history is what lets the member recognise
+ * the intruder's device later, and lets the organizer answer "was that you?"
+ * months from now (2.14).
+ */
+export async function revokeSessionsForPerson(
+  tx: Prisma.TransactionClient,
+  personId: string,
+  reason: string,
+): Promise<number> {
+  const result = await tx.signInSession.updateMany({
+    where: { personId, revokedAt: null },
+    data: { revokedAt: new Date(), revokedReason: reason },
+  });
+  return result.count;
 }

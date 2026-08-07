@@ -12,6 +12,7 @@ import { isWithinBounds, newCycleStartBounds, toIsoDay } from "@/lib/date-bounds
 import { formatDateLongUTC, parseDateInput } from "@/lib/format";
 import { calculateFinishWeek, generateWeekDates, MAX_MONEY_CENTS, MAX_WEEKS } from "@/lib/money";
 import { prisma, serializableTransaction } from "@/lib/prisma";
+import { typedConfirmationRefusal } from "@/lib/typed-confirmation";
 
 /**
  * A refused start date. Thrown from inside the transaction so the write rolls
@@ -235,3 +236,174 @@ export async function getActiveCycleDetail() {
 }
 
 export type ActiveCycleDetail = NonNullable<Awaited<ReturnType<typeof getActiveCycleDetail>>>;
+
+// ————————————————— DRAFT CYCLES: the way out —————————————————
+//
+// `createCycle` writes DRAFT when a cycle is already ACTIVE — the new-cycle
+// page is built for exactly that case, and the form confirms "Saved as a
+// draft". Nothing then read DRAFT anywhere. There was no activate, no delete
+// that accepted it (`deleteClosedCycle` requires CLOSED, `closeCycle` requires
+// ACTIVE), and no screen listed it.
+//
+// So a draft and its week rows and its numbering Setting were permanent
+// orphans: invisible, unactivatable, undeletable. The organizer's only
+// recourse was to create a third cycle — and `newCycleStartBounds` only knows
+// about the ACTIVE cycle, so that one could be given dates overlapping the
+// invisible draft's weeks.
+//
+// Two actions close it. Both are deliberately narrow: a draft has no money,
+// no draws and no members, so activating it is safe and deleting it destroys
+// nothing that was ever real.
+
+/** Every DRAFT cycle — the ones no other screen can see. */
+export async function listDraftCycles() {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const drafts = await prisma.cycle.findMany({
+      where: { status: "DRAFT" },
+      orderBy: { startDate: "asc" },
+      include: { _count: { select: { weeks: true, participations: true } } },
+    });
+    return {
+      ok: true as const,
+      data: drafts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        startDate: c.startDate.toISOString().slice(0, 10),
+        plannedWeeks: c.plannedWeeks,
+        unitAmount: c.unitAmount,
+        feePercent: c.feePercent,
+        weekCount: c._count.weeks,
+        memberCount: c._count.participations,
+      })),
+    };
+  } catch (e) {
+    console.error("listDraftCycles failed:", e);
+    return { ok: false as const, error: `Could not load the drafts. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * Make a DRAFT cycle the live one.
+ *
+ * Refused while another cycle is ACTIVE — the database enforces it too
+ * (the partial unique index `one_active_cycle`), and meeting that as a raw
+ * constraint violation would tell the organizer nothing.
+ */
+export async function activateCycle(input: { cycleId: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const outcome = await serializableTransaction(async (tx) => {
+      const cycle = await tx.cycle.findUnique({ where: { id: input.cycleId } });
+      if (!cycle) return { error: "Cycle not found." };
+      if (cycle.status !== "DRAFT") {
+        return {
+          error:
+            cycle.status === "ACTIVE"
+              ? `“${cycle.name}” is already the live cycle.`
+              : `“${cycle.name}” is closed. A closed cycle is never reopened — its archive and the carried ledgers were both written from it (2.9).`,
+        };
+      }
+      const live = await tx.cycle.findFirst({ where: { status: "ACTIVE" } });
+      if (live) {
+        return {
+          error:
+            `“${live.name}” is still running, and only one cycle can be live at a time. ` +
+            `Close it first — that writes its archive and every carried balance — and then ` +
+            `activate “${cycle.name}”.`,
+        };
+      }
+
+      await tx.cycle.update({ where: { id: cycle.id }, data: { status: "ACTIVE" } });
+      await logAudit(tx, {
+        entity: "Cycle",
+        entityId: cycle.id,
+        action: "update",
+        summary:
+          `Cycle “${cycle.name}” is now ACTIVE — it was created as a draft while another ` +
+          `cycle was running. Its ${cycle.plannedWeeks} planned weeks and its numbering ` +
+          `choice are unchanged.`,
+        before: { status: "DRAFT" },
+        after: { status: "ACTIVE" },
+      });
+      return { name: cycle.name };
+    });
+    if ("error" in outcome && outcome.error) return { ok: false as const, error: outcome.error };
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/cycle");
+    revalidatePath("/admin/cycles");
+    return { ok: true as const, data: { name: (outcome as { name: string }).name } };
+  } catch (e) {
+    console.error("activateCycle failed:", e);
+    return { ok: false as const, error: `Could not activate the cycle. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * Delete a DRAFT cycle.
+ *
+ * No archive is required and none is written: a draft has never held a
+ * receipt, a draw or a member, so there is nothing to preserve (2.9's archive
+ * rule is about a cycle that RAN). Refused the moment anything is attached,
+ * so "draft" can never quietly become "delete a real cycle without an
+ * archive".
+ */
+export async function deleteDraftCycle(input: { cycleId: string; typedName: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const outcome = await serializableTransaction(async (tx) => {
+      const cycle = await tx.cycle.findUnique({
+        where: { id: input.cycleId },
+        include: { _count: { select: { participations: true, weeks: true } } },
+      });
+      if (!cycle) return { error: "Cycle not found." };
+      if (cycle.status !== "DRAFT") {
+        return {
+          error: `Only a draft can be deleted this way — “${cycle.name}” is ${cycle.status.toLowerCase()}.`,
+        };
+      }
+      if (cycle._count.participations > 0) {
+        return {
+          error:
+            `“${cycle.name}” already has ${cycle._count.participations} member(s) in it. Take ` +
+            `them out first — their receipts and numbers are not something a delete should ` +
+            `decide about quietly.`,
+        };
+      }
+      const refusal = typedConfirmationRefusal({
+        typed: input.typedName,
+        expected: cycle.name,
+        whatItDoes: `this deletes the draft and its ${cycle._count.weeks} generated week rows.`,
+      });
+      if (refusal) return { error: refusal };
+
+      await logAudit(tx, {
+        entity: "Cycle",
+        entityId: cycle.id,
+        action: "delete",
+        summary:
+          `Draft cycle “${cycle.name}” deleted with its ${cycle._count.weeks} week rows. It ` +
+          `never ran: no member, receipt, draw or payout was ever attached, so no archive was ` +
+          `written.`,
+        before: { name: cycle.name, plannedWeeks: cycle.plannedWeeks },
+      });
+      await tx.cycle.delete({ where: { id: cycle.id } });
+      // The numbering choice is a Setting row keyed by cycle id and has no
+      // relation to Cycle, so nothing cascades it away.
+      await tx.setting.deleteMany({ where: { key: `numberingMode:${cycle.id}` } });
+      return { name: cycle.name };
+    });
+    if ("error" in outcome && outcome.error) return { ok: false as const, error: outcome.error };
+
+    revalidatePath("/admin/cycles");
+    revalidatePath("/admin/cycle");
+    return { ok: true as const, data: { name: (outcome as { name: string }).name } };
+  } catch (e) {
+    console.error("deleteDraftCycle failed:", e);
+    return { ok: false as const, error: `Could not delete the draft. ${errorMessage(e)}` };
+  }
+}

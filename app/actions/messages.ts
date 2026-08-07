@@ -432,6 +432,35 @@ export async function sendBatch(input: { key: string; participationIds: string[]
         ? await winnerExtrasByParticipation(cycle.id)
         : null;
 
+    // A WINNER WHO IS NO LONGER THE WINNER MUST NOT BE MESSAGED.
+    //
+    // The batch is prepared against the latest drawn week, then sent later. In
+    // between, the week can be drawn again, or the winner removed or moved —
+    // the exact operations this audit came from. sendBatch recomputed the
+    // extras from live state, the prepared participation was no longer in the
+    // map, and `?? {}` filled the gap: the member received a real, billed,
+    // logged WhatsApp message reading "you receive this week — week 12. Your
+    // payout is —." The week was not even the drawn one; it fell back to the
+    // current cycle week.
+    //
+    // Refuse the whole batch rather than skipping the stale recipients: the
+    // organizer previewed a specific set of messages, and silently sending a
+    // subset is its own surprise.
+    if (winners) {
+      const stale = input.participationIds.filter((id) => !winners.has(id));
+      if (stale.length > 0) {
+        return {
+          ok: false as const,
+          error:
+            `${stale.length} of the ${input.participationIds.length} selected ` +
+            `${stale.length === 1 ? "member is" : "members are"} no longer a winner of the ` +
+            `week this batch was prepared for — the draw has changed since you opened it. ` +
+            `Nothing was sent. Close this and open the winner batch again to see the ` +
+            `current winners.`,
+        };
+      }
+    }
+
     const results: {
       participationId: string;
       outcome: SendOutcome;

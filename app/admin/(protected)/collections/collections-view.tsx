@@ -81,17 +81,24 @@ export function CollectionsView({
   const router = useRouter();
   const [openRow, setOpenRow] = useState<{ id: string; mode: "collect" | "edit" } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
-  const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
+  // The confirm handler carries what the organizer TYPED, so an action with
+  // a server-side typed-name check gets the real value rather than a copy of
+  // the expected one.
+  const [onConfirm, setOnConfirm] = useState<((typed: string) => void) | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  function ask(spec: ConfirmSpec, action: () => Promise<{ ok: boolean; error?: string } | { ok: boolean }>, okText: string) {
+  function ask(
+    spec: ConfirmSpec,
+    action: (typedPhrase: string) => Promise<{ ok: boolean; error?: string } | { ok: boolean }>,
+    okText: string,
+  ) {
     setConfirm(spec);
-    setOnConfirm(() => () => {
+    setOnConfirm(() => (typedPhrase: string) => {
       void (async () => {
         setBusy(true);
         try {
-          const result = await action();
+          const result = await action(typedPhrase);
           if (!result.ok) {
             setFeedback({ kind: "err", text: ("error" in result && result.error) || "Failed — nothing changed." });
           } else {
@@ -170,7 +177,7 @@ export function CollectionsView({
         confirmLabel: `Undo the draw for week ${u.weekNumber}`,
         requirePhrase: u.highStakes ? cycleName : undefined,
       },
-      () => undoDraw({ drawId: group.drawId! }),
+      (typedPhrase) => undoDraw({ drawId: group.drawId!, typedName: typedPhrase }),
       `✓ Week ${u.weekNumber}'s draw undone — ${u.numbersReturning
         .map((n) => `#${n}`)
         .join(", ")} returned to the wheel.`,
@@ -362,7 +369,7 @@ export function CollectionsView({
       <ConfirmDialog
         spec={confirm}
         busy={busy}
-        onConfirm={() => onConfirm?.()}
+        onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
           setConfirm(null);
           setOnConfirm(null);
@@ -397,7 +404,7 @@ function PayoutLine({
   busy: boolean;
   ask: (
     spec: ConfirmSpec,
-    action: () => Promise<{ ok: boolean; error?: string } | { ok: boolean }>,
+    action: (typedPhrase: string) => Promise<{ ok: boolean; error?: string } | { ok: boolean }>,
     okText: string,
   ) => void;
   /** The alternative action, when this payout came from a real draw. */
@@ -597,7 +604,7 @@ function PayoutLine({
                   confirmLabel: "Delete payout",
                   requirePhrase: p.status === "COLLECTED" ? p.who : undefined,
                 },
-                () => deletePayout({ payoutId: p.id }),
+                (typedPhrase) => deletePayout({ payoutId: p.id, typedName: typedPhrase }),
                 isLastPayout
                   ? `✓ #${p.number}'s payout deleted — week ${weekNumber} is undrawn and selectable again.`
                   : `✓ #${p.number}'s payout deleted — the draw stands.`,

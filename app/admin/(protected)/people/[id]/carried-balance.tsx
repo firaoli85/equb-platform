@@ -65,7 +65,10 @@ export function CarriedBalance({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
-  const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
+  // The confirm handler carries what the organizer TYPED, so an action with
+  // a server-side typed-name check gets the real value rather than a copy of
+  // the expected one.
+  const [onConfirm, setOnConfirm] = useState<((typed: string) => void) | null>(null);
 
   const cents = parseDollarsToCents(dollars);
 
@@ -204,7 +207,7 @@ export function CarriedBalance({
                 ),
                 confirmLabel: "Record the payment",
               });
-              setOnConfirm(() => () =>
+              setOnConfirm(() => (typedPhrase: string) =>
                 void run(
                   () =>
                     recordLedgerPayment({
@@ -283,9 +286,9 @@ export function CarriedBalance({
                 confirmLabel: "Write it off",
                 requirePhrase: personName,
               });
-              setOnConfirm(() => () =>
+              setOnConfirm(() => (typedPhrase: string) =>
                 void run(
-                  () => forgiveBalance({ personId, amount: cents, reason }),
+                  () => forgiveBalance({ personId, amount: cents, reason, typedName: typedPhrase }),
                   `✓ ${formatMoney(cents)} written off — ${formatMoney(left)} still carried.`,
                 ),
               );
@@ -341,7 +344,7 @@ export function CarriedBalance({
       <ConfirmDialog
         spec={confirm}
         busy={busy}
-        onConfirm={() => onConfirm?.()}
+        onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
           setConfirm(null);
           setOnConfirm(null);

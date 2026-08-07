@@ -70,6 +70,9 @@ export async function updateSession(request: NextRequest) {
     const gate = await checkSession({
       token: request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null,
       isAdmin,
+      // From the VALIDATED claims, so a missing handle can be told apart from
+      // a session that predates the record.
+      authUserId: claims?.sub ?? null,
     });
     if (gate.state === "expired") {
       const redirect = redirectTo(loginPath, gate.reason);

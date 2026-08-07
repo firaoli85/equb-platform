@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { typedConfirmationRefusal } from "@/lib/typed-confirmation";
 import { carryReversalClause, reverseCarryDeduction } from "@/lib/carry-reversal";
 import { refuseIfCycleClosed } from "@/lib/cycle-guard";
 import { Prisma } from "@/lib/generated/prisma/client";
@@ -759,7 +760,18 @@ export async function recordDraw(input: { weekId: string; slotId: string }) {
  * RETURN TO THE WHEEL POOL. A plan this draw fulfilled becomes PLANNED
  * again — the intent survives the undo.
  */
-export async function undoDraw(input: { drawId: string }) {
+export async function undoDraw(input: {
+  drawId: string;
+  /**
+   * The cycle name, typed by the organizer. REQUIRED once any payout on
+   * this draw has been collected — undoing then destroys the record of
+   * money that has already changed hands.
+   *
+   * The dialog asked for it and the server did not, so a retry or a
+   * double-submit skipped the question entirely.
+   */
+  typedName?: string;
+}) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -777,6 +789,21 @@ export async function undoDraw(input: { drawId: string }) {
       // carried ledgers were both built from.
       const frozen = frozenCycleRefusal(draw.week.cycle);
       if (frozen) throw new Error(frozen);
+
+      // Same threshold the UI uses (lib/undo-draw.ts): collected payouts
+      // make this high-stakes. An ordinary undo of a pending draw is
+      // recoverable and asks nothing.
+      const collected = draw.payouts.filter((p) => p.status === "COLLECTED");
+      if (collected.length > 0) {
+        const refusal = typedConfirmationRefusal({
+          typed: input.typedName,
+          expected: draw.week.cycle.name,
+          whatItDoes:
+            `this deletes ${collected.length} payout record(s) for money that has ` +
+            `ALREADY been handed over, and there is nothing else that records it.`,
+        });
+        if (refusal) throw new Error(refusal);
+      }
 
       // Reverse the settlements FIRST (they reference the payouts by key),
       // then remove the money-out records, then the draw itself.

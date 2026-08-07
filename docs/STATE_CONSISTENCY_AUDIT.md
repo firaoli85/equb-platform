@@ -201,3 +201,71 @@ neither the swap nor the create path ever hit the case. It now runs on 1, 2, 3.
 Full per-finding detail, including each verifier's reproduction sequence, is in the
 workflow transcript. The fixes are being worked in severity order; this table is the
 backlog and each row is struck as it closes.
+
+---
+
+## 10. TYPED CONFIRMATIONS — the audit, and where the line is drawn
+
+**Found by pulling one thread.** `assignPayoutManually` checked
+`nameConfirmed(input.replaceConfirmation, …)` server-side, which reads as a real gate. The
+client sent `options.confirmPhrase` — **its own copy of the expected value** — so the check
+passed unconditionally. Auditing every other typed confirmation found the same shape on the
+two most consequential actions in the product.
+
+### 10.1 Decorative — the server checked a value the client supplied
+
+| Action | What the client sent | What it destroys |
+|---|---|---|
+| `closeCycle` | `review.cycleName` | writes a carried debt onto every short member, freezes the books |
+| `deleteClosedCycle` | `cycle.name` | wipes every participation, week, receipt, draw and payout |
+| `assignPayoutManually` | `options.confirmPhrase` | destroys collected payouts |
+
+All three now forward what `ConfirmDialog` hands to `onConfirm`. The two that were already
+real — `removeFromCycle` and the participation settlement — bind to actual input state.
+
+### 10.2 Client-only — a dialog with no server check at all
+
+Seven places set `requirePhrase` on the dialog while the action took no confirmation. **The
+organizer's ruling, August 2026:** add a server check to four, leave three.
+
+> **The threat is not an attacker.** There is one admin, and he owns the data. It is a tired
+> organizer on a Sunday clicking something whose consequence he did not register, or a
+> double-submit, or a stale form replay. A server check makes the confirmation unbypassable
+> for actions that destroy money records; for a phone edit it is not worth the friction.
+
+**Server-checked** — destroys something that cannot be rebuilt from anything else:
+
+| Action | Condition | Compared against |
+|---|---|---|
+| `undoDraw` (both entry points) | any payout COLLECTED | the cycle name |
+| `deletePayout` | that payout COLLECTED | the member's name |
+| `forgiveBalance` | always | the person's name |
+| `deletePerson` | always | the person's name |
+
+**Left client-only** — recoverable, or the modern path already checks:
+
+| Action | Why |
+|---|---|
+| `removeParticipation` | the legacy path; `removeFromCycle` supersedes it and does check |
+| `updatePerson` clearing a phone | a mistyped number is retyped in ten seconds |
+
+The distinction is deliberate and is **not** "how dangerous does it feel" — it is whether an
+accidental click loses something the organizer cannot get back.
+
+### 10.3 The guard
+
+`lib/confirm-phrase.test.ts`, five assertions:
+
+1. `ConfirmDialog` hands `onConfirm` what the human typed.
+2. **No caller passes a client-derived value as the proof.** The tell is a *dot* —
+   `review.cycleName`, `cycle.name`, `options.confirmPhrase` are member expressions; a real
+   one forwards a bare identifier. Matching on the dot also steps around every type position,
+   which two earlier attempts at this matcher kept tripping over.
+3. The four irreversible actions each take a `typedName` **and** compare it, scoped to their
+   own function body so a neighbour's check cannot satisfy them.
+4. The comparison rejects an empty or absent value — the replay case *is* the empty case.
+5. Every action accepting a proof field actually compares it — the mirror failure.
+
+**Proven non-vacuous seven times**, not once: a script re-plants each of the three decorative
+defects and neuters each of the four new checks in turn, running the guard against each and
+restoring the file.

@@ -46,7 +46,10 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
-  const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
+  // The confirm handler carries what the organizer TYPED, so an action with
+  // a server-side typed-name check gets the real value rather than a copy of
+  // the expected one.
+  const [onConfirm, setOnConfirm] = useState<((typed: string) => void) | null>(null);
 
   const dirty = JSON.stringify(fields) !== JSON.stringify(initial);
 
@@ -128,11 +131,14 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
     setOnConfirm(() => () => void doSave());
   }
 
-  async function doDelete() {
+  async function doDelete(typedPhrase: string) {
     setSaving(true);
     setError(null);
     try {
-      const result = await deletePerson({ personId: person.id });
+      // The typed name goes to the SERVER too. The dialog alone does not
+      // survive a double-submit or a stale replay, and this deletes the
+      // directory row together with every sign-in record.
+      const result = await deletePerson({ personId: person.id, typedName: typedPhrase });
       if (!result.ok) return setError(result.error);
       router.push("/admin/people");
       router.refresh();
@@ -201,7 +207,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       confirmLabel: "Remove permanently",
       requirePhrase: person.nameEnglishFirst,
     });
-    setOnConfirm(() => () => void doDelete());
+    setOnConfirm(() => (typedPhrase: string) => void doDelete(typedPhrase));
   }
 
   return (
@@ -279,7 +285,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       <ConfirmDialog
         spec={confirm}
         busy={saving}
-        onConfirm={() => onConfirm?.()}
+        onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
           setConfirm(null);
           setOnConfirm(null);

@@ -12,6 +12,7 @@ import { parseDateInput } from "@/lib/format";
 import { MAX_MONEY_CENTS } from "@/lib/money";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma, serializableTransaction } from "@/lib/prisma";
+import { typedConfirmationRefusal } from "@/lib/typed-confirmation";
 import { getSetting } from "@/lib/settings";
 
 /**
@@ -100,6 +101,15 @@ export async function forgiveBalance(input: {
   personId: string;
   amount: number;
   reason: string;
+  /**
+   * The person's name, typed by the organizer.
+   *
+   * A write-off clears a real debt without anybody paying it. There is no
+   * undo and no other record that the money was ever owed once the entry
+   * says FORGIVEN, so the confirmation is checked here rather than only
+   * in the browser.
+   */
+  typedName?: string;
 }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
@@ -118,6 +128,14 @@ export async function forgiveBalance(input: {
         include: { ledgerEntries: true },
       });
       if (!person) return { error: "Person not found." as string };
+
+      const nameRefusal = typedConfirmationRefusal({
+        typed: input.typedName,
+        expected: person.nameEnglishFirst,
+        whatItDoes:
+          `this writes off money ${person.nameEnglishFirst} owes, without anyone paying it.`,
+      });
+      if (nameRefusal) return { error: nameRefusal as string };
 
       const owed = ledgerBalance(person.ledgerEntries);
       const refusal = forgivenessRefusal({ balance: owed, amount: input.amount });

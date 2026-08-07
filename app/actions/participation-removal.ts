@@ -6,6 +6,7 @@ import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { frozenCycleRefusal } from "@/lib/cycle-close";
+import { deleteDrawIfEmpty, purgeEmptyWinnerPlans } from "@/lib/draw-cascade";
 import { unsettlePayout } from "@/lib/draw-settlement";
 import { formatMoney } from "@/lib/format";
 import { nameConfirmed } from "@/lib/settlement";
@@ -230,34 +231,58 @@ export async function removeFromCycle(input: {
         //    money leaving the books is a deliberate act.
         await tx.payout.deleteMany({ where: { luckyNumberId: { in: [...mine] } } });
 
-        // 3. Sweep the DRAWS that would be left with no winners at all. Their
-        //    slot members cascade away with the lucky numbers, so without this
-        //    the week stays permanently marked drawn with nobody in it.
+        // 3. Sweep the DRAWS left holding no payout.
+        //
+        //    THE TEST HERE WAS THE WRONG ONE. It asked whether any SLOT MEMBER
+        //    survived, not whether any PAYOUT did — and step 2 has just deleted
+        //    every payout this member had. Slot S = {#5 mine, #9 someone
+        //    else's}, drawn on week 7. If #9's payout was deleted earlier (a
+        //    supported action: the number stays drawn, and deleteDrawIfEmpty
+        //    left the draw alone because #5's payout still held it), then
+        //    removing #5's owner deletes the last payout while survivors=[#9]
+        //    says "leave the draw". Week 7 is then permanently drawn holding
+        //    nothing, cannot be redrawn or assigned to, and #9 is frozen out of
+        //    the pool forever with no payout recording the win.
+        //
+        //    That is exactly the week-6 shape this whole audit came from —
+        //    reachable through the very action written to prevent it. The right
+        //    test is the one lib/draw-cascade.ts already owns: payoutsRemaining.
+        const touchedDrawIds = new Set<string>();
+        const touchedSlotIds = new Set<string>();
         for (const n of p.luckyNumbers) {
           for (const sm of n.slotMembers) {
+            touchedSlotIds.add(sm.slotId);
             const draw = sm.slot.draws[0] ?? null;
-            if (!draw) continue;
-            const survivors = sm.slot.members.filter((m) => !mine.has(m.luckyNumberId));
-            if (survivors.length === 0) {
-              await tx.draw.deleteMany({ where: { id: draw.id } });
-              // The emptied slot too: saveSlots refuses to remove a slot that
-              // had a draw, so nothing else would ever clean it up.
-              await tx.slot.deleteMany({ where: { id: sm.slotId } });
-            }
+            if (draw) touchedDrawIds.add(draw.id);
           }
+        }
+        for (const drawId of touchedDrawIds) {
+          await deleteDrawIfEmpty(tx, drawId);
+        }
+
+        // 3b. An UNDRAWN slot holding only this member's numbers is released
+        //     too. `if (!draw) continue` skipped those entirely, so the slot
+        //     survived with zero members after the cascade — the very orphan
+        //     this module's own header promises to prevent.
+        for (const slotId of touchedSlotIds) {
+          await tx.slotMember.deleteMany({
+            where: { slotId, luckyNumberId: { in: [...mine] } },
+          });
+          await tx.slot.deleteMany({
+            where: { id: slotId, members: { none: {} }, draws: { none: {} } },
+          });
         }
 
         // 4. Sweep WINNER PLANS left with zero numbers. `[].every()` is
         //    vacuously true, so an empty plan would match the first eligible
         //    slot and rig the next draw while auditing it as "planned".
-        for (const n of p.luckyNumbers) {
-          for (const pn of n.planNumbers) {
-            const survivors = pn.plan.numbers.filter((x) => !mine.has(x.luckyNumberId));
-            if (survivors.length === 0) {
-              await tx.winnerPlan.deleteMany({ where: { id: pn.plan.id } });
-            }
-          }
-        }
+        //
+        //    Through the shared sweep, for two reasons the hand-rolled version
+        //    got wrong: it deleted plans of ANY status, destroying the FULFILLED
+        //    record that a win had been planned; and it only reached plans
+        //    containing THIS member's numbers, so plans already hollowed out by
+        //    an earlier edit — the two found live on week 11 — were left behind.
+        await purgeEmptyWinnerPlans(tx, p.cycleId);
 
         // 5. The participation itself — receipts, week rows, allocations and
         //    lucky numbers all cascade from here.

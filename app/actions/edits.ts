@@ -43,7 +43,9 @@ import {
   takenNumbers,
 } from "@/lib/number-conflict";
 import { reverseCarryDeduction } from "@/lib/carry-reversal";
+import { windowChangeRefusal } from "@/lib/participation-window";
 import { personRemovalBlockers } from "@/lib/person-record";
+import { typedConfirmationRefusal } from "@/lib/typed-confirmation";
 import {
   settlementReceiptAmountRefusal,
   settlementReceiptDeleteRefusal,
@@ -139,7 +141,11 @@ function pickPerson(p: { nameAmharic: string; nameEnglishFirst: string; nameEngl
   };
 }
 
-export async function deletePerson(input: { personId: string }) {
+export async function deletePerson(input: {
+  personId: string;
+  /** The person's name, typed by the organizer. Always required. */
+  typedName?: string;
+}) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -163,6 +169,15 @@ export async function deletePerson(input: { personId: string }) {
           },
         },
       });
+      const nameRefusal = typedConfirmationRefusal({
+        typed: input.typedName,
+        expected: target.nameEnglishFirst,
+        whatItDoes:
+          `this deletes ${target.nameEnglishFirst} from the directory along with every ` +
+          `device and IP record of their sign-ins.`,
+      });
+      if (nameRefusal) throw new Error(nameRefusal);
+
       const blockers = personRemovalBlockers({
         name: target.nameEnglishFirst,
         participationCount: target._count.participations,
@@ -238,6 +253,62 @@ export async function updateParticipation(
       if (frozen) throw new Error(frozen);
       const capError = validateCommitmentCap(before.cycle, input);
       if (capError) throw new Error(capError);
+
+      // WHAT THE OLD WINDOW WAS CARRYING (lib/participation-window.ts).
+      //
+      // The cap check asks whether the new window fits the cycle. It does not
+      // ask what falls OUTSIDE it — a committed winner plan the member can no
+      // longer reach, or a draw they already won on a week the new window
+      // excludes. Both were left stranded, and neither surfaced anywhere the
+      // organizer would look.
+      {
+        const numberIds = before.luckyNumbers.map((n) => n.id);
+        const numberOf = new Map(before.luckyNumbers.map((n) => [n.id, n.number]));
+
+        const plans = await tx.winnerPlan.findMany({
+          where: {
+            cycleId: before.cycleId,
+            status: "PLANNED",
+            weekId: { not: null },
+            numbers: { some: { luckyNumberId: { in: numberIds } } },
+          },
+          include: {
+            numbers: { select: { luckyNumberId: true } },
+            week: { select: { weekNumber: true } },
+          },
+        });
+
+        const draws = await tx.draw.findMany({
+          where: { slot: { members: { some: { luckyNumberId: { in: numberIds } } } } },
+          include: {
+            week: { select: { weekNumber: true, cycleId: true } },
+            slot: { include: { members: { select: { luckyNumberId: true } } } },
+          },
+        });
+
+        const refusal = windowChangeRefusal({
+          memberName: before.person.nameEnglishFirst,
+          startWeek: input.startWeek,
+          weeksCommitted: input.weeksCommitted,
+          plans: plans
+            .filter((p) => p.week !== null)
+            .map((p) => ({
+              weekNumber: p.week!.weekNumber,
+              numbers: p.numbers
+                .map((n) => numberOf.get(n.luckyNumberId))
+                .filter((n): n is number => n !== undefined),
+            })),
+          drawnWeeks: draws
+            .filter((d) => d.week.cycleId === before.cycleId)
+            .map((d) => ({
+              weekNumber: d.week.weekNumber,
+              numbers: d.slot.members
+                .map((m) => numberOf.get(m.luckyNumberId))
+                .filter((n): n is number => n !== undefined),
+            })),
+        });
+        if (refusal) throw new Error(refusal);
+      }
 
       // The drawn branch: real money already went out under the old terms.
       const payouts = before.luckyNumbers.flatMap((n) => n.payouts);
@@ -1664,7 +1735,15 @@ export async function updatePayout(input: {
  * slot numbers back in the pool. The caller is told which happened, and the
  * confirmation dialog states it before anything runs.
  */
-export async function deletePayout(input: { payoutId: string }) {
+export async function deletePayout(input: {
+  payoutId: string;
+  /**
+   * The member's name, typed by the organizer. REQUIRED once the payout
+   * is COLLECTED — the money is gone and this row is the only record of
+   * it leaving.
+   */
+  typedName?: string;
+}) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -1675,8 +1754,27 @@ export async function deletePayout(input: { payoutId: string }) {
       await refuseIfCycleClosed(tx, { payoutId: input.payoutId });
       const target = await tx.payout.findUniqueOrThrow({
         where: { id: input.payoutId },
-        include: { luckyNumber: true, draw: { include: { week: true } } },
+        include: {
+          luckyNumber: { include: { participation: { include: { person: true } } } },
+          draw: { include: { week: true } },
+        },
       });
+
+      // A COLLECTED payout is the record of cash that has already left.
+      // Deleting it is not recoverable from anything else, so the typed
+      // confirmation the dialog asks for is checked here too.
+      if (target.status === "COLLECTED") {
+        const person = target.luckyNumber.participation.person;
+        const refusal = typedConfirmationRefusal({
+          typed: input.typedName,
+          expected: person.nameEnglishFirst,
+          whatItDoes:
+            `this deletes the record of ${formatMoney(target.netAmount)} already handed ` +
+            `over to ${person.nameEnglishFirst}.`,
+        });
+        if (refusal) throw new Error(refusal);
+      }
+
       const { reversed } = await unsettlePayout(tx, input.payoutId);
       // The OTHER half of a carry deduction. unsettlePayout reverses the
       // winner-week settlement because that half has an FK; this reverses the

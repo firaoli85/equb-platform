@@ -49,13 +49,19 @@ export function CloseFlow({ review }: { review: Review }) {
   const ackOk = !needsAck || acknowledge.trim().length > 0;
   const tooSoon = review.timing.state === "too-soon";
 
-  async function doClose() {
+  async function doClose(typedPhrase: string) {
     setBusy(true);
     setMsg(null);
     try {
       const result = await closeCycle({
         cycleId: review.cycleId,
-        typedName: review.cycleName,
+        // WHAT THE ORGANIZER TYPED. This sent `review.cycleName` — the
+        // component's own copy of the expected value — so the server's
+        // `input.typedName.trim() !== cycle.name` check passed
+        // unconditionally. Closing writes a carried debt onto every short
+        // member and freezes the books; the confirmation that guards it
+        // must be a real one, not the client agreeing with itself.
+        typedName: typedPhrase,
         acknowledgeUndrawn: needsAck ? acknowledge : undefined,
       });
       if (!result.ok) setMsg({ kind: "err", text: `Not closed: ${result.error}` });
@@ -313,7 +319,7 @@ export function CloseFlow({ review }: { review: Review }) {
       <ConfirmDialog
         spec={confirm}
         busy={busy}
-        onConfirm={() => void doClose()}
+        onConfirm={(typedPhrase) => void doClose(typedPhrase)}
         onCancel={() => setConfirm(null)}
       />
     </div>
@@ -369,11 +375,14 @@ export function DeleteCycleCard({
     }
   }
 
-  async function doDelete() {
+  async function doDelete(typedPhrase: string) {
     setBusy(true);
     setMsg(null);
     try {
-      const result = await deleteClosedCycle({ cycleId: cycle.id, typedName: cycle.name });
+      // Same shape, same fix: the typed value, not our copy of it. This one
+      // wipes every participation, week, receipt, draw and payout in the
+      // cycle.
+      const result = await deleteClosedCycle({ cycleId: cycle.id, typedName: typedPhrase });
       if (!result.ok) setMsg({ kind: "err", text: `Not deleted: ${result.error}` });
       else {
         setMsg({ kind: "ok", text: `✓ ${cycle.name} deleted — its archive and every ledger remain.` });
@@ -422,7 +431,7 @@ export function DeleteCycleCard({
       <ConfirmDialog
         spec={confirm}
         busy={busy}
-        onConfirm={() => void doDelete()}
+        onConfirm={(typedPhrase) => void doDelete(typedPhrase)}
         onCancel={() => setConfirm(null)}
       />
     </Card>

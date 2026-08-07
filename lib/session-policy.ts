@@ -30,7 +30,11 @@ export type SessionLimits = {
 };
 
 /** Why a session ended — the login page says which, so it is never a mystery. */
-export type ExpiryReason = "idle" | "absolute" | "revoked";
+// "unverified" — the Supabase cookies validate but the session HANDLE is
+// missing, on an account that has session rows. Every sign-in since the record
+// shipped sets a handle, so its absence means it was lost or removed: the
+// devtools trick that used to defeat "Sign out everywhere else" entirely.
+export type ExpiryReason = "idle" | "absolute" | "revoked" | "unverified";
 
 export type SessionVerdict =
   | { state: "active"; idleExpiresAt: Date; absoluteExpiresAt: Date }
@@ -136,6 +140,8 @@ export function shouldTouch(
  */
 export function expiryNotice(reason: ExpiryReason, role: SessionRole): string {
   switch (reason) {
+    case "unverified":
+      return "We could not verify this sign-in. Sign in again to continue.";
     case "revoked":
       return "You were signed out of this device from somewhere else. Sign in again to continue.";
     case "absolute":
@@ -151,5 +157,7 @@ export function expiryNotice(reason: ExpiryReason, role: SessionRole): string {
 export const EXPIRY_PARAM = "expired";
 
 export function isExpiryReason(value: string | null): value is ExpiryReason {
-  return value === "idle" || value === "absolute" || value === "revoked";
+  return (
+    value === "idle" || value === "absolute" || value === "revoked" || value === "unverified"
+  );
 }

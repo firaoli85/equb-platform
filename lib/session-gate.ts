@@ -41,16 +41,41 @@ function hashToken(token: string): string {
 export async function checkSession(input: {
   token: string | null | undefined;
   isAdmin: boolean;
+  /**
+   * The Supabase auth user from the validated JWT.
+   *
+   * Needed so a MISSING handle can be told apart from a session that predates
+   * the record — without it, deleting one cookie buys unlimited access.
+   */
+  authUserId?: string | null;
   now?: Date;
 }): Promise<SessionGateResult> {
   const now = input.now ?? new Date();
   const role: SessionRole = input.isAdmin ? "ADMIN" : "MEMBER";
 
-  // No handle at all. This is a session that predates the record — the
-  // organizer's current one, on the day this ships — or a browser that lost
-  // the cookie. There is nothing to measure, so it cannot be enforced; the
-  // Supabase gate still applies and the next sign-in gets a row.
-  if (!input.token) return { state: "allow" };
+  // NO HANDLE — and that is not automatically innocent.
+  //
+  // This returned allow unconditionally, which defeated "Sign out everywhere
+  // else" completely: the person holding the device opens devtools, deletes
+  // the `equb_session` cookie, and their Supabase sb-* cookies (never revoked,
+  // because Supabase has no per-device revocation from here) keep validating.
+  // They stay signed in indefinitely — and their row now reads revoked, so no
+  // surface will ever show them again. The feature exists precisely for the
+  // case where someone else is holding a device.
+  //
+  // The reasoning for the old behaviour was a session that PREDATES the
+  // record. That is still honoured, but narrowly: it is true only when the
+  // person has no session rows at all. Once they have one, every sign-in since
+  // has set a handle, so arriving without one means it was lost or removed —
+  // and re-authenticating costs a PIN entry.
+  if (!input.token) {
+    if (!input.authUserId) return { state: "allow" };
+    const everRecorded = await prisma.signInSession.count({
+      where: { authUserId: input.authUserId },
+    });
+    if (everRecorded === 0) return { state: "allow" };
+    return { state: "expired", reason: "unverified", role };
+  }
 
   try {
     const session = await prisma.signInSession.findUnique({

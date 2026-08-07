@@ -21,7 +21,7 @@ import {
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { samePhone, toE164 } from "@/lib/phone";
 import { prisma, serializableTransaction } from "@/lib/prisma";
-import { clearSessionCookie, recordSignIn, revokeCurrentSession } from "@/lib/session-record";
+import { clearSessionCookie, recordSignIn, revokeCurrentSession, revokeSessionsForPerson } from "@/lib/session-record";
 import { getSetting } from "@/lib/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -653,6 +653,15 @@ export async function setMemberPin(input: { personId: string; pin: string }) {
         where: { id: input.personId },
         data: { pinHash: hash, pinFailedAttempts: 0, pinLockedUntil: null },
       });
+      // Replacing a compromised PIN must also end the sessions the old one
+      // opened. The audit entry below already acknowledges the risk — "the
+      // organizer knows this PIN" — and leaving the intruder signed in was
+      // the other half of the same problem.
+      const endedSessions = await revokeSessionsForPerson(
+        tx,
+        input.personId,
+        "PIN changed by the organizer",
+      );
       await logAudit(tx, {
         entity: "Person",
         entityId: input.personId,
@@ -660,7 +669,10 @@ export async function setMemberPin(input: { personId: string; pin: string }) {
         summary:
           `Organizer ${hadOwnPin ? "REPLACED" : "set"} ${person.nameEnglishFirst}'s PIN. ` +
           `The organizer knows this PIN — the member should change it. ` +
-          `Any lock and failed-attempt count were cleared.`,
+          `Any lock and failed-attempt count were cleared.` +
+          (endedSessions > 0
+            ? ` ${endedSessions} open session${endedSessions === 1 ? "" : "s"} ended, so anyone signed in with the old PIN is out.`
+            : ""),
         before: { hadOwnPin, pinFailedAttempts: person.pinFailedAttempts, pinLockedUntil: person.pinLockedUntil },
         after: { hadOwnPin: true, pinFailedAttempts: 0, pinLockedUntil: null },
       });
@@ -738,11 +750,23 @@ export async function resetMemberPin(input: { personId: string }) {
         where: { id: person.id },
         data: { pinHash: null, pinFailedAttempts: 0, pinLockedUntil: null },
       });
+      // A PIN is reset because somebody should no longer be able to use it.
+      // Clearing the hash while leaving their sessions open answered the wrong
+      // half of that: whoever was already inside stayed inside.
+      const endedSessions = await revokeSessionsForPerson(
+        tx,
+        person.id,
+        "PIN reset by the organizer",
+      );
       await logAudit(tx, {
         entity: "Person",
         entityId: person.id,
         action: "update",
-        summary: `Reset ${person.nameEnglishFirst}'s PIN — back to the phone-digit default`,
+        summary:
+          `Reset ${person.nameEnglishFirst}'s PIN — back to the phone-digit default` +
+          (endedSessions > 0
+            ? `; ${endedSessions} open session${endedSessions === 1 ? "" : "s"} ended, so anyone already signed in is out`
+            : ""),
         before: {
           hadPin: person.pinHash !== null,
           pinFailedAttempts: person.pinFailedAttempts,
@@ -792,6 +816,17 @@ export async function signOutAction() {
   // this device stops appearing as active in "Where you are signed in" the
   // moment they tap it. The row is kept, never deleted (2.14).
   await revokeCurrentSession("Signed out");
-  await supabase.auth.signOut();
+  // SCOPE: LOCAL — this device only.
+  //
+  // The default is a GLOBAL sign-out, so tapping "Sign out" on a phone killed
+  // the refresh token of every other device too. The laptop kept working until
+  // its access token expired, then failed to refresh and was bounced to /login
+  // with no reason shown — while its SignInSession row still read revokedAt =
+  // null with a frozen lastSeenAt, so "Where you are signed in" called it
+  // active for the next seven days.
+  //
+  // Signing out one device must end one device. Ending them all is a separate,
+  // deliberate action ("Sign out everywhere else"), and it revokes the rows.
+  await supabase.auth.signOut({ scope: "local" });
   redirect(wasAdmin ? "/admin/login" : "/login");
 }
