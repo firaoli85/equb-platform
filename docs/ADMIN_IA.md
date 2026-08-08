@@ -335,3 +335,24 @@ sends the organizer away from the answer he is looking at.
 Each step verified against `docs/UI_STANDARDS.md` and `docs/DOMAIN_RULES.md` before the next
 begins, per `docs/SELF_TEST_LOOP.md` — three rounds minimum, and more while anything is still
 found.
+
+---
+
+## 10. Sign-in — what is built, and what is not
+
+**Show password.** `/admin/login` has an eye toggle: a real `<button>`, keyboard reachable,
+named for what pressing it *does* (`aria-label` flips between Show/Hide), with `aria-pressed`
+carrying the current state and a polite live region announcing the change. A button labelled
+only "Show password" that has already been pressed tells a screen-reader user nothing about
+whether the password is visible right now, which is why both are present.
+
+**Passkeys — a post-deploy idea, not a toggle.** Worth wanting: they remove the shared-secret
+problem entirely, and the organizer's password is the one credential that protects every
+member's money. But Supabase Auth has **no native passkey support**, so adopting them means
+implementing WebAuthn directly — registration and authentication ceremonies, credential
+storage, challenge handling, attestation decisions, and a recovery path for a lost device
+that does not quietly reintroduce the password as a bypass. That is a real build with its
+own threat model, not a setting.
+
+Not now. Revisit after deploy, and only with the recovery path designed first — a passkey
+system whose fallback is "email me a reset link" is a password system wearing a costume.

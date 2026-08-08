@@ -22,6 +22,33 @@ export function parseTab(raw: string | string[] | undefined): MemberTab {
     : "payments";
 }
 
+// ————————————————— The Settings tab's three jobs —————————————————
+//
+// Settings was one scroll holding participation, lucky numbers, names, phone,
+// PIN, messaging and sign-in history — three unrelated concerns, the first of
+// which is a page in its own right. They are separated here rather than in the
+// page so the labels and the parser cannot drift apart.
+//
+// MONEY FIRST. It is the consequential one — saving it replays receipts and
+// can re-settle a payout — so it is the default and it is named for what it
+// changes, not for the form it contains.
+
+export const MEMBER_SETTINGS_SECTIONS = ["participation", "person", "access"] as const;
+export type MemberSettingsSection = (typeof MEMBER_SETTINGS_SECTIONS)[number];
+
+export const SETTINGS_SECTION_LABELS: Record<MemberSettingsSection, string> = {
+  participation: "Participation and money",
+  person: "Name and phone",
+  access: "Access and messaging",
+};
+
+export function parseSection(raw: string | string[] | undefined): MemberSettingsSection {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return (MEMBER_SETTINGS_SECTIONS as readonly string[]).includes(value ?? "")
+    ? (value as MemberSettingsSection)
+    : "participation";
+}
+
 export function MemberTabBar({
   personId,
   active,

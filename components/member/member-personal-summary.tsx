@@ -25,8 +25,15 @@ export function MemberPersonalSummary({
 }: Props) {
   const reduce = useReducedMotion();
   const [mounted, setMounted] = useState(false);
-  const [displayCount, setDisplayCount] = useState(0);
-  const [displayPct, setDisplayPct] = useState(0);
+  // NULL MEANS "NOT ANIMATING", AND NULL RENDERS THE TRUTH.
+  //
+  // These were `useState(0)`, so the server rendered "0 of 20 weeks paid" and
+  // a 0% bar for every member, corrected only once the bundle hydrated. On a
+  // slow phone — which is what these members are on — a savings portal opening
+  // with your contributions at zero is the most alarming wrong number the
+  // product could show, and it stayed wrong for good with scripting off.
+  const [displayCount, setDisplayCount] = useState<number | null>(null);
+  const [displayPct, setDisplayPct] = useState<number | null>(null);
 
   const pct = totalWeeks > 0 ? Math.min(Math.round((paidCount / totalWeeks) * 100), 100) : 0;
   const remainingWeeks = Math.max(0, totalWeeks - paidCount);
@@ -50,6 +57,13 @@ export function MemberPersonalSummary({
         const n = Math.round(v);
         setDisplayCount(n);
         setDisplayPct(totalWeeks > 0 ? Math.min(Math.round((n / totalWeeks) * 100), 100) : 0);
+      },
+      // Land on the stored figures exactly. Easing arithmetic can finish a
+      // hair short, and a member reading 19 of 20 weeks when they have paid
+      // all 20 would be right to think something is wrong.
+      onComplete: () => {
+        setDisplayCount(paidCount);
+        setDisplayPct(pct);
       },
     });
     return () => ctrl.stop();
@@ -139,10 +153,10 @@ export function MemberPersonalSummary({
 
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none gap-0.5">
               <span className="text-2xl font-black text-blue-900 dark:text-white tabular-nums leading-none">
-                {displayPct}%
+                {displayPct ?? pct}%
               </span>
               <span className="text-[10px] font-bold text-blue-900/60 dark:text-white/60 tabular-nums leading-none">
-                {displayCount}/{totalWeeks} wks
+                {displayCount ?? paidCount}/{totalWeeks} wks
               </span>
             </div>
           </div>

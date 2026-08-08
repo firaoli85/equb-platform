@@ -5,6 +5,7 @@ import { getMemberStanding } from "@/app/actions/payments";
 import { listMemberSignIns } from "@/app/actions/sessions";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { ledgerBalance, ledgerStory } from "@/lib/ledger";
@@ -18,7 +19,12 @@ import { AssignPayout } from "./assign-payout";
 import { CarriedBalance } from "./carried-balance";
 import { MemberPayments } from "./member-payments";
 import { MemberSignIns } from "./member-sign-ins";
-import { MemberTabBar, parseTab } from "./member-tabs";
+import {
+  MemberTabBar,
+  parseSection,
+  parseTab,
+  SETTINGS_SECTION_LABELS,
+} from "./member-tabs";
 import { MessagesOptOut } from "./messages-opt-out";
 import { ParticipationEditor } from "./participation-editor";
 import { PersonEditForm } from "./person-edit-form";
@@ -43,12 +49,16 @@ export default async function PersonPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string | string[] }>;
+  searchParams: Promise<{ tab?: string | string[]; section?: string | string[] }>;
 }) {
   // A member's identity and money (2.4).
   if (await getSetting("presentationMode")) return <PresentationHidden what="Member" />;
   const { id } = await params;
-  const tab = parseTab((await searchParams).tab);
+  const query = await searchParams;
+  const tab = parseTab(query.tab);
+  // The Settings tab is three jobs, so it carries a second level (see
+  // components/ui/section-nav.tsx for why).
+  const section = parseSection(query.section);
 
   const person = await prisma.person.findUnique({
     where: { id },
@@ -548,15 +558,50 @@ export default async function PersonPage({
       )}
 
       {/* ————— TAB 4: SETTINGS — participation lives HERE and nowhere else ————— */}
+      {/* ————— TAB 4: SETTINGS — three jobs, one at a time —————
+
+          This was a single scroll holding participation, lucky numbers, names,
+          phone, PIN, messaging and sign-in history. Every form was correct and
+          the screen was unreadable: you could not tell where one job ended and
+          the next began, so reaching the PIN controls meant scrolling past a
+          money form that can re-settle a payout.
+
+          Nothing was removed. They are separated, and each one now has room to
+          say what it is for. */}
       {tab === "settings" && (
-        <div className="space-y-4">
-          {active !== null && (
+        <div className="space-y-5">
+          <SectionNav
+            label="Settings sections"
+            active={section}
+            sections={[
+              { key: "participation", label: SETTINGS_SECTION_LABELS.participation },
+              { key: "person", label: SETTINGS_SECTION_LABELS.person },
+              {
+                key: "access",
+                label: SETTINGS_SECTION_LABELS.access,
+                count: signIns.ok ? signIns.data.length : undefined,
+                // The default PIN is a standing risk, so the section that
+                // fixes it says so from the nav rather than only once opened.
+                attention: pinState === "default",
+              },
+            ]}
+            hrefFor={(key) => `/admin/people/${person.id}?tab=settings&section=${key}`}
+            className="animate-fade-in-up"
+          />
+
+          {section === "participation" && (
+            <div className="space-y-4 animate-fade-in-up-1">
+              <SectionHeading title="Participation and money">
+                What they pay, for how long, and which numbers are theirs. Saving replays
+                their receipts against the new shape — with a live settlement step if they
+                have already been drawn (2.18). Nothing here is written until you press save.
+              </SectionHeading>
+              {/* No CardHeader on the card below: the SectionHeading above
+                  already says this, and a heading repeated verbatim two lines
+                  apart reads as a rendering fault rather than as emphasis. */}
+              {active !== null ? (
             <Card>
-              <CardHeader
-                title="Participation and lucky numbers"
-                sub="The one place these are edited. Saving replays their receipts against the new shape, with a live settlement step if they have already been drawn (2.18)."
-              />
-              <div className="px-5 pb-4">
+              <div className="px-5 py-5">
                 <ParticipationEditor
                   show={{
                     participation: true,
@@ -606,92 +651,113 @@ export default async function PersonPage({
                 />
               </div>
             </Card>
-          )}
-
-          <Card>
-            <CardHeader title="Person" sub="Carries to every cycle (2.5)." />
-            <div className="grid gap-6 px-5 pb-5 md:grid-cols-2">
-              <div>
-                <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                  Names and phone
-                </h3>
-                <PersonEditForm
-                  person={{
-                    id: person.id,
-                    nameAmharic: person.nameAmharic,
-                    nameEnglishFirst: person.nameEnglishFirst,
-                    nameEnglishLast: person.nameEnglishLast,
-                    phone: person.phone,
-                    participationCount: person.participations.length,
-                    // The form warns about a credential change and states the
-                    // real blockers on a removal. It can do neither without
-                    // the facts, and this page already holds all of them.
-                    pinState,
-                    ledgerEntryCount: person.ledgerEntries.length,
-                    messageCount: messageCount,
-                    sessionCount: sessionCount,
-                  }}
-                />
-              </div>
-              <div>
-                <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                  PIN sign-in
-                </h3>
-                <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">
-                  {pinState === "own" ? (
-                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                      They set their own PIN.
-                    </span>
-                  ) : pinState === "default" ? (
-                    // The badge the ruling keeps. The wording changed with it:
-                    // the default now signs in on its own, so this is a
-                    // standing risk to nudge, not a half-open door.
-                    <span className="rounded bg-amber-100 dark:bg-amber-950/50 px-1.5 py-0.5 text-amber-900 dark:text-amber-300">
-                      Still on the default — the last 4 digits of their phone sign them in. Anyone
-                      who has their number could use it.
-                    </span>
-                  ) : (
-                    <span className="text-gray-600 dark:text-gray-400">
-                      No PIN — they sign in with a code, or set a PIN below.
-                    </span>
-                  )}
-                </p>
-                <PinControls
-                  personId={person.id}
-                  personName={person.nameEnglishFirst}
-                  pinSet={person.pinHash !== null}
-                  pinLoginAllowed={person.pinLoginAllowed}
-                  pinFailedAttempts={person.pinFailedAttempts}
-                  lockedMinutesLeft={lockedMinutesLeft}
-                  lockedUntilLabel={lockedUntilLabel}
-                />
-                <div className="mt-5 border-t border-gray-200 dark:border-gray-800 pt-4">
-                  <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                    Messaging
-                  </h3>
-                  <MessagesOptOut personId={person.id} noMessages={person.noMessages} />
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {/* Ruling 6: "was that you?", answerable. Sits under Settings
-              beside the PIN controls, because reset-their-PIN is the action
-              this evidence usually leads to. */}
-          <Card>
-            <CardHeader
-              title="Recent sign-ins"
-              sub="Device, network and time for this member's last sign-ins — so you can answer “was that you?”"
-            />
-            <div className="px-5 pb-4">
-              <MemberSignIns rows={signIns.ok ? signIns.data : []} />
-              {!signIns.ok && (
-                <p role="alert" className="mt-2 text-sm text-red-800 dark:text-red-400">
-                  {signIns.error}
-                </p>
+              ) : (
+                <Card className="px-5 py-4">
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    {person.nameEnglishFirst} is not in the running cycle, so there is no
+                    participation to edit. Their name, phone and access are still on the other
+                    two sections, and their record is under History.
+                  </p>
+                </Card>
               )}
             </div>
-          </Card>
+          )}
+
+          {section === "person" && (
+            <div className="space-y-4 animate-fade-in-up-1">
+              <SectionHeading title="Name and phone">
+                Carries to every cycle (2.5). The phone is also their sign-in identity on
+                every door, so changing it is a credential change — the form says so before
+                it saves.
+              </SectionHeading>
+              <Card>
+                <div className="px-5 py-5">
+                  <PersonEditForm
+                    person={{
+                      id: person.id,
+                      nameAmharic: person.nameAmharic,
+                      nameEnglishFirst: person.nameEnglishFirst,
+                      nameEnglishLast: person.nameEnglishLast,
+                      phone: person.phone,
+                      participationCount: person.participations.length,
+                      pinState,
+                      ledgerEntryCount: person.ledgerEntries.length,
+                      messageCount: messageCount,
+                      sessionCount: sessionCount,
+                    }}
+                  />
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {section === "access" && (
+            <div className="space-y-4 animate-fade-in-up-1">
+              <SectionHeading title="Access and messaging">
+                How {person.nameEnglishFirst} gets in, what the product is allowed to send
+                them, and the evidence that answers &ldquo;was that really them?&rdquo;
+              </SectionHeading>
+
+              <Card>
+                <CardHeader title="PIN sign-in" />
+                <div className="px-5 pb-5">
+                  <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">
+                    {pinState === "own" ? (
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                        They set their own PIN.
+                      </span>
+                    ) : pinState === "default" ? (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
+                        Still on the default — the last 4 digits of their phone sign them in.
+                        Anyone who has their number could use it.
+                      </span>
+                    ) : (
+                      <span className="text-gray-600 dark:text-gray-400">
+                        No PIN — they sign in with a code, or set one below.
+                      </span>
+                    )}
+                  </p>
+                  <PinControls
+                    personId={person.id}
+                    personName={person.nameEnglishFirst}
+                    pinSet={person.pinHash !== null}
+                    pinLoginAllowed={person.pinLoginAllowed}
+                    pinFailedAttempts={person.pinFailedAttempts}
+                    lockedMinutesLeft={lockedMinutesLeft}
+                    lockedUntilLabel={lockedUntilLabel}
+                  />
+                </div>
+              </Card>
+
+              <Card>
+                <CardHeader
+                  title="Messaging"
+                  sub="Whether this member receives anything the product sends (2.28)."
+                />
+                <div className="px-5 pb-5">
+                  <MessagesOptOut personId={person.id} noMessages={person.noMessages} />
+                </div>
+              </Card>
+
+              {/* Ruling 6: "was that you?", answerable. Sits under Settings
+                  beside the PIN controls, because reset-their-PIN is the action
+                  this evidence usually leads to. */}
+              <Card>
+                <CardHeader
+                  title="Recent sign-ins"
+                  sub="Device, network and time for this member's last sign-ins — so you can answer “was that you?”"
+                />
+                <div className="px-5 pb-4">
+                  <MemberSignIns rows={signIns.ok ? signIns.data : []} />
+                  {!signIns.ok && (
+                    <p role="alert" className="mt-2 text-sm text-red-800 dark:text-red-400">
+                      {signIns.error}
+                    </p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
       )}
 

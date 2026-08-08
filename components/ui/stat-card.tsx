@@ -29,23 +29,35 @@ export function StatCard({
   delayClass?: string;
 }) {
   const reduce = useReducedMotion();
-  const [display, setDisplay] = useState(reduce ? (cents ?? 0) : 0);
+  // NULL MEANS "NOT ANIMATING", AND NULL RENDERS THE TRUTH.
+  //
+  // This was `useState(0)`, so the server rendered every money figure as $0
+  // and only hydration corrected it. On a money screen that is the worst
+  // possible default: the dashboard's cash position, the cash tabs and every
+  // drill-down served $0 in their HTML, flashed to the real number when the
+  // bundle landed, and stayed at $0 for good if it never did — with no error
+  // anywhere to say so.
+  //
+  // The figure is now the truth by default and the animation is an overlay on
+  // top of it, which is the right way round: the count-up is decoration, and
+  // decoration must never be what decides what a number says.
+  const [display, setDisplay] = useState<number | null>(null);
 
   useEffect(() => {
-    if (cents === undefined) return;
-    if (reduce) {
-      setDisplay(cents);
-      return;
-    }
+    if (cents === undefined || reduce) return;
     const ctrl = animate(0, cents, {
       duration: motionTokens.duration.slow,
       ease: motionTokens.easing.smooth,
       onUpdate: (v: number) => setDisplay(Math.round(v)),
+      // Land on the exact stored value. Easing arithmetic can finish a hair
+      // short, and a cash position reading $12,499 instead of $12,500 because
+      // of a rounding error in an animation is not a figure anyone can trust.
+      onComplete: () => setDisplay(cents),
     });
     return () => ctrl.stop();
   }, [cents, reduce]);
 
-  const big = cents !== undefined ? formatMoney(display) : (figure ?? "—");
+  const big = cents !== undefined ? formatMoney(display ?? cents) : (figure ?? "—");
 
   const inner = (
     <>
