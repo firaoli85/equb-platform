@@ -23,8 +23,15 @@ export default async function MessagesPage() {
       </main>
     );
   }
-  const { whatsAppMissingConfig, whatsappEnabled, whatsappDisabledReason, templates, members, log } =
-    result.data;
+  const {
+    whatsAppMissingConfig,
+    whatsappEnabled,
+    whatsappDisabledReason,
+    whatsappStatementsBlockedReason,
+    templates,
+    members,
+    log,
+  } = result.data;
 
   return (
     <main className="space-y-8">
@@ -38,12 +45,28 @@ export default async function MessagesPage() {
         </p>
       </div>
 
+      {/* The statement block comes FIRST and is not conditional: it is true
+          whatever the channel switch says, and it is the thing that actually
+          stops these messages. */}
+      <Alert kind="err">
+        <strong>{whatsappStatementsBlockedReason}</strong> Nothing on this page is being sent
+        — every statement is refused before it reaches Twilio, so nothing is attempted and
+        nothing is billed. Preparing and previewing still work, and everything you prepare is
+        shown exactly as it would go out.
+        <br />
+        <span className="mt-1 block">
+          Why: Meta accepts a freeform message only within 24 hours of the member&apos;s own
+          last reply to the Equb sender. This account has had one inbound message ever (19 May
+          2026), so that window is open for nobody. Login codes are unaffected — they go
+          through Twilio Verify as a pre-approved template, which needs no window. This is not
+          a setting, and turning WhatsApp on does not change it.
+        </span>
+      </Alert>
+
       {!whatsappEnabled && (
-        <Alert kind="err">
-          <strong>{whatsappDisabledReason}</strong> No message is being sent — every send is
-          refused before it reaches Twilio, so nothing is attempted and nothing is billed.
-          Preparing and previewing still work, and everything you prepare is shown exactly as
-          it would go out. The switch is on{" "}
+        <Alert kind="info">
+          <strong>{whatsappDisabledReason}</strong> This switch controls WhatsApp{" "}
+          <em>login codes</em>, which do work. It is on{" "}
           <Link href="/admin/settings" className="font-semibold underline">
             Settings
           </Link>

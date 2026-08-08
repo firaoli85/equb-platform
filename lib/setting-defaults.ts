@@ -93,9 +93,32 @@ export const SETTING_DEFAULTS: SettingDefaults = {
 /**
  * Why the channel is off, in the organizer's words. Shown wherever WhatsApp
  * appears so the state is never a mystery switch (2.10).
+ *
+ * This no longer says "Meta has disabled the Business Account". That WAS true
+ * — 15 consecutive sends failed with Twilio 63112 between 2026-08-06 03:03 and
+ * 2026-08-07 01:53 UTC — but it has since cleared: the sender +15559620327
+ * ("Equb") reports ONLINE, quality HIGH, 100K customers/24hr, and login codes
+ * delivered again on 2026-08-08. The switch is now just a switch.
  */
 export const WHATSAPP_DISABLED_REASON =
-  "WhatsApp is disabled — Meta has disabled the Business Account. Turn back on once resolved.";
+  "WhatsApp is switched off — no login codes will send until it is turned back on.";
+
+/**
+ * Why STATEMENTS cannot send, which is a different thing entirely from the
+ * switch above and is NOT something the organizer can turn on.
+ *
+ * Meta allows a freeform body only inside the 24-hour service window that
+ * opens when a member messages the sender. This account has ONE inbound
+ * message in its entire history (19 May 2026), so that window is open for
+ * nobody, and `sendWhatsAppMessage` posts a raw Body with no ContentSid.
+ * Login codes are unaffected: Twilio Verify sends a pre-approved template,
+ * which needs no window — that is exactly why codes work today and statements
+ * do not.
+ *
+ * See docs/WHATSAPP_TEMPLATE_ONLY.md for what registering templates involves.
+ */
+export const WHATSAPP_STATEMENTS_BLOCKED_REASON =
+  "Statements need Meta-approved templates. Login codes work today; statements do not.";
 
 export type SettingKey = keyof SettingDefaults;
 export type SettingValue<K extends SettingKey> = SettingDefaults[K];

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDashboard } from "@/app/actions/dashboard";
+import { WeekPicker } from "@/components/admin/week-picker";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, EmptyState, Pill } from "@/components/ui/primitives";
 import { StatCard } from "@/components/ui/stat-card";
@@ -19,8 +20,19 @@ const GROUPS = [
   { key: "SKIPPED", title: STATUS_LABELS.SKIPPED.text },
 ] as const;
 
-export default async function ThisWeekBreakdownPage() {
-  const result = await getDashboard();
+export default async function ThisWeekBreakdownPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>;
+}) {
+  // The chosen week rides in the URL, so the answer stays server-derived and
+  // the page can be reloaded or shared. An unparseable value is simply absent
+  // and the current week answers, which is the default anyway.
+  const { week } = await searchParams;
+  const requested = Number.parseInt(week ?? "", 10);
+  const result = await getDashboard(
+    Number.isSafeInteger(requested) ? { weekNumber: requested } : undefined,
+  );
   if (!result.ok) {
     return (
       <main>
@@ -31,7 +43,9 @@ export default async function ThisWeekBreakdownPage() {
   const d = result.data;
   if (d.presentation) return <PresentationHidden what="This week" />;
 
-  const members = (key: string) => d.thisWeekMembers.filter((m) => m.status === key);
+  const members = (key: string) => d.selectedWeekMembers.filter((m) => m.status === key);
+  const isCurrent = d.selectedWeek === d.currentWeek;
+  const totals = d.selectedWeekTotals;
 
   return (
     <main className="space-y-6">
@@ -41,37 +55,60 @@ export default async function ThisWeekBreakdownPage() {
             ← Dashboard
           </Link>
         </p>
-        <h1 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
-          Week {d.currentWeek}
-        </h1>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-          Who has paid for this week and who has not.
-        </p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+              Week {d.selectedWeek}
+              {!isCurrent && (
+                <span className="ml-2 align-middle text-sm font-semibold text-gray-500 dark:text-gray-400">
+                  (this week is {d.currentWeek})
+                </span>
+              )}
+            </h1>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {isCurrent
+                ? "Who has paid for this week and who has not."
+                : `Who had paid for week ${d.selectedWeek} and who had not.`}
+            </p>
+          </div>
+          {/* Any week, not only the current one. Everything else on this page
+              is unchanged — this is an addition, not a redesign. */}
+          <WeekPicker
+            weeks={d.selectableWeeks.map((w) => ({
+              weekNumber: w.weekNumber,
+              date: w.date.toISOString(),
+            }))}
+            selected={d.selectedWeek}
+            currentWeek={d.currentWeek}
+          />
+        </div>
       </header>
 
-      {d.thisWeek && (
+      {totals && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <StatCard
             label="Expected"
-            cents={d.thisWeek.expected}
+            cents={totals.expected}
             sub="from members in their window"
           />
           <StatCard
             label="Received"
-            cents={d.thisWeek.received}
-            sub={`${d.thisWeek.membersPaid} of ${d.thisWeek.membersExpected} members paid`}
+            cents={totals.received}
+            sub={`${totals.membersPaid} of ${totals.membersExpected} members paid`}
             emphasis
             delayClass="animate-fade-in-up-1"
           />
           <StatCard
             label="Short"
-            cents={Math.max(0, d.thisWeek.expected - d.thisWeek.received)}
+            cents={Math.max(0, totals.expected - totals.received)}
             sub={
-              d.thisWeek.expected <= d.thisWeek.received
+              totals.expected <= totals.received
                 ? "the week is fully collected"
-                : "still to come in for this week"
+                : isCurrent
+                  ? "still to come in for this week"
+                  : "never came in for that week"
             }
-            emphasis={d.thisWeek.expected > d.thisWeek.received}
+            emphasis={totals.expected > totals.received}
             delayClass="animate-fade-in-up-2"
           />
         </div>
@@ -133,7 +170,7 @@ export default async function ThisWeekBreakdownPage() {
         })}
       </div>
 
-      {d.thisWeekMembers.length === 0 && (
+      {d.selectedWeekMembers.length === 0 && (
         <EmptyState
           title="Nobody is in their window this week."
           hint="Members appear here from the week they join until the week they finish."

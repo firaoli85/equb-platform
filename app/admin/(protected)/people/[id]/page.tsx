@@ -66,6 +66,9 @@ export default async function PersonPage({
               startDate: true,
               plannedWeeks: true,
               feePercent: true,
+              // The live fee calculator reads both from the cycle, never a
+              // constant (2.6) — the split depends on the unit.
+              unitAmount: true,
               // The stored week rows win over any projection (2.14, 2.7).
               weeks: { select: { weekNumber: true, date: true } },
             },
@@ -510,6 +513,8 @@ export default async function PersonPage({
                   })),
                   personName: person.nameEnglishFirst,
                   cycleName: active.cycle.name,
+                  unitAmount: active.cycle.unitAmount,
+                  feePercent: active.cycle.feePercent,
                 }}
                 luckyNumbers={active.luckyNumbers.map((n) => ({
                   id: n.id,
@@ -572,6 +577,8 @@ export default async function PersonPage({
                     })),
                     personName: person.nameEnglishFirst,
                     cycleName: active.cycle.name,
+                    unitAmount: active.cycle.unitAmount,
+                    feePercent: active.cycle.feePercent,
                   }}
                   luckyNumbers={active.luckyNumbers.map((n) => ({
                     id: n.id,

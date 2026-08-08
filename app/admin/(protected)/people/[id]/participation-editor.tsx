@@ -13,6 +13,7 @@ import {
   updatePaymentRow,
 } from "@/app/actions/edits";
 import { NumberConflictPanel } from "@/components/admin/number-conflict-panel";
+import { FeeCalculator } from "@/components/admin/fee-calculator";
 import { RemoveFromCycle } from "@/components/admin/remove-from-cycle";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
@@ -98,6 +99,9 @@ export function ParticipationEditor(props: {
     cycleWeeks: { weekNumber: number; date: string }[];
     personName: string;
     cycleName: string;
+    /** The cycle's real unit and fee — the live calculator reads them (2.6). */
+    unitAmount: number;
+    feePercent: number;
   };
   luckyNumbers: { id: string; number: number; amount: number }[];
   events: EventRowData[];
@@ -506,6 +510,16 @@ export function ParticipationEditor(props: {
             Enter a start week and a length to see when they finish.
           </p>
         )}
+
+        {/* THE FEE, LIVE — the answer he reads off the screen while someone is
+            on the phone asking "if I put in $750 a week, what's your fee?".
+            Recomputes as the amount or the weeks change; nothing is saved. */}
+        <FeeCalculator
+          weeklyAmount={parseDollarsToCents(weeklyDollars)}
+          weeksCommitted={weeksNum}
+          unitAmount={participation.unitAmount}
+          feePercent={participation.feePercent}
+        />
 
         {cap !== null && cap.exceedsCap && (
           <p className="text-sm font-semibold text-red-800 dark:text-red-400">

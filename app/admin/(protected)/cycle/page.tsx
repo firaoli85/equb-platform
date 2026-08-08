@@ -97,7 +97,7 @@ export default async function CyclePage() {
         </Link>
         {[
           { href: "/admin/payments", label: "Payments" },
-          { href: "/admin/cycle/weeks", label: "Weeks" },
+          { href: "/admin/cycle/position", label: "Where it stands" },
           { href: "/admin/cycle/draws", label: "Draws" },
           { href: "/admin/collections", label: "Collections" },
           { href: "/admin/wheel/setup", label: "Wheel setup" },

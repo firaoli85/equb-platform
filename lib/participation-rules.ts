@@ -1,6 +1,6 @@
 import { nextWeekDates } from "./commitment";
 import { Prisma } from "./generated/prisma/client";
-import { MAX_MONEY_CENTS, MAX_WEEKS, remainingWeeksInCycle } from "./money";
+import { calculateFinishWeek, MAX_MONEY_CENTS, MAX_WEEKS, remainingWeeksInCycle } from "./money";
 
 // Shared rules for creating AND editing participations, so the add flow and
 // the D-32 edit flow can never disagree.
@@ -79,4 +79,65 @@ export async function ensureWeeksThrough(
     cycleStartDate: cycle.startDate,
   }).map((w) => ({ cycleId: cycle.id, weekNumber: w.weekNumber, date: w.date }));
   if (data.length > 0) await tx.week.createMany({ data });
+}
+
+/**
+ * Remove OVERRIDE weeks that nobody reaches any more.
+ *
+ * THE LEAK. `ensureWeeksThrough` creates weeks past the planned end when a
+ * member is deliberately extended (2.22 / D-31). Nothing ever removed them:
+ * shorten that member back, or remove them from the cycle entirely, and weeks
+ * 21–25 stay. No product path could delete them — `updateCycle` only prunes
+ * when `plannedWeeks` shrinks, and these sit ABOVE plannedWeeks by definition.
+ *
+ * What they cost: the cycle reads as longer than it is (2.7 tracks the ACTUAL
+ * length, and these are not actual), they appear in every week picker, and
+ * `elapsedThroughWeek` eventually counts them — so the cycle position would
+ * report weeks that exist for nobody.
+ *
+ * WHAT IS NEVER PRUNED. Only weeks past the planned end, that no participation
+ * still reaches, and that carry NO evidence of having happened: no money, no
+ * deferral, no draw, no winner plan, no note. A week that anything at all
+ * points to is history, and history stays (2.14).
+ */
+export async function pruneOrphanOverrideWeeks(
+  tx: Prisma.TransactionClient,
+  cycleId: string,
+): Promise<{ pruned: number[] }> {
+  const cycle = await tx.cycle.findUnique({
+    where: { id: cycleId },
+    select: { plannedWeeks: true },
+  });
+  if (!cycle) return { pruned: [] };
+
+  const participations = await tx.participation.findMany({
+    where: { cycleId },
+    select: { startWeek: true, weeksCommitted: true },
+  });
+  const deepestFinish = participations.reduce(
+    (max, p) => Math.max(max, calculateFinishWeek(p.startWeek, p.weeksCommitted)),
+    0,
+  );
+  // The cycle genuinely runs to the later of its plan and its deepest
+  // commitment. Anything past THAT belongs to nobody.
+  const keepThrough = Math.max(cycle.plannedWeeks, deepestFinish);
+
+  const candidates = await tx.week.findMany({
+    where: {
+      cycleId,
+      weekNumber: { gt: keepThrough },
+      // Every trace of the week having existed, checked at once.
+      draws: { none: {} },
+      winnerPlans: { none: {} },
+      payments: { none: { OR: [{ amountPaid: { gt: 0 } }, { isDeferred: true }] } },
+      pinnedEvents: { none: {} },
+      notes: null,
+    },
+    select: { id: true, weekNumber: true },
+    orderBy: { weekNumber: "asc" },
+  });
+  if (candidates.length === 0) return { pruned: [] };
+
+  await tx.week.deleteMany({ where: { id: { in: candidates.map((w) => w.id) } } });
+  return { pruned: candidates.map((w) => w.weekNumber) };
 }

@@ -53,6 +53,7 @@ import {
 import { changeWinnerRefusal } from "@/lib/undo-draw";
 import {
   ensureWeeksThrough,
+  pruneOrphanOverrideWeeks,
   validateCommitmentCap,
   validateParticipationFields,
   type ParticipationFieldsInput,
@@ -528,11 +529,21 @@ export async function updateParticipation(
       // The window or rate changed — replay the receipts so every aggregate
       // matches the new shape, or roll everything back with a clear reason.
       await rebuildParticipationPayments(tx, input.participationId);
+      // Shortening the commitment that created the override weeks leaves them
+      // behind, and no other path could ever remove them: updateCycle prunes
+      // only when plannedWeeks shrinks, and these sit above it by definition.
+      const prunedWeeks = await pruneOrphanOverrideWeeks(tx, before.cycleId);
       await logAudit(tx, {
         entity: "Participation",
         entityId: input.participationId,
         action: "update",
-        summary: `Edited ${before.person.nameEnglishFirst}'s participation in ${before.cycle.name}.${settlementSummary}`,
+        summary:
+          `Edited ${before.person.nameEnglishFirst}'s participation in ${before.cycle.name}.${settlementSummary}` +
+          (prunedWeeks.pruned.length > 0
+            ? ` Week${prunedWeeks.pruned.length === 1 ? "" : "s"} ${prunedWeeks.pruned.join(", ")} ` +
+              `past the planned end no longer belonged to anyone and carried nothing, so ` +
+              `${prunedWeeks.pruned.length === 1 ? "it was" : "they were"} removed.`
+            : ""),
         before: {
           weeklyAmount: before.weeklyAmount,
           startWeek: before.startWeek,
@@ -1495,7 +1506,7 @@ export async function updateWeek(input: {
       return after;
     });
     revalidateAdmin();
-    revalidatePath("/admin/cycle/weeks");
+    revalidatePath("/admin/cycle/position");
     return { ok: true as const, data };
   } catch (e) {
     console.error("updateWeek failed:", e);

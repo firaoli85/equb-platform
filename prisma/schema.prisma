@@ -517,3 +517,34 @@ enum PayoutStatus {
   PENDING
   COLLECTED
 }
+
+// WHAT THE ORGANIZER ACTUALLY HOLDS, at a moment in time.
+//
+// The ONE stored fact in the cash-position feature (2.14). Everything it is
+// compared against — what he should be holding, what is owed forward, what is
+// committed to pending payouts, what of it is his own fee — is derived at read
+// time from money that already happened.
+//
+// A RECORD, NOT A SETTING. Each entry is a reading with its own date, kept
+// forever, so he can look back at what he held in week 8 versus week 12 and
+// see drift across the cycle rather than only today's snapshot.
+//
+// cycleId is a PLAIN STRING with no relation, deliberately: a reading is about
+// HIM, not about one cycle, and deleting a cycle must never take his cash
+// history with it — the same reasoning as CycleArchive.
+model CashReading {
+  id          String   @id @default(cuid())
+  cycleId     String?
+  /** Cents. The whole figure — the sum of the parts below when both are given. */
+  totalAmount Int
+  /** Optional split, when separating them is clearer than one total. */
+  bankAmount  Int?
+  cashAmount  Int?
+  /** The day the reading was TAKEN, which is not always the day it was typed. */
+  readAt      DateTime
+  note        String?
+  createdAt   DateTime @default(now())
+  @@index([readAt])
+  @@index([cycleId])
+  @@map("cash_readings")
+}

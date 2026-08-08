@@ -28,7 +28,17 @@ function utcDay(date: Date): number {
  * The complete financial picture (2.1), computed fresh on every call (2.14 —
  * no cached totals). Three queries total; nothing per-member.
  */
-export async function getDashboard() {
+/**
+ * The dashboard, and the per-week drill-down behind it.
+ *
+ * `weekNumber` chooses which week the breakdown describes. It defaults to the
+ * current week, so every existing caller is unaffected — and the /admin/this-week
+ * selector passes a chosen one. It is the SAME `weekMemberStatus` derivation
+ * either way (the function was always week-agnostic; only the caller was
+ * hardcoded to today), so a past week's page can never disagree with what that
+ * week looked like on the day.
+ */
+export async function getDashboard(input?: { weekNumber?: number }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -67,6 +77,14 @@ export async function getDashboard() {
 
     const today = new Date();
     const currentWeek = currentWeekNumber(cycle.startDate, today);
+    // The week the breakdown describes. Defaults to the current one, and only
+    // a week that actually EXISTS is honoured — a hand-typed ?week=999 falls
+    // back rather than rendering an empty page that looks like a real answer.
+    const requested = input?.weekNumber;
+    const selectedWeek =
+      requested !== undefined && cycle.weeks.some((w) => w.weekNumber === requested)
+        ? requested
+        : currentWeek;
     const active = cycle.participations.filter((p) => p.status === "ACTIVE");
 
     const flatPayments: DashboardPayment[] = cycle.participations.flatMap((participation) =>
@@ -195,6 +213,22 @@ export async function getDashboard() {
           participations: activeNamed,
           payments: flatPayments,
           isSkipped: cycle.weeks.find((w) => w.weekNumber === currentWeek)?.isSkipped ?? false,
+        }),
+        // ————— The per-week drill-down (/admin/this-week's selector) —————
+        // Every week the cycle actually has, so the dropdown offers exactly
+        // what exists rather than counting to plannedWeeks (2.7: a cycle can
+        // run long, and the week rows are the truth).
+        selectableWeeks: cycle.weeks.map((w) => ({
+          weekNumber: w.weekNumber,
+          date: w.date,
+        })),
+        selectedWeek,
+        selectedWeekTotals: series.find((w) => w.weekNumber === selectedWeek) ?? null,
+        selectedWeekMembers: weekMemberStatus({
+          weekNumber: selectedWeek,
+          participations: activeNamed,
+          payments: flatPayments,
+          isSkipped: cycle.weeks.find((w) => w.weekNumber === selectedWeek)?.isSkipped ?? false,
         }),
       // 2.23: locked-out members surface HERE — the organizer must never
       // have to hunt for who is stuck. Derived from rows already loaded;

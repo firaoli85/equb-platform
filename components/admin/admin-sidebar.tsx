@@ -66,7 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
     eyebrow: "The cycle",
     links: [
       { label: "This cycle", href: "/admin/cycle", exact: true },
-      { label: "Weeks and dates", href: "/admin/cycle/weeks" },
+      { label: "Where this cycle stands", href: "/admin/cycle/position" },
       { label: "Draws", href: "/admin/cycle/draws" },
       { label: "Close the cycle", href: "/admin/cycle/close" },
       { label: "Start a new cycle", href: "/admin/cycles/new" },
@@ -193,7 +193,7 @@ export function NavIcon({ href }: { href: string }) {
           <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
       );
-    case "/admin/cycle/weeks":
+    case "/admin/cycle/position":
       return (
         <svg {...common}>
           <path d="M4 7a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2z" />

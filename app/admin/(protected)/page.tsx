@@ -302,7 +302,7 @@ export default async function CommandCenterPage() {
               {d.closedShortfalls.map((w) => (
                 <li key={w.weekNumber}>
                   <Link
-                    href="/admin/cycle/weeks"
+                    href="/admin/cycle/position"
                     className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">

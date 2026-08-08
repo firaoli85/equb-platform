@@ -298,3 +298,56 @@ accidental click loses something the organizer cannot get back.
 **Proven non-vacuous seven times**, not once: a script re-plants each of the three decorative
 defects and neuters each of the four new checks in turn, running the guard against each and
 restoring the file.
+
+---
+
+## 10. BACKLOG STATE — 7 August 2026, second pass
+
+**The §9 table was stale and cannot be read as a to-do list.** Rows were never struck as
+they closed, so "48 remaining" was wrong by the time it was written. Every finding below
+was re-probed against the code as it actually stands, not against the table.
+
+**Closed and verified since §9 was written:**
+
+| # | Finding | How it is held closed |
+|---|---|---|
+| 2 | `addLuckyNumber` / `deleteLuckyNumber` — money out with no money in | `reconcileWeeklyAmount` (lib/lucky-numbers.ts) + `scripts/verify-number-amounts.mts` (17 checks) + 7 unit tests |
+| 3 | `updatePayout` — settlement pair one-sided | refusal in `updatePayout`; the receipt refusal no longer points at Collections |
+| 5 / 12 | `removeFromCycle` — emptiness measured in slot members | now measured in PAYOUTS, matching `deleteDrawIfEmpty` |
+| 6 | `undoDraw` — where the zero-number plan is born | `restoreFulfilledPlan` refuses to re-arm a hollowed plan |
+| 8 | `addWinnerToWeek` — slot membership duplicated | membership is MOVED, not copied |
+| 11 | `numbersRefusal` — plan-committed numbers consumable | plan awareness added |
+| 16 | `closeCycle` — `receivedNet` unfiltered by status | `awardedNet` separated from `receivedNet` |
+| 18 | `deductCarryFromPayout` — re-read outside the transaction | `loadPayoutContext` takes the transaction client |
+| 24 | `updatePerson` — duplicate phone accepted | `duplicatePhoneRefusal`, on both create and edit paths |
+| 30 | `ensureWeeksThrough` — override weeks outlive their commitment | `pruneOrphanOverrideWeeks` + `scripts/verify-orphan-weeks.mts` (13 checks) |
+| 38 | `feeAttributable` — fee doubled for multi-number members | multiplication by number count removed |
+
+### #30 in full, because it is newly relevant
+
+Override weeks (2.22 / D-31) were created by `ensureWeeksThrough` and removed by nothing.
+`updateCycle` prunes only when `plannedWeeks` **shrinks**, and these sit **above**
+`plannedWeeks` by definition, so no product path could reach them. Shortening the member
+who caused them, or removing them from the cycle, stranded the weeks permanently.
+
+It now matters more than when it was found: **the week picker added to
+`/admin/this-week` offers every stored week**, so an orphan is presented as a real week,
+and `elapsedThroughWeek` eventually counts it — the cycle position would report a week
+that exists for nobody.
+
+`pruneOrphanOverrideWeeks` removes only weeks that are past **both** the planned end and
+the deepest surviving commitment, **and** carry no money, no deferral, no draw, no winner
+plan and no note. A week anything at all points at is history, and history stays (2.14).
+The verification proves both halves: five orphans pruned, and a week with money on it
+surviving the same call.
+
+### Still open
+
+Nothing from the HIGH set. The remaining MEDIUM and LOW rows in §9 — notably #15 (DRAFT
+cycles are written but never read), #17 (closing a cycle hides every member's record,
+which blocks the member-portal work in `DESIGN_PASS_QUEUE.md`), #19–#22 (session and
+messaging staleness), #40, #44, #48 — have not been re-probed one by one and should be
+treated as unverified rather than open or closed.
+
+**Rule going forward:** strike a row when it closes, or the table becomes a liability
+again.

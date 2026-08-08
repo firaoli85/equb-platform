@@ -8,7 +8,10 @@ import { Alert, buttonCls } from "@/components/ui/primitives";
 // From setting-defaults, NOT lib/settings: the latter imports Prisma, which
 // imports `pg`, which imports node:dns — pulling that into a client bundle is
 // a hard build failure that takes this whole page down with it.
-import { WHATSAPP_DISABLED_REASON } from "@/lib/setting-defaults";
+import {
+  WHATSAPP_DISABLED_REASON,
+  WHATSAPP_STATEMENTS_BLOCKED_REASON,
+} from "@/lib/setting-defaults";
 
 export function MessagingForm({
   initial,
@@ -65,20 +68,25 @@ export function MessagingForm({
           }}
           description={
             <>
-              The master switch for the whole channel — payment confirmations, every manual
-              statement, and sign-in codes. While it is off nothing is attempted: sends are
-              refused before they reach Twilio, so none are billed and no member is offered a
-              code that cannot arrive.
+              The switch for WhatsApp <strong>sign-in codes</strong>. While it is off nothing
+              is attempted: sends are refused before they reach Twilio, so none are billed and
+              no member is offered a code that cannot arrive.
+              <br />
+              <span className="mt-1 block">
+                It does <strong>not</strong> control statements or payment confirmations —
+                those are blocked for a different reason that no setting can change, explained
+                below.
+              </span>
             </>
           }
           state={
             whatsappEnabled ? (
               <span className="text-emerald-700 dark:text-emerald-400">
-                ON — sends are attempted
+                ON — sign-in codes are sent
               </span>
             ) : (
               <span className="text-red-800 dark:text-red-400">
-                OFF — nothing is sent, and the sign-in screen does not offer it
+                OFF — no codes are sent, and the sign-in screen does not offer it
               </span>
             )
           }
@@ -100,9 +108,21 @@ export function MessagingForm({
         />
       </SettingList>
 
+      {/* Unconditional: true whether the switch above is on or off. */}
+      <Alert kind="err">
+        <strong>{WHATSAPP_STATEMENTS_BLOCKED_REASON}</strong>
+        <span className="mt-1 block">
+          Meta accepts a freeform message only within 24 hours of the member&apos;s own last
+          reply to the Equb sender, and this account has had one inbound message ever (19 May
+          2026) — so that window is open for nobody. Sign-in codes are unaffected: Twilio
+          Verify sends a pre-approved template, which needs no window. Making statements
+          deliverable means registering each one as a Content template — it is not a switch.
+        </span>
+      </Alert>
+
       {!whatsappEnabled && (
-        <Alert kind="err">
-          <strong>Why it is off:</strong> {WHATSAPP_DISABLED_REASON}
+        <Alert kind="info">
+          <strong>Why codes are off:</strong> {WHATSAPP_DISABLED_REASON}
         </Alert>
       )}
 

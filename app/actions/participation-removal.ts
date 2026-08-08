@@ -8,6 +8,7 @@ import { requireAdmin } from "@/lib/auth";
 import { frozenCycleRefusal } from "@/lib/cycle-close";
 import { deleteDrawIfEmpty, purgeEmptyWinnerPlans } from "@/lib/draw-cascade";
 import { unsettlePayout } from "@/lib/draw-settlement";
+import { pruneOrphanOverrideWeeks } from "@/lib/participation-rules";
 import { formatMoney } from "@/lib/format";
 import { nameConfirmed } from "@/lib/settlement";
 import { prisma, serializableTransaction } from "@/lib/prisma";
@@ -310,6 +311,12 @@ export async function removeFromCycle(input: {
         await tx.participation.delete({ where: { id: p.id } });
       }
 
+      // 6. If THEY were the reason the cycle ran past its planned end (2.22
+      //    override), those weeks now belong to nobody. Removed only when
+      //    empty of money, deferrals, draws, plans and notes — a week anything
+      //    points at is history and stays.
+      const prunedWeeks = await pruneOrphanOverrideWeeks(tx, p.cycleId);
+
       await logAudit(tx, {
         entity: "Participation",
         entityId: p.id,
@@ -319,7 +326,10 @@ export async function removeFromCycle(input: {
           `${input.choice === "remove-completely" ? "REMOVED COMPLETELY" : "removed but money records KEPT"}. ` +
           consequences.lines.join(" ") +
           (consequences.cleanup.length > 0 ? " " + consequences.cleanup.join(" ") : "") +
-          ` Cash position moves by ${formatMoney(consequences.cashPositionDelta)}.`,
+          ` Cash position moves by ${formatMoney(consequences.cashPositionDelta)}.` +
+          (prunedWeeks.pruned.length > 0
+            ? ` Week${prunedWeeks.pruned.length === 1 ? "" : "s"} ${prunedWeeks.pruned.join(", ")} past the planned end belonged only to them and carried nothing, so ${prunedWeeks.pruned.length === 1 ? "it was" : "they were"} removed.`
+            : ""),
         before: {
           weeklyAmount: p.weeklyAmount,
           startWeek: p.startWeek,

@@ -3,10 +3,17 @@
 // whatsapp-send/whatsapp-verify routes). Sender +15559620327, display name
 // "Equb", approved via Healthway Transport LLC (2.28).
 //
-// Two Twilio products, two jobs — they are not interchangeable:
-//   • Verify API   — login codes ONLY. Twilio owns the message content.
-//   • Messages API — arbitrary statement bodies (2.21) over the approved
-//     WhatsApp sender. This is what the messaging system sends through.
+// Two Twilio products, two jobs — they are not interchangeable, and TODAY ONLY
+// ONE OF THEM WORKS:
+//   • Verify API   — login codes ONLY. Twilio owns the content and sends a
+//     pre-approved template, which needs no service window. WORKING.
+//   • Messages API — arbitrary statement bodies (2.21). Freeform, so Meta
+//     accepts it only inside a 24-hour window that is open for nobody on this
+//     account. BLOCKED at the transport, unconditionally. See
+//     sendWhatsAppMessage and docs/WHATSAPP_TEMPLATE_ONLY.md.
+//
+// That asymmetry is the whole design of this file: one switch used to gate
+// both, which meant a dead statement path took login codes down with it.
 //
 // Credentials come from env ONLY, and every function returns a result
 // object — honest errors, never a throw that reaches the UI.
@@ -24,22 +31,33 @@
 // once approval lands; until then Twilio returns an honest error (63016)
 // which lands in MessageLog instead of being swallowed.
 
-import { getSetting, WHATSAPP_DISABLED_REASON } from "./settings";
+import {
+  getSetting,
+  WHATSAPP_DISABLED_REASON,
+  WHATSAPP_STATEMENTS_BLOCKED_REASON,
+} from "./settings";
 
 const VERIFY_BASE = "https://verify.twilio.com/v2/Services";
-const API_BASE = "https://api.twilio.com/2010-04-01";
+// The Messages API base is deliberately ABSENT. It was only ever used by the
+// freeform statement send, which no longer exists — see sendWhatsAppMessage.
+// When templates land, the send moves to Content (ContentSid +
+// ContentVariables) and the host comes back with it.
 
 /**
- * Meta disabled the WhatsApp Business Account behind the sender.
+ * Meta disabled the WhatsApp Business Account behind the sender — Twilio's own
+ * definition of 63112.
  *
- * Twilio's own definition of 63112. It is PERMANENT for us: it does not
- * depend on the recipient, the message, the template, or the time of day, and
- * it will keep failing (and keep being billed at ~$0.001 a message) until
- * Meta restores the account. Retrying is pure waste, so nothing retries it —
- * it is logged plainly and the send is done.
+ * It does not depend on the recipient, the message, the template or the time
+ * of day, so while it lasts nothing can succeed and retrying is pure waste
+ * (each attempt is still billed at ~$0.001). Nothing retries it: it is logged
+ * plainly and the send is done.
  *
- * Observed on this account from 2026-08-05 17:48 UTC: every send after that
- * point failed with it, template sends through Verify included.
+ * NOT PERMANENT, though this comment used to say so. Observed on this account
+ * from 2026-08-06 03:03 to 2026-08-07 01:53 UTC — 15 consecutive failures,
+ * Verify's template sends included — and then it simply cleared. By
+ * 2026-08-08 the sender read ONLINE / quality HIGH / 100K customers per 24hr
+ * and login codes delivered again, one of them verified end to end. Treat 63112
+ * as an outage to wait out, not a verdict.
  */
 export const META_DISABLED_WABA_CODE = 63112;
 
@@ -108,15 +126,18 @@ function failure(where: string, status: number, bodyText: string): WhatsAppSendR
   if (isMetaDisabledError(code)) {
     console.error(
       `WhatsApp ${where}: Meta has disabled the WhatsApp Business Account (Twilio ${META_DISABLED_WABA_CODE}). ` +
-        `Not retrying — no send can succeed until Meta restores it. ` +
-        `Turn the whatsappEnabled setting off to stop attempting sends.`,
+        `Not retrying — while this lasts no send can succeed. ` +
+        `It has cleared on its own before (2026-08-06 → 2026-08-07); if it persists, ` +
+        `turn the whatsappEnabled setting off to stop attempting sends.`,
     );
     return {
       ok: false,
       error:
         `Meta has disabled the WhatsApp Business Account (Twilio ${META_DISABLED_WABA_CODE}). ` +
-        `Nothing will send until Meta restores it — not retried.`,
+        `Nothing will send while it lasts — not retried.`,
       code,
+      // Permanent for THIS attempt: no retry of this send can succeed. The
+      // outage itself may lift later, which is a new attempt, not a retry.
       permanent: true,
     };
   }
@@ -136,70 +157,77 @@ export type WhatsAppSendResult =
 
 /**
  * The channel switch (whatsappEnabled), checked at the TRANSPORT boundary so
- * no caller can bypass it: every WhatsApp send in the platform goes through
- * one of the two functions below. Returns the refusal to report, or null when
- * sending is allowed.
+ * no caller can bypass it. Returns the refusal to report, or null when sending
+ * is allowed.
+ *
+ * This gates LOGIN CODES only. Statements have their own, harder gate — see
+ * sendWhatsAppMessage.
  */
 async function channelRefusal(): Promise<string | null> {
   return (await getSetting("whatsappEnabled")) ? null : WHATSAPP_DISABLED_REASON;
 }
 
 /**
- * Send one freeform WhatsApp message body to an E.164 phone via the Twilio
- * Messages API (the Verify API cannot carry arbitrary content). Returns the
- * provider's message SID and initial status on success, an honest error on
- * failure — never throws.
+ * Freeform statement bodies (2.21) over the approved WhatsApp sender.
+ *
+ * THIS FUNCTION DOES NOT SEND, AND THAT IS DELIBERATE.
+ *
+ * It refuses before credentials and before the network, unconditionally, and
+ * NOT via a setting — because the obstacle is structural, not configuration.
+ * Meta accepts a freeform body only inside the 24-hour service window opened
+ * by the member's own inbound message. This account has one inbound message
+ * ever (19 May 2026), so no window is open for anyone, and this call carries a
+ * raw Body with no ContentSid. Every attempt would fail, be billed, and land a
+ * failure in MessageLog for a member who was never reachable.
+ *
+ * A toggle would be the wrong shape: an organizer could switch it on and get
+ * silent non-delivery back. There is no configuration that makes this work —
+ * only registering each message shape as a Content template and sending
+ * ContentSid + ContentVariables instead of Body. That work is specified in
+ * docs/WHATSAPP_TEMPLATE_ONLY.md, and MessageTemplate.metaTemplateSid is where
+ * the mapping lands when it happens.
+ *
+ * The request this USED to make is recorded in the doc rather than left here
+ * as unreachable code — POST https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json with
+ * To/From/Body — because dead code that looks live is how a freeform send
+ * comes back by accident.
+ *
+ * The signature is unchanged so every caller and every test still type-checks
+ * against the same contract; only the answer is different, and it is always
+ * the same answer.
  */
 export async function sendWhatsAppMessage(
-  toE164Phone: string,
-  body: string,
+  _toE164Phone: string,
+  _body: string,
 ): Promise<WhatsAppSendResult> {
-  // The channel switch comes FIRST — before credentials, before the network.
-  // A disabled channel must cost nothing and reach nobody.
-  const disabled = await channelRefusal();
-  if (disabled) return { ok: false, error: disabled, permanent: true };
-  const creds = credentials();
-  if (!creds.ok) return creds;
-  const from = process.env.TWILIO_WHATSAPP_FROM?.trim();
-  if (!from) {
-    return {
-      ok: false,
-      error: "WhatsApp is not configured — set TWILIO_WHATSAPP_FROM in .env.local.",
-    };
-  }
-  try {
-    const res = await fetch(`${API_BASE}/Accounts/${creds.value.sid}/Messages.json`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: authHeader(creds.value),
-      },
-      body: new URLSearchParams({
-        To: `whatsapp:${toE164Phone}`,
-        From: `whatsapp:${from}`,
-        Body: body,
-      }).toString(),
-    });
-    const text = await res.text();
-    if (!res.ok) return failure("statement send", res.status, text);
-    const parsed = JSON.parse(text) as { sid?: string; status?: string };
-    return { ok: true, sid: parsed.sid ?? "", status: parsed.status ?? "queued" };
-  } catch (e) {
-    return {
-      ok: false,
-      error: `Could not reach Twilio: ${e instanceof Error ? e.message : String(e)}`,
-    };
-  }
+  return {
+    ok: false,
+    error: WHATSAPP_STATEMENTS_BLOCKED_REASON,
+    code: null,
+    permanent: true,
+  };
 }
 
 /** Start a WhatsApp login-code verification (Twilio Verify, channel whatsapp). */
 export async function sendWhatsAppVerification(
   toE164Phone: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  // Login codes ride the SAME WhatsApp Business Account as statements, so the
-  // 63112 outage kills them too — verified on this account: Verify's own
-  // template sends failed 63112 alongside the freeform ones. One switch
-  // covers both.
+): Promise<
+  | { ok: true }
+  // The code and permanence are carried through rather than flattened away.
+  // This is now the ONLY WhatsApp path that reaches Twilio, so it is the only
+  // one that can observe an outage like 63112 — throwing that detail away
+  // would leave the working channel less diagnosable than the dead one.
+  | { ok: false; error: string; code?: number | null; permanent?: boolean }
+> {
+  // Login codes ride the same WhatsApp Business Account as statements, so a
+  // 63112 outage does take them down too — verified on this account, where
+  // Verify's own template sends failed alongside the freeform ones.
+  //
+  // But that is an OUTAGE, not the statement problem. Statements are blocked
+  // by the 24-hour window rule, which never applies to a Verify template. So
+  // this path is gated on the organizer's switch alone, and no longer shares a
+  // gate with sendWhatsAppMessage — that sharing is what kept a working login
+  // channel switched off.
   const disabled = await channelRefusal();
   if (disabled) return { ok: false, error: disabled };
   const creds = credentials();
@@ -222,7 +250,13 @@ export async function sendWhatsAppVerification(
     });
     if (!res.ok) {
       const failed = failure("login code", res.status, await res.text());
-      return { ok: false, error: failed.ok === false ? failed.error : "Send failed." };
+      if (failed.ok) return { ok: false, error: "Send failed." };
+      return {
+        ok: false,
+        error: failed.error,
+        code: failed.code ?? null,
+        permanent: failed.permanent ?? false,
+      };
     }
     return { ok: true };
   } catch (e) {

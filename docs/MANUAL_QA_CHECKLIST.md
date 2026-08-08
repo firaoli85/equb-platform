@@ -205,11 +205,20 @@ Five tabs; check each.
 - [ ] A member with a carried balance forces the carry decision before saving.
 - [ ] The success screen states the numbers assigned and how they were chosen.
 
-## Cycle weeks — `/admin/cycle/weeks`
+## Where this cycle stands — `/admin/cycle/position`
+
+Replaces `/admin/cycle/weeks`, which existed to skip weeks — and there are no skipped
+weeks in an equb, every week is a commitment (`docs/CYCLE_POSITION_SPEC.md`).
+
+The two checks below survive the replacement because the stored dates are still
+authoritative for every money figure on the platform (rule 7). **The rest of this
+screen's checks have not been written yet** — they belong with whoever built it, and
+inventing them from the spec rather than the screen would be guessing.
 
 - [ ] Each week's stored date is the day that actually happened.
-- [ ] Skipping a week removes it from everyone's obligations, and says so.
 - [ ] Editing a date does not silently move other weeks.
+- [ ] No control anywhere on this screen offers to **skip** a week.
+- [ ] ⚠️ **Checks outstanding** — the position figures themselves are unverified here.
 
 ## Draws — `/admin/cycle/draws`
 
@@ -313,7 +322,7 @@ that actually reached a rendered chart in this codebase, so none of them is hypo
 - [ ] The last point of the running line equals the **Held** stat card above it, to the
       cent. Two figures for one number is the drift 2.14 exists to prevent.
 - [ ] The dashed "still open" divider sits between the last **closed** week and the first
-      week still collecting. Compare against `/admin/cycle/weeks`.
+      week still collecting. Compare against the week dates on `/admin/cycle/position`.
 - [ ] **The current week does not read as a collapse.** Money is still arriving in it; the
       line right of the divider is dashed, not solid, and the headline figure is taken from
       the last *closed* week. If today's half-collected week drags the position visibly

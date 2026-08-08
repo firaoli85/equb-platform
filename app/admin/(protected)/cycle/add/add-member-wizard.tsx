@@ -8,6 +8,7 @@ import {
   type SavedParticipation,
 } from "@/app/actions/participations";
 import { recordCarryDecision } from "@/app/actions/ledger";
+import { FeeCalculator } from "@/components/admin/fee-calculator";
 import { NumberConflictPanel } from "@/components/admin/number-conflict-panel";
 import { Radio } from "@/components/ui/controls";
 import {
@@ -572,6 +573,17 @@ export function AddMemberWizard({
             />
           </label>
 
+          {/* THE FEE, LIVE. He is often on the phone while typing this —
+              "if I put in $750 a week, what's your fee?" — and the answer has
+              to be readable aloud, for any figure, without him calculating.
+              Recomputes on every keystroke; nothing is saved until Confirm. */}
+          <FeeCalculator
+            weeklyAmount={weeklyAmount}
+            weeksCommitted={weeksInRange ? weeksCommitted : null}
+            unitAmount={cycle.unitAmount}
+            feePercent={cycle.feePercent}
+          />
+
           {luckyAmounts && (
             <p className="rounded bg-gray-100 dark:bg-white/10 px-3 py-2 text-sm" data-testid="lucky-preview">
               {formatMoney(weeklyAmount!)} becomes {countWord(luckyAmounts.length)} number
@@ -731,6 +743,16 @@ export function AddMemberWizard({
               </span>
             )}
           </label>
+
+          {/* The same live answer as the contribution step — the length is the
+              other half of the question he is being asked on the phone, so it
+              recomputes here too rather than making him step back. */}
+          <FeeCalculator
+            weeklyAmount={weeklyAmount}
+            weeksCommitted={weeksInRange ? weeksCommitted : null}
+            unitAmount={cycle.unitAmount}
+            feePercent={cycle.feePercent}
+          />
 
           <label className="flex items-start gap-2 text-sm">
             <input

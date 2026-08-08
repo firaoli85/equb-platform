@@ -23,7 +23,31 @@ import { resolveWeekDate, storedWeekDates } from "./commitment";
 import { calculateFinishWeek, currentWeekNumber } from "./money";
 import { toE164 } from "./phone";
 import { prisma } from "./prisma";
-import { getSetting, WHATSAPP_DISABLED_REASON } from "./settings";
+import {
+  getSetting,
+  WHATSAPP_DISABLED_REASON,
+  WHATSAPP_STATEMENTS_BLOCKED_REASON,
+} from "./settings";
+
+/**
+ * Can a STATEMENT reach a member over WhatsApp at all? No — and this is a
+ * code-level fact, not an organizer setting, because no setting can change it.
+ *
+ * Meta accepts a freeform body only inside the 24-hour service window that a
+ * member's own inbound message opens. This account has one inbound message in
+ * its entire history (19 May 2026), so the window is open for nobody, and the
+ * statement path sends a raw Body with no ContentSid.
+ *
+ * Annotated `: boolean` deliberately — without it TypeScript narrows the
+ * literal `false` and treats everything downstream as dead, which would mean
+ * deleting the render-and-log path that becomes correct again untouched the
+ * moment templates exist.
+ *
+ * FLIP THIS when each message shape is registered as a Content template and
+ * sendWhatsAppMessage sends ContentSid + ContentVariables.
+ * See docs/WHATSAPP_TEMPLATE_ONLY.md.
+ */
+export const STATEMENTS_DELIVERABLE: boolean = false;
 import { computeStanding, pinnedMapFromEvents, type Standing } from "./standing";
 import { sendWhatsAppMessage } from "./whatsapp";
 
@@ -172,12 +196,25 @@ async function deliver(input: {
   });
   if (!decision.send) return { status: "SKIPPED", reason: decision.reason };
 
-  // The channel switch. lib/whatsapp.ts refuses too — that is the
-  // un-bypassable backstop — but stopping HERE keeps the semantics honest:
-  // a message that was never attempted did not FAIL at the provider, so it
-  // is a skip like hardship or no-phone, and it writes no MessageLog row.
-  // Otherwise a dead channel would bury the real log under failures that
-  // never happened.
+  // STATEMENTS CANNOT SEND, whatever the switch says.
+  //
+  // This is checked before the switch because it is not the same question. The
+  // switch is the organizer's choice about the channel; this is Meta's rule
+  // about freeform bodies outside a 24-hour service window, which no setting
+  // can satisfy. Turning WhatsApp ON re-enables LOGIN CODES only, and a
+  // statement must not start attempting sends the moment that happens.
+  //
+  // lib/whatsapp.ts refuses too — that is the un-bypassable backstop — but
+  // stopping HERE keeps the semantics honest: a message that was never
+  // attempted did not FAIL at the provider, so it is a skip like hardship or
+  // no-phone, and it writes no MessageLog row. Otherwise every statement would
+  // bury the real log under provider failures that never happened.
+  if (!STATEMENTS_DELIVERABLE) {
+    return { status: "SKIPPED", reason: WHATSAPP_STATEMENTS_BLOCKED_REASON };
+  }
+
+  // The organizer's own switch, checked second: by here the message COULD be
+  // delivered, and this is the choice about whether to.
   if (!(await getSetting("whatsappEnabled"))) {
     return { status: "SKIPPED", reason: WHATSAPP_DISABLED_REASON };
   }

@@ -26,8 +26,11 @@ import {
 // picker. PIN is the default while it is enabled; the toggles are enforced
 // server-side — this UI only reflects them (2.6).
 //
-// 2.28 (channel honesty): the screen offers ONLY channels that work — PIN
-// and the WhatsApp code. SMS is carrier-blocked and is not offered at all.
+// 2.28 (channel honesty): the screen offers ONLY channels that are actually
+// configured, and the server decides which those are — this UI never guesses.
+// Today that is PIN, the WhatsApp code (Twilio Verify sends a pre-approved
+// template, so it needs no 24-hour service window and works), and SMS where
+// Firebase is configured.
 
 type Lookup = {
   phone: string;

@@ -4,10 +4,79 @@ import { describe, expect, it } from "vitest";
 import {
   chooseAutoNumbers,
   describeNumberConflict,
+  reconcileWeeklyAmount,
   replaceHolderRefusal,
   validateManualNumbers,
   type NumberHolder,
 } from "./lucky-numbers";
+
+// §9 #2 — MONEY OUT WITH NO MONEY IN. A number's amount is a SLICE of the
+// member's weekly contribution, and every payout is priced per number. Adding
+// one raised their entitlement while their weekly bill never moved; removing
+// one left them billed for a number they no longer held.
+describe("reconcileWeeklyAmount — the contribution invariant", () => {
+  const base = { memberName: "Meheret", payoutCount: 0 };
+
+  it("says nothing when the numbers already add up to the stored weekly", () => {
+    const r = reconcileWeeklyAmount({ ...base, storedWeekly: 200_000, numberAmounts: [100_000, 100_000] });
+    expect(r.changed).toBe(false);
+    expect(r.refusal).toBeNull();
+    expect(r.sentence).toBe("");
+  });
+
+  it("raises the weekly to match a number added", () => {
+    const r = reconcileWeeklyAmount({ ...base, storedWeekly: 200_000, numberAmounts: [100_000, 100_000, 50_000] });
+    expect(r.impliedWeekly).toBe(250_000);
+    expect(r.delta).toBe(50_000);
+    expect(r.refusal).toBeNull();
+    expect(r.sentence).toContain("rises from $2,000 to $2,500");
+  });
+
+  it("lowers the weekly to match a number removed", () => {
+    const r = reconcileWeeklyAmount({ ...base, storedWeekly: 250_000, numberAmounts: [100_000, 100_000] });
+    expect(r.impliedWeekly).toBe(200_000);
+    expect(r.delta).toBe(-50_000);
+    expect(r.sentence).toContain("falls from $2,500 to $2,000");
+  });
+
+  it("REFUSES once a payout exists — that difference is a settlement, not a re-price", () => {
+    const r = reconcileWeeklyAmount({
+      ...base,
+      storedWeekly: 200_000,
+      numberAmounts: [100_000, 100_000, 50_000],
+      payoutCount: 1,
+    });
+    expect(r.refusal).toContain("already been drawn");
+    // Names the route that settles it properly, rather than dead-ending.
+    expect(r.refusal).toContain("participation");
+    // States both figures so the organizer can judge the size of it.
+    expect(r.refusal).toContain("$2,000");
+    expect(r.refusal).toContain("$2,500");
+    expect(r.sentence).toBe("");
+  });
+
+  it("does not refuse a drawn member when nothing actually changes", () => {
+    const r = reconcileWeeklyAmount({
+      ...base,
+      storedWeekly: 200_000,
+      numberAmounts: [100_000, 100_000],
+      payoutCount: 2,
+    });
+    expect(r.changed).toBe(false);
+    expect(r.refusal).toBeNull();
+  });
+
+  it("REFUSES to leave a member with no numbers at all", () => {
+    const r = reconcileWeeklyAmount({ ...base, storedWeekly: 100_000, numberAmounts: [] });
+    expect(r.refusal).toContain("Remove them from the cycle");
+  });
+
+  it("handles irregular slices, not just whole units", () => {
+    const r = reconcileWeeklyAmount({ ...base, storedWeekly: 100_000, numberAmounts: [100_000, 32_500] });
+    expect(r.impliedWeekly).toBe(132_500);
+    expect(r.sentence).toContain("$1,325");
+  });
+});
 
 describe("validateManualNumbers — immediate, plain-language validation", () => {
   const taken = new Set([1, 2, 22, 78]);

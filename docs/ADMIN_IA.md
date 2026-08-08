@@ -98,7 +98,8 @@ PEOPLE
 
 THE CYCLE                                        ← NEW SECTION
   This cycle                 /admin/cycle        members, weeks, terms — the cycle's own page
-  Weeks and dates            /admin/cycle/weeks  the stored dates that are authoritative (rule 7)
+  Where this cycle stands    /admin/cycle/position  the stored dates that are authoritative (rule 7),
+                                                    and the position they produce
   Draws                      /admin/cycle/draws  every draw, editable
   Close the cycle            /admin/cycle/close  ← its own page, with room (see §4.1)
   Start a new cycle          /admin/cycles/new   ← moved out of "System"
