@@ -41,7 +41,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </aside>
 
       {/* Mobile fallback bar (admin is desktop-first; keep it usable) */}
-      <header className="sticky top-0 z-30 flex h-12 items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#0a0a0b] px-4 md:hidden">
+      {/* The one piece of admin chrome that overlays scrolling content, so it
+          gets the same restrained glass as the member header — translucent
+          with a blur, never the full liquid-glass look. Opaque underneath, so
+          a browser without backdrop-filter gets a solid bar rather than a
+          smear of the rows beneath it. */}
+      <header className="sticky top-0 z-30 flex h-12 items-center justify-between border-b border-gray-200 bg-white px-4 backdrop-blur-sm supports-[backdrop-filter]:bg-white/85 dark:border-gray-800 dark:bg-[#0a0a0b] dark:supports-[backdrop-filter]:bg-[#0a0a0b]/85 md:hidden">
         <span className="text-sm font-black text-gray-900 dark:text-white">Equb Admin</span>
         <div className="flex items-center gap-2">
           <PresentationToggle on={presentation} />

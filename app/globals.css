@@ -61,6 +61,14 @@ body {
 /* ── Member design tokens (light/dark, class-based) ─────────────────
    Brand accent: indigo. Green is semantic-only (paid/success states). */
 :root {
+  /* THE ONE ENTRANCE CURVE.
+     Every arrival on this product decelerates the same way: fast at the start,
+     settling rather than stopping. Plain `ease-out` is a gentle curve and it
+     read as slightly soft — things drifted into place instead of arriving.
+     This is the exponential ease-out the savings ring already used, promoted
+     to a token so the ring, the cards and every future entrance share one
+     feel. No bounce and no elastic anywhere: this is a screen about money. */
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
   --accent: #6366f1;
   --accent-2: #818cf8;
   --accent-ink: #1e1b4b;
@@ -204,22 +212,22 @@ body {
 }
 
 .animate-arc-draw {
-  animation: arcDraw 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: arcDraw 900ms var(--ease-settle) both;
 }
 .animate-fade-in-up {
-  animation: fadeInUp 0.28s ease-out both;
+  animation: fadeInUp 0.28s var(--ease-settle) both;
 }
 .animate-fade-in-up-1 {
-  animation: fadeInUp 0.28s ease-out 0.08s both;
+  animation: fadeInUp 0.28s var(--ease-settle) 0.08s both;
 }
 .animate-fade-in-up-2 {
-  animation: fadeInUp 0.28s ease-out 0.16s both;
+  animation: fadeInUp 0.28s var(--ease-settle) 0.16s both;
 }
 .animate-fade-in-up-3 {
-  animation: fadeInUp 0.28s ease-out 0.24s both;
+  animation: fadeInUp 0.28s var(--ease-settle) 0.24s both;
 }
 .animate-fade-in-up-4 {
-  animation: fadeInUp 0.28s ease-out 0.32s both;
+  animation: fadeInUp 0.28s var(--ease-settle) 0.32s both;
 }
 .animate-pulse-green {
   animation: pulseGreen 2s ease-in-out infinite;
@@ -262,5 +270,24 @@ body {
   .animate-toast-out {
     animation: none !important;
     transition: none !important;
+  }
+
+  /* The skeleton shimmer is INFINITE, which makes it the worst offender on
+     the page for someone who asked for less motion — every other animation
+     here plays once and stops. It was missed because it is the only animated
+     class not named `animate-*`. The surface stays; only the sweep goes. */
+  .skeleton {
+    animation: none !important;
+    background: #eeeeee;
+  }
+  .dark .skeleton {
+    background: #1f1f1f;
+  }
+
+  /* Smooth scrolling is motion too. An in-page jump that glides is exactly
+     the vestibular trigger this media query exists for, and `scroll-behavior`
+     is not covered by switching animations off. */
+  html {
+    scroll-behavior: auto;
   }
 }

@@ -185,7 +185,13 @@ export function PaymentsGrid({
                   <th
                     className={`sticky left-0 z-10 whitespace-nowrap border-r-2 border-gray-200 dark:border-gray-800 px-3 py-1.5 text-left font-semibold text-gray-800 dark:text-gray-200 ${
                       isNow
-                        ? "border-l-4 border-l-indigo-500 dark:border-l-indigo-400 bg-indigo-50 dark:bg-indigo-950/50"
+                        // OPAQUE, both themes. This cell is `sticky left-0`, so
+                        // the week's other cells scroll horizontally underneath
+                        // it — at `dark:bg-indigo-950/50` they showed through
+                        // the pinned week number at half strength, which on the
+                        // CURRENT week is the row a reader is most likely to be
+                        // tracing across.
+                        ? "border-l-4 border-l-indigo-500 bg-indigo-50 dark:border-l-indigo-400 dark:bg-[#1e1b4b]"
                         : "bg-white dark:bg-[#141414]"
                     }`}
                   >

@@ -102,6 +102,26 @@ describe("every custom animation has a reduced-motion answer", () => {
     expect(reduceBlock.length).toBeGreaterThan(0);
   });
 
+  it("switches off every INFINITE animation, whatever the class is called", () => {
+    // `.skeleton` was missed for exactly this reason: it is the only animated
+    // class not named `animate-*`, and it is the worst offender on the page —
+    // every other animation plays once and stops, this one never does.
+    const classes = [...css.matchAll(/^\.([a-z0-9-]+)\s*\{([^}]*)\}/gm)]
+      .filter((m) => /animation:[^;]*infinite/.test(m[2]))
+      .map((m) => m[1]);
+    expect(classes.length).toBeGreaterThan(0);
+    for (const cls of classes) {
+      expect(reduceBlock, `.${cls} loops forever even under reduced motion`).toContain(`.${cls}`);
+    }
+  });
+
+  it("stops smooth scrolling too, which no animation rule covers", () => {
+    // An in-page jump that glides is precisely the vestibular trigger this
+    // media query exists for, and `scroll-behavior` is not an animation.
+    expect(css).toContain("scroll-behavior: smooth");
+    expect(reduceBlock).toContain("scroll-behavior: auto");
+  });
+
   it("switches off every animate-* utility the stylesheet defines", () => {
     // A new keyframe with a new utility class is the easy thing to add and the
     // easy thing to forget. This finds it the same day.

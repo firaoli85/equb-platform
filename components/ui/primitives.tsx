@@ -121,7 +121,19 @@ export function Th({
 }) {
   return (
     <th
-      className={`sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-white/[0.03] px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 text-${align} ${className}`}
+      // THIS HEADER IS STICKY, SO IT HAS TO BE OPAQUE TO WHAT PASSES UNDER IT.
+      //
+      // It was `bg-gray-50/80` in light and `bg-white/[0.03]` in dark, with no
+      // blur — so table rows scrolled visibly THROUGH the header, at 20% in
+      // light and at essentially full strength in dark. Numbers ghosting
+      // through a column heading is the one place on a money screen where a
+      // reader cannot tell which row they are looking at.
+      //
+      // The fix is the restrained glass the member chrome already uses: a
+      // solid base colour, then translucency + backdrop-blur only where the
+      // browser supports it. `supports-[backdrop-filter]` means a browser
+      // without it gets the solid surface rather than the smear.
+      className={`sticky top-0 z-10 border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-600 backdrop-blur supports-[backdrop-filter]:bg-gray-50/85 dark:border-gray-800 dark:bg-[#1a1a1a] dark:text-gray-400 dark:supports-[backdrop-filter]:bg-[#1a1a1a]/85 text-${align} ${className}`}
     >
       {children}
     </th>

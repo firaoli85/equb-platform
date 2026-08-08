@@ -81,6 +81,7 @@ dot passed every mechanical check above:
 
 - [ ] Every headline figure matches the screen it links to. Click through and compare.
 - [ ] "Total contributed" is the headline; paid in / still to save / overdue stay distinct.
+- [ ] The collected-vs-expected chart — its own section under **THE CHARTS** below.
 - [ ] With presentation mode ON (Settings), names and money are **absent**, not hidden with
       CSS — check the page source, not just the pixels.
 - [ ] The current week number matches the real date.
@@ -100,6 +101,10 @@ dot passed every mechanical check above:
 - [ ] Grid view at 390px scrolls **inside** the grid — the page itself must not scroll
       sideways.
 - [ ] The week-action panel opens over the grid and closes on `Esc`.
+- [ ] Patterns view shows the same member set as the other two, and a member who reads
+      overdue in the grid reads overdue here. **A member late in one view and current in
+      another is the drift these three views exist to prevent.**
+- [ ] The chosen view survives a reload.
 
 ## Collections — `/admin/collections`
 
@@ -113,6 +118,7 @@ dot passed every mechanical check above:
 - [ ] Move a winner → the destination list includes **free (undrawn) weeks**, and a week
       you just emptied is offered immediately.
 - [ ] A week with a committed winner plan is refused as a destination, with the reason.
+- [ ] The payout progress bar — its own section under **THE CHARTS** below.
 
 ## Waiting — `/admin/waiting`
 
@@ -120,11 +126,28 @@ dot passed every mechanical check above:
 - [ ] The total equals the sum of the rows.
 - [ ] Marking one collected removes it here and adds it to Paid out.
 
-## Held / Paid out / Received — `/admin/held`, `/admin/paid-out`, `/admin/received`
+## Cash position — `/admin/cash`
 
-- [ ] Received − Paid out = Held. Check the arithmetic across the three screens.
-- [ ] Each list's total equals the sum of its own rows.
+Replaces the three former screens. The chart itself has its own section below.
+
+- [ ] Received − Paid out = Held. Check the arithmetic across the three tabs.
+- [ ] Each tab's total equals the sum of its own rows.
+- [ ] The three stat cards open the matching tab, and the tab that opens is the one you
+      clicked.
+- [ ] `/admin/held`, `/admin/paid-out` and `/admin/received` each land on the right tab —
+      **a 404 on any of them is a bug**; those URLs are in the organizer's history.
+- [ ] Committed + Uncommitted = Held, on the Held tab.
 - [ ] Date ranges, if any, include the whole of the end day.
+
+## Cycles — `/admin/cycles`
+
+- [ ] Every closed cycle appears with its name, close date and totals.
+- [ ] A closed cycle whose **cycle row was deleted** still appears, marked as such. This is
+      the point of the screen — if deleting a cycle makes its record vanish, that is the
+      2.9 failure.
+- [ ] The running cycle appears under "Running now" and is not listed as a record.
+- [ ] Each record opens its archive.
+- [ ] The red "no written record" panel is **absent** in normal operation.
 
 ## Balances — `/admin/balances`
 
@@ -259,6 +282,112 @@ Five tabs; check each.
 
 ---
 
+# THE CHARTS
+
+A chart fails differently from a screen. A screen that is broken looks broken; a chart that
+is wrong looks **fine** — the bar is drawn, the axis has numbers, nothing is in the console,
+and the figure it shows is not the truth. Every check below was written against a defect
+that actually reached a rendered chart in this codebase, so none of them is hypothetical.
+
+**Run all four passes on the screen that hosts the chart**, then these.
+
+## Every chart — the four that apply to all of them
+
+- [ ] **The picture agrees with the table.** Every chart carries its figures as a real
+      table for screen readers. Turn the SVG off — DevTools → select the `<svg>` → `Delete`
+      — and read what remains. It must say the same thing the picture said.
+- [ ] **A real but tiny value is visible.** One member's $1,000 against a $27,000 week is
+      3.7% of the scale. Find the smallest non-zero value on the chart and confirm it is
+      drawn as *something*. **A real figure rendered as nothing is the worst chart bug there
+      is** — it reads as "nobody paid".
+- [ ] **Nothing is clipped.** Inspect the `<svg>` and any `<rect>`/`<path>` inside it. No
+      element may extend past the `viewBox`. A clipped bar is silently shortened, and a
+      shortened bar is a smaller number.
+- [ ] **No `NaN` anywhere.** `Ctrl+F` the page source for `NaN`. A browser drops a path
+      containing `NaN` without a console error, so the chart simply loses a series.
+- [ ] **Scrolls inside itself at 390px.** The plot may be wider than the phone. The *page*
+      may not: re-run the `scrollWidth === clientWidth` check with the chart on screen.
+
+## Cash position — the area chart on `/admin/cash`
+
+- [ ] The last point of the running line equals the **Held** stat card above it, to the
+      cent. Two figures for one number is the drift 2.14 exists to prevent.
+- [ ] The dashed "still open" divider sits between the last **closed** week and the first
+      week still collecting. Compare against `/admin/cycle/weeks`.
+- [ ] **The current week does not read as a collapse.** Money is still arriving in it; the
+      line right of the divider is dashed, not solid, and the headline figure is taken from
+      the last *closed* week. If today's half-collected week drags the position visibly
+      down, that is the false alarm the divider exists to prevent.
+- [ ] A **pending** payout does not reduce the held line — the cash has not left. It appears
+      as the dashed outline below the midline, and it equals *Committed* on the Held tab.
+- [ ] Money is counted against the week it is **for**. Record a catch-up payment for an
+      early week and confirm it lands in *that* week, not in today's.
+- [ ] Clicking a week number opens that week on Payments.
+
+## Collected vs expected — the bars on `/admin`
+
+- [ ] **A week still open is never called short.** Its bar is outlined, it carries no red
+      dot, and it is excluded from the "overdue across closed weeks" headline. Check this in
+      the middle of a week, before anyone has paid — the headline must still read *All in*
+      if every closed week is settled.
+- [ ] The red dot appears on closed weeks that came up short, and *only* those.
+- [ ] Expected drops a member who was deferred or whose week was skipped. Defer one week for
+      one member and confirm the expected bar falls by exactly their weekly amount.
+- [ ] Expected drops a member outside their window — a late joiner adds nothing to the weeks
+      before they started.
+- [ ] The two bars per week are distinguishable in greyscale: expected is the wide quiet
+      backdrop, collected is the narrower bar in front.
+
+## Payout progress — the segmented bar on `/admin/collections`
+
+- [ ] **The denominator is LUCKY NUMBERS, not members.** Count the numbers in the cycle —
+      `/admin/wheel/setup` — and confirm the headline reads *N of that count*. With 27
+      members holding 31 numbers it must say **31**. A member-count denominator reports the
+      cycle finished four payouts early.
+- [ ] **The bar never exceeds 100%.** Inspect each segment's inline `width` and add them
+      up. The container hides its overflow, so a bar summing past 100% is clipped
+      *silently* — the last segment just ends early and reads as fewer people waiting.
+- [ ] Collected + Waiting + Still to come = the total, in the numbers below the bar.
+- [ ] The red "one has been paid twice" panel is **absent** in normal operation. If it
+      appears, stop and check Collections before trusting anything else on the screen.
+- [ ] The three states are distinguishable in greyscale: solid, hatched, empty.
+- [ ] Each segment opens the rows behind it.
+
+## Payment consistency — the dot strip on `/admin/payments` (Patterns)
+
+- [ ] **Sorted by longest overdue RUN, not by count.** A member with three misses in a row
+      must appear above a member with three scattered misses. Both have three; only one has
+      stopped paying.
+- [ ] **A late joiner's strip is SHORT, not full of holes.** Their dots start at their own
+      start week. A strip padded out with empty weeks turns "joined in week 9" into "missed
+      eight weeks".
+- [ ] A week whose window is still open is **not** a red square.
+- [ ] Overdue is findable with colour off — it is the only square dot. Deferred is hollow,
+      partial is half-filled.
+- [ ] Every dot's tooltip and every row name is reachable by keyboard, and each dot has a
+      real hit area — a bare 8px dot in a row of twenty is not tappable at 390px.
+- [ ] The "N in a row" badge appears at two or more, never at one.
+
+## The savings ring — `/me`
+
+- [ ] The figure inside the ring is what they have **paid in**, with the label above it.
+- [ ] The sweep matches the figure: half the commitment saved is half the arc. Read the
+      percentage from the screen-reader text (select the card and inspect) and compare.
+- [ ] **Paying ahead fills the ring and stops.** Record more than the full commitment for a
+      synthetic member. The ring must be **full** and the surplus stated in words beside it.
+      *An over-full sweep wraps past the top and draws a shorter arc than someone who has
+      saved less* — the exact opposite of the truth, and it looks completely normal.
+- [ ] **Before the first payment there is no arc at all** — only the grey track. A round
+      line cap on a zero-length arc renders as a **dot**, which reads as "you have saved a
+      little" when the truth is nothing.
+- [ ] The ring turns amber only when something is genuinely overdue, and green otherwise.
+- [ ] With "Emulate `prefers-reduced-motion: reduce`" on (DevTools → `Ctrl+Shift+P`), the
+      ring appears **already drawn** — no sweep animation.
+- [ ] Still to save and Overdue below the ring stay distinct, and a member who is current
+      sees no debt-shaped box at all.
+
+---
+
 # MEMBER PORTAL
 
 Run these signed in as a **synthetic** member from `scripts/portal-test-fixture.mts`.
@@ -277,8 +406,8 @@ Run these signed in as a **synthetic** member from `scripts/portal-test-fixture.
 
 ## Home — `/me`
 
-- [ ] The progress ring matches the figure beside it.
-- [ ] Total contributed is the headline; paid in / still to save / overdue stay distinct.
+- [ ] The savings ring — its own section under **THE CHARTS** above. Run those checks here.
+- [ ] Paid in is the headline; paid in / still to save / overdue stay distinct.
 - [ ] Their own week is never shown as owed in the week they won.
 - [ ] The next payment date is the real next week.
 
