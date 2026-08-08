@@ -1,7 +1,8 @@
-# WhatsApp Content templates — submitted to Meta
+# WhatsApp Content templates — approved by Meta
 
-**Status: CREATED IN TWILIO, SUBMITTED TO META 7 August 2026. Not yet approved,
-nothing sent.**
+**Status: APPROVED BY META 7 August 2026. ContentSids recorded below. Code
+switch not yet made — `sendWhatsAppMessage` still uses `Body`, and
+`STATEMENTS_DELIVERABLE` is still false.**
 
 The five bodies below are the text that was submitted. They are now the wording
 of record: changing any of them means re-submitting that template and waiting
@@ -12,9 +13,9 @@ explains why statements need these at all.
 
 ---
 
-## Submitted templates and ContentSids
+## Approved templates and ContentSids
 
-| Template | Twilio name | ContentSid | Language | Submitted |
+| Template | Twilio name | ContentSid | Language | Approved |
 |---|---|---|---|---|
 | PAYMENT_CONFIRMED | payment_confirmed | HX87cb0a437434f7f9bba329958c74544a | en | 2026-08-07 |
 | BEHIND_NOTICE | behind_notice | HX8bb8e24a790e8fafd81f232ecfe6e8dc | en_US | 2026-08-07 |
@@ -22,16 +23,20 @@ explains why statements need these at all.
 | WINNER_ANNOUNCEMENT | winner_announcement | HX2774ec28d2785140d4610ba2f947f6e5 | en_US | 2026-08-07 |
 | CYCLE_CLOSING_STATEMENT | cycle_closing_statement | HX517e5e10d8f11e741789b5c6ebed9565 | en_US | 2026-08-07 |
 
-- Sample variable values were supplied at save time in Twilio's "Sample
-  variables" dialog, using the rendered examples already in this document.
 - `payment_confirmed` was created as language `en`; the other four as `en_US`.
   This has no effect on sending, because messages are addressed by ContentSid,
-  not by language. Recorded so the inconsistency is not mistaken for a defect.
-- The "+ Add variable" button in the Content Template Builder appends a new
-  variable to the body rather than exposing sample fields for existing ones.
-  Sample values are collected in a dialog that opens when Save is clicked.
-- LOCKOUT_NOTICE remains undrafted and unsubmitted, per the decision recorded
-  in "Things to decide before submission".
+  not by language. Recorded so the inconsistency is not later mistaken for a
+  defect.
+- Sample variable values were supplied at save time in Twilio's "Sample
+  variables" dialog, using the rendered examples in this document.
+- The "+ Add variable" button in the Content Template Builder appends a NEW
+  variable to the body; it does not expose sample fields for existing ones.
+  Sample values are collected in a dialog that opens on Save.
+- Editing an approved template requires re-approval, and Twilio greys out the
+  Edit action once a template is submitted. The in-app template editor must
+  surface this, per "Things to decide before submission" item 1 — it remains
+  unresolved.
+- LOCKOUT_NOTICE remains undrafted and unsubmitted.
 
 ---
 
@@ -129,8 +134,18 @@ Hi {{1}}, we received {{2}} for your Equb — recorded on week(s) {{3}}. You hav
 **Body**
 
 ```
-Hi {{1}}, your Equb record as of week {{2}}: last payment week {{3}}, {{4}} weeks behind, {{5}} outstanding. Please contact Firaoli with any questions.
+Hi {{1}}, your Equb record as of week {{2}}: last payment week {{3}}, and {{4}} weeks behind, {{5}} outstanding. Please contact Firaoli with any questions.
 ```
+
+**The "and" between `{{3}}` and `{{4}}` is deliberate — do not tidy it away.**
+Without it the two variables are separated only by a comma, and Meta lists
+adjacent variables as not recommended. A rejection would have permanently burned
+the template name `behind_notice`, so the word was added before submission
+rather than risk it. This is the approved body; removing the "and" means
+re-approval.
+
+The variable table is unchanged by it — still five variables in the same order,
+so `placeholderValues()` needs no change.
 
 | Var | Fills from | Notes |
 |---|---|---|
@@ -145,7 +160,7 @@ demand. The message states the position and stops — that is the whole of 2.21.
 
 **Rendered**
 
-> Hi Sara, your Equb record as of week 12: last payment week 5, 7 weeks behind, $7,000.00 outstanding. Please contact Firaoli with any questions.
+> Hi Sara, your Equb record as of week 12: last payment week 5, and 7 weeks behind, $7,000.00 outstanding. Please contact Firaoli with any questions.
 
 ---
 
