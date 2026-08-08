@@ -135,10 +135,15 @@ export function formatWeekList(weeks: readonly number[]): string {
  * announcement, the last week a receipt covered for a confirmation, and the
  * current cycle week otherwise.
  */
-export function placeholderValues(
-  standing: StandingFacts,
-  extras: MessageExtras = {},
-): Record<string, string> {
+// The return type is INFERRED, not annotated `Record<string, string>`.
+//
+// That annotation erased the key names, so nothing downstream could tell
+// {amountOwed} from {amuontOwed} until a member received a message with a
+// literal token in it. `PlaceholderName` below reads the real keys off this
+// object, which makes an invalid placeholder a compile error — and means the
+// list can never drift from what this function actually returns, because
+// there is no second list.
+export function placeholderValues(standing: StandingFacts, extras: MessageExtras = {}) {
   const weeksPaid = Math.min(standing.weeksCredited, standing.weeksCommitted);
   const weeksLeft = Math.max(0, standing.weeksCommitted - weeksPaid);
   const lastCovered = extras.weeksCovered?.length
@@ -170,6 +175,19 @@ export function placeholderValues(
 }
 
 /** Shown in the template editor so the organizer knows what can be said. */
+/**
+ * Every placeholder name a template may use, read off `placeholderValues`
+ * itself so the two can never disagree.
+ *
+ * A WhatsApp Content template maps {{1}}..{{n}} to an ordered variable list,
+ * and a name that does not resolve is not a broken word on screen — it is a
+ * missing ContentVariable, which Twilio fills from the SAMPLE submitted at
+ * approval time. The member then receives a fabricated name and invented
+ * figures presented as fact. Typing the name wrong must therefore fail the
+ * build (see lib/whatsapp-templates.ts).
+ */
+export type PlaceholderName = keyof ReturnType<typeof placeholderValues>;
+
 export const PLACEHOLDER_DOCS: { token: string; description: string }[] = [
   { token: "{name}", description: "The member's first name" },
   { token: "{week}", description: "The relevant week — drawn week, confirmed week, or current week" },

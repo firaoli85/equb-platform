@@ -98,7 +98,7 @@ arrive already formatted inside the value; `placeholderValues()` in
 [lib/messages.ts](../lib/messages.ts) already does this through `formatMoney`.
 
 The example figures are real, from **Cycle 1 2026** (ACTIVE, 20 weeks,
-$1,000.00 unit, 2% fee, started 17 May 2026, 27 participants, currently week
+$1,000 unit, 2% fee, started 17 May 2026, 27 participants, currently week
 12). The **names are not real** — a member's name next to their own arrears
 does not belong in a repo.
 
@@ -125,7 +125,7 @@ Hi {{1}}, we received {{2}} for your Equb — recorded on week(s) {{3}}. You hav
 
 **Rendered**
 
-> Hi Sara, we received $2,000.00 for your Equb — recorded on week(s) 11–12. You have paid 12 of 20 weeks. Thank you.
+> Hi Sara, we received $2,000 for your Equb — recorded on week(s) 11–12. You have paid 12 of 20 weeks. Thank you.
 
 ---
 
@@ -160,7 +160,7 @@ demand. The message states the position and stops — that is the whole of 2.21.
 
 **Rendered**
 
-> Hi Sara, your Equb record as of week 12: last payment week 5, and 7 weeks behind, $7,000.00 outstanding. Please contact Firaoli with any questions.
+> Hi Sara, your Equb record as of week 12: last payment week 5, and 7 weeks behind, $7,000 outstanding. Please contact Firaoli with any questions.
 
 ---
 
@@ -185,7 +185,7 @@ is wrong, the member is the one who would know.
 
 **Rendered**
 
-> Hi Sara, your Equb week(s) 6–10 closed without a payment recorded. Your balance is $5,000.00 outstanding across 5 weeks. Please contact Firaoli if this does not match your records.
+> Hi Sara, your Equb week(s) 6–10 closed without a payment recorded. Your balance is $5,000 outstanding across 5 weeks. Please contact Firaoli if this does not match your records.
 
 ---
 
@@ -214,9 +214,9 @@ clear fact, and the full position is always in the portal.
 
 **Rendered**
 
-> Hi Sara, your Equb payout for week 12 is $9,800.00. Your contributions continue to week 20. Firaoli will arrange the handover.
+> Hi Sara, your Equb payout for week 12 is $9,800. Your contributions continue to week 20. Firaoli will arrange the handover.
 
-*(Real figures: $10,000.00 gross, 2% fee $200.00, $9,800.00 net.)*
+*(Real figures: $10,000 gross, 2% fee $200, $9,800 net.)*
 
 ---
 
@@ -234,11 +234,11 @@ Hi {{1}}, your Equb closing statement: you paid {{2}} of {{3}} weeks, {{4}} in t
 | `{{2}}` | `weeksPaid` | |
 | `{{3}}` | `weeksTotal` | |
 | `{{4}}` | `totalPaid` | everything paid this cycle |
-| `{{5}}` | `amountOwed` | `$0.00` when settled — say it, don't hide it |
+| `{{5}}` | `amountOwed` | `$0` when settled — say it, don't hide it |
 
 **Rendered**
 
-> Hi Sara, your Equb closing statement: you paid 18 of 20 weeks, $18,000.00 in total. Outstanding balance $2,000.00. Please contact Firaoli to confirm.
+> Hi Sara, your Equb closing statement: you paid 18 of 20 weeks, $18,000 in total. Outstanding balance $2,000. Please contact Firaoli to confirm.
 
 ---
 
@@ -292,14 +292,63 @@ template variants — each is a separate submission and approval.
 
 ## After approval, in code
 
-1. Record each returned `ContentSid` on the matching `MessageTemplate` row —
-   `metaTemplateSid` exists for this and is currently `null` on all six.
-2. Change `sendWhatsAppMessage` from `Body` to `ContentSid` +
-   `ContentVariables`.
-3. Flip `STATEMENTS_DELIVERABLE` in [lib/messaging-engine.ts](../lib/messaging-engine.ts).
+**Approved 7 August 2026**, category UTILITY. Build 1 is done; Build 2 is not.
 
-The render-and-log path is unchanged by all of this and becomes correct again
-as it stands.
+**Done (Build 1):**
+
+1. ✅ The five ContentSids are recorded on their `MessageTemplate` rows, and the
+   bodies are rewritten to the approved wording in `{name}` form.
+   [lib/whatsapp-templates.ts](../lib/whatsapp-templates.ts) is the source of
+   truth; `scripts/sync-approved-templates.mts` writes the database from it.
+2. ✅ Two drift guards fail the build if the registry or the stored bodies stop
+   matching what Meta approved — because Twilio sends by `ContentSid`, so an
+   edit in the app changes what the organizer *reads*, never what a member
+   *receives*.
+3. ✅ `LOCKOUT_NOTICE` is deliberately left with no ContentSid and no registry
+   entry. It has no approved template and must not gain one by accident: a
+   lockout notice is a security message, and Twilio Verify is its channel.
+
+**Not done — Build 2:**
+
+4. ⬜ **Write the send path.** `sendWhatsAppMessage` is currently a *refusing
+   stub*: it returns a permanent failure and never calls Twilio at all. So this
+   is not "change `Body` to `ContentSid`" on an existing call — the call does
+   not exist yet. Build 2 writes it, using `ContentSid` + `ContentVariables`
+   from the start; there is no `Body` path to migrate away from.
+5. ⬜ **Make an incomplete variable set structurally impossible** (see the
+   sample-value warning below).
+6. ⬜ Flip `STATEMENTS_DELIVERABLE` in
+   [lib/messaging-engine.ts](../lib/messaging-engine.ts) — currently `false`,
+   and it stays `false` until 4 and 5 are done.
+
+The render-and-log path is unchanged by all of this and is already correct.
+
+---
+
+## ⚠️ The sample values are wrong, on purpose, and cannot be fixed
+
+The sample variable values submitted to Twilio at approval used the **incorrect
+`.00` form** — `$7,000.00` where `formatMoney` actually produces `$7,000`
+(cents are omitted when the remainder is zero).
+
+**This is harmless as it stands.** Samples are fallback defaults shown to Meta's
+reviewers, not content. They are never sent when `ContentVariables` is complete.
+They also **cannot be corrected without forcing re-approval**, which would take
+all five templates out of service for the sake of two characters in a document
+nobody reads.
+
+**But it means the failure mode is silent and dangerous.** If `ContentVariables`
+is ever incomplete at send time — a missing key, a typo'd placeholder name, an
+undefined value — Twilio does not error and does not leave a blank. It
+**substitutes the sample**. A member then receives a message with a *fabricated
+name* and *invented figures*, presented with the same authority as a real
+statement: "Hi Sara, we received $2,000.00 for your Equb" sent to someone who is
+not Sara and paid nothing.
+
+**Build 2 must make an incomplete variable set structurally impossible.** Not
+validated at send time — impossible to construct. The type work has started:
+`variableOrder` is typed as `PlaceholderName`, read off `placeholderValues`
+itself, so a name that function does not return is already a compile error.
 
 **Sources for the Meta rules above:**
 [Template categorization](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/template-categorization) ·
