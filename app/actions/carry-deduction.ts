@@ -222,6 +222,26 @@ export async function deductCarryFromPayout(input: {
         },
       });
 
+      // THE INTENTION IS NOW SPENT — clear it.
+      //
+      // carryIntent is written once, when the organizer adds the member to the
+      // cycle, and it decides only whether this offer arrives PRE-TICKED
+      // (schema: "an INTENTION and nothing more"). Nothing ever cleared it:
+      // not the deduction, not a full ledger payment, not forgiveness. So a
+      // decision made about ONE debt kept re-arming itself, and a member who
+      // later picked up an unrelated balance — a second cycle, a shortfall at
+      // close — met a pre-ticked "deduct from payout" box for a choice the
+      // organizer never made about that money. D-23 is explicit that the
+      // system offers and the human decides; a stale tick is the system
+      // deciding quietly.
+      //
+      // The RECORD of the choice is not lost: the audit entry below names it,
+      // and the ledger entry above is the money half.
+      await tx.participation.update({
+        where: { id: participation.id },
+        data: { carryIntent: null, carryIntentAt: null, carryIntentAmount: null },
+      });
+
       await logAudit(tx, {
         entity: "Payout",
         entityId: payout.id,
@@ -230,9 +250,21 @@ export async function deductCarryFromPayout(input: {
           `${formatMoney(applied.data.deducted)} of ${person.nameEnglishFirst}'s carried balance ` +
           `deducted from their payout, confirmed by the organizer (D-23). ` +
           `Payout net ${formatMoney(payout.netAmount)} -> ${formatMoney(applied.data.netAfter)}; ` +
-          `balance ${formatMoney(balance)} -> ${formatMoney(applied.data.balanceAfter)}.`,
-        before: { netAmount: payout.netAmount, carriedBalance: balance },
-        after: { netAmount: applied.data.netAfter, carriedBalance: applied.data.balanceAfter },
+          `balance ${formatMoney(balance)} -> ${formatMoney(applied.data.balanceAfter)}.` +
+          (participation.carryIntent
+            ? ` The "${participation.carryIntent}" intention recorded when they joined is now ` +
+              `spent and has been cleared, so a later unrelated balance cannot arrive pre-ticked.`
+            : ""),
+        before: {
+          netAmount: payout.netAmount,
+          carriedBalance: balance,
+          carryIntent: participation.carryIntent,
+        },
+        after: {
+          netAmount: applied.data.netAfter,
+          carriedBalance: applied.data.balanceAfter,
+          carryIntent: null,
+        },
       });
 
       return {

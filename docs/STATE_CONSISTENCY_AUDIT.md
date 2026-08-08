@@ -343,11 +343,68 @@ surviving the same call.
 
 ### Still open
 
-Nothing from the HIGH set. The remaining MEDIUM and LOW rows in §9 — notably #15 (DRAFT
-cycles are written but never read), #17 (closing a cycle hides every member's record,
-which blocks the member-portal work in `DESIGN_PASS_QUEUE.md`), #19–#22 (session and
-messaging staleness), #40, #44, #48 — have not been re-probed one by one and should be
-treated as unverified rather than open or closed.
+**Correction.** An earlier draft of this section said "nothing from the HIGH set" while
+six HIGH rows had not been probed at all. That was an overclaim, and this is what the
+probe actually found:
+
+| # | Severity | State |
+|---|---|---|
+| 17 | HIGH | **Closed, partly.** `portalParticipation` now falls back to the member's last participation whatever its status, read-only — so `/me` survives a close. But `getGroupProgress` and `getMemberCollections` still require an ACTIVE cycle and return "No active cycle.", so two of the member's three pages dead-end the day the cycle closes. |
+| 19 | HIGH | **Closed** — `signOut({ scope: "local" })` no longer kills every other device. |
+| 22 | HIGH | **Closed** — `resetMemberPin` revokes the person's sessions. |
+| 15, 20, 21 | HIGH | **Unverified.** Not probed; treat as neither open nor closed. |
+
+The MEDIUM/LOW rows (#25, #26, #40, #44, #48 and the rest) are likewise unverified.
+
+The remaining half of #17 is deliberately **not** fixed here: it is the same ground the
+queued member-portal work covers (`DESIGN_PASS_QUEUE.md` §1 — "IF THEY ARE NOT IN THE
+CURRENT CYCLE: the home screen shows one calm page"), and half-designing it now would
+mean building it twice.
 
 **Rule going forward:** strike a row when it closes, or the table becomes a liability
 again.
+
+### Third pass — the rest of the table, probed one by one
+
+The earlier probes used a `sed` range that stopped at the first `^}`, which is the
+closing brace of an action's INPUT TYPE, not of the function. Several findings therefore
+read as "no guard present" when the guard was twenty lines further down. Re-probed with
+`awk` over the whole function:
+
+| # | Severity | State |
+|---|---|---|
+| 15 | HIGH | **Closed** — DRAFT cycles are reachable. |
+| 19 | HIGH | **Closed** — `signOut({ scope: "local" })`. |
+| 20 | HIGH | **Closed** — revocation is by `authUserId`, not by cookie. |
+| 21 | HIGH | **Closed** — `sendBatch` re-checks winners at send and refuses the WHOLE batch when the draw moved under it. |
+| 22 | HIGH | **Closed** — `resetMemberPin` revokes the person's sessions. |
+| 25 / 26 | MEDIUM | **Closed** — `weekInWindowRefusal` on both `setWeekNote` and `setWeekDeferral`. |
+| 40 | MEDIUM | **Closed** — skipped weeks accounted for in `getMemberStanding`. |
+| 44 | MEDIUM | **Closed in this pass** — see below. |
+| 48 | MEDIUM | **Closed** — the `oldest` label is derived correctly. |
+
+#### #44 — the carry intention never expired
+
+`carryIntent` is written once, when the organizer adds a member to a cycle, and decides
+only whether the deduction offer arrives **pre-ticked**. Nothing ever cleared it: not the
+deduction, not a full ledger payment, not forgiveness. A decision taken about ONE debt
+kept re-arming, so a member who later picked up an unrelated balance — a second cycle, a
+shortfall written at close — met a pre-ticked "deduct from payout" box for a choice the
+organizer never made about that money.
+
+D-23 is explicit that the system offers and the human decides; a stale tick is the system
+deciding quietly. `deductCarryFromPayout` now clears the intention in the same transaction
+that spends it, and the audit entry records that it did. The record of the original choice
+is not lost — it is in the audit trail and in the ledger entry.
+
+Pinned by `scripts/verify-carry-intent-expiry.mts`, which exercises the failing path
+specifically: it applies a deduction, raises a **brand-new unrelated debt**, and asserts
+the second offer is *not* pre-ticked — plus a contrast assertion proving that with the
+stale intent still present it *would* have been, so the check cannot pass vacuously.
+
+### What remains
+
+Only the second half of **#17**: `getGroupProgress` and `getMemberCollections` still
+require an ACTIVE cycle, so two of a member's three pages dead-end the day a cycle closes.
+Deliberately left for the queued member-portal work (`DESIGN_PASS_QUEUE.md` §1), which
+designs that state properly rather than patching it twice.

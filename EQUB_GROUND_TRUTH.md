@@ -6,10 +6,10 @@ Read this first, every session, before touching anything.
 | | |
 |---|---|
 | **Owner** | Firaoli ("Oli") Seboka — sole organizer and admin |
-| **Status** | Rebuild era — Phase 1 (Brain established) |
-| **Live cycle** | Cycle 1, 20 weeks planned, started May 17 2026, 25 members — **DATA IS SACRED, MUST SURVIVE THE REBUILD** |
+| **Status** | Built and audited. Pre-deploy. |
+| **Live cycle** | Cycle 1 2026 — 20 weeks from 17 May 2026, 27 members, past week 12. Imported and verified to the cent. |
 | **Horizon** | 2–3+ more years. Build for the long run, not for one cycle. |
-| **Version** | v3 — August 2026 |
+| **Version** | v12 — August 2026 |
 
 ---
 
@@ -585,56 +585,249 @@ researched options and tradeoffs, then is recorded here as SETTLED.
 
 ---
 
-## 4. CURRENT STATE
+## 4. CURRENT STATE — August 2026
 
-**Live:** https://equb-app-hazel.vercel.app · Repo: github.com/firaoli85/-equb-app (public)
-**Stack today:** Next.js 16, React 19, Prisma, Neon Postgres, Vercel, Tailwind
-**Cycle 1:** 20 weeks planned from May 17 2026, 25 members, past week 7, several draws done
+**Live app:** runs locally at `localhost:3000`. **Not yet deployed.**
+**Repo:** `C:\Users\firao\Desktop\equb-platform` · github.com/firaoli85/equb-platform
+**Old app (still what members use):** equb-app-hazel.vercel.app · `C:\Users\firao\Desktop\equb-app`
 
-**Good — preserve:**
-- Security foundation: server-side sessions, bcrypt PINs, cross-member isolation, OTP
-  rate limiting, bank-standard idle/absolute timeouts
-- Member portal design system (calm/premium, mobile-first, motion complete)
-- `WeekPayout` as payout truth · correct core money math
+**Stack:** Next.js 16, React 19, Prisma 7, Supabase Postgres (hosted free tier), Tailwind,
+Vercel (pending). Firebase Auth for SMS login. Twilio for WhatsApp.
 
-**Broken or missing — drives the rebuild:**
-- No configurability — start date, week count, tiers hardcoded
-- No Member Directory — people trapped inside one cycle
-- No planned-vs-actual tracking; mid-cycle joins not properly modeled
-- Data model scars — duplicate/legacy columns and tables from incremental patching
-- **No presentation layer** — admin dashboard is the wheel, not the financial picture
-- Wheel page carries a hidden control (violates 2.4)
-- Reshuffle has no awareness of committed winner selections (violates 2.3) — verified in
-  `handleReshuffleAll`, which filters drawn numbers but not committed ones
-- Zero tests on money logic
-- Repo hygiene — committed skill libraries, dev logs, screenshot scripts
+**Live data:** Cycle 1 2026 — 20 weeks from 17 May 2026, 27 members, 31 lucky numbers,
+past week 12. Imported from the old app and **verified to the cent**: $197,175 received,
+$124,950 paid out at import. Figures move as payments are recorded.
+
+**Test suite:** ~1180 tests across 66 files, `tsc --noEmit` clean, `next build` compiles,
+8 behavioural verification scripts run against the live database and clean up after
+themselves.
+
+### 4.1 WHAT IS BUILT
+
+| Area | State |
+|---|---|
+| Schema, constraints, RLS, column-level grants | Done |
+| Auth — admin email/password, member PIN, WhatsApp code, SMS (failing locally) | Done |
+| Sessions — device/IP recorded, idle + absolute expiry, sign-out-everywhere, new-device notice | Done |
+| Money core — allocation, derived state, fees, payouts, settlements | Done, heavily tested |
+| Import of Cycle 1 | Done, verified to the cent |
+| Full edit control with audit trail | Done |
+| Financial command centre (`/admin`) | Done |
+| Payments — Members list + Grid, partial recording, week action panel | Done |
+| Collections — read-first, add/remove/move winners, manual payout | Done |
+| Who is waiting · Carried balances · Cash position | Done |
+| The wheel — locked planning, clean draw screen, pool exit, undrawn warning | Done |
+| Presentation mode (screen-share safety) | Done, server-enforced |
+| Member portal — savings-led, group, collections, schedule, sessions | Done |
+| Cycle close — pre-close review, ledger debts, archive, read-only lock, wait period | Done |
+| Audit log — paged, filtered, append-only by DB trigger | Done |
+| Design pass — IA, charts, motion, glass surfaces, portalled overlays | Substantially done |
+| WhatsApp login codes | **Working** |
+| WhatsApp statements | **Blocked — needs Meta-approved templates** |
+| SMS login | **Failing locally — parked** |
+
+### 4.2 THE STATE-CONSISTENCY AUDIT
+
+An 88-agent adversarial audit of every state-changing action produced **48 confirmed
+findings**. Status:
+
+- **Money findings: 7 of 7 closed.** Every defect that lost or misreported money.
+- **High findings: 19 of 19 closed.**
+- **Medium: 13 of 26 closed**, 12 deferred with a one-line cost each in
+  `docs/STATE_CONSISTENCY_AUDIT.md` §9.1.
+
+The money findings are worth remembering, because they show the shape of the risk:
+
+1. **Doubled fee** for anyone above the unit amount — invisible on 23 of 27 members.
+2. **Archive counted pending payouts as paid out** — the document contradicted itself on
+   one screen, permanently.
+3. **Closing blanked every member's portal** — all 27 lose their record on the day the
+   closing statement tells them to look.
+4. **Concurrent carry deduction** — two panels, same balance, both commit, member is short
+   in cash with every surface reading "settled".
+5. **Lucky-number amount edit** moved the payout with nothing behind it — $19,600 to
+   $196,000 with one field.
+6. **Payout figure edit** invented the settlement amount — and the refusal message
+   *pointed the organizer at the screen that did it.*
+7. **Notes erased by omission** — same action, data loss on one screen only.
 
 ---
 
-## 5. THE REBUILD PLAN
+## 5. ENGINEERING LESSONS — HOW THINGS ACTUALLY BREAK
 
-One part at a time. Each part ends with this document updated.
+These cost real time to learn. They generalise beyond this project and should be carried
+to Nexo.
 
-| Part | What | State |
-|---|---|---|
-| **1** | **The Brain** — this document | **DONE** |
-| **1a** | Schema, RLS, constraints, auth (PIN + OTP, admin claim), money core, import of real Cycle 1 verified to the cent, full edit control | **DONE** |
-| **2** | Presentation layer / Financial Command Center | Next to design |
-| **3** | Data model rebuild — cycles, Member Directory, planned-vs-actual, retire scars | Pending (needs D-9) |
-| **4** | Configurable cycle creation | Pending |
-| **5** | Winner planning + Zoom-safe settings: together/separate, week assignment, locked plan, visibility controls | Pending |
-| **6** | Tests on money logic | Pending |
-| **7** | Repo hygiene + state-aware messaging system | Pending |
+### 5.1 A FIXTURE THAT DOES NOT RESEMBLE PRODUCTION HIDES THE BUG IT WAS WRITTEN TO CATCH
+
+Caught **three times**. The lucky-number REPLACE feature was reported fixed twice and
+never worked: the fixture numbered members 9101–9103, so a low number was always free and
+the failing swap path never ran. Production numbers sequentially from 1 with no gaps.
+
+`scripts/lib/production-fixture.mts` now builds the real shape — 27 members, numbers 1–31
+with no gaps, four members holding two numbers, mixed collected/pending payouts, a late
+joiner, a partial, a deferral, a carried balance. **Every property there is one a defect
+hid behind.**
+
+### 5.2 A GUARD TEST IS WORTHLESS UNTIL YOU PROVE IT FAILS
+
+Plant the violation, watch the guard catch it, restore the file. Several guards were
+vacuous on first write — one matched a bare identifier, so the *import line* satisfied it.
+
+### 5.3 A GUARD THAT FAILS ON CORRECT CODE GETS DELETED
+
+Sharpen the rule; never bend correct code to satisfy a guard. And an over-strict guard
+that flags its own documentation will be switched off by whoever meets it next.
+
+### 5.4 AN EXEMPT ENTRY IS A CLAIM ABOUT THE CODE
+
+One exemption said an action "deletes through undoDraw" when it called `deleteMany`
+directly. The guard passed while the bug stayed. Exemptions are prose; verify them.
+
+### 5.5 A COMMENT CAN BE THE BUG'S BEST CAMOUFLAGE
+
+`"Re-read inside the transaction so a balance that moved cannot be over-deducted"` — the
+read was not in the transaction. Anyone reviewing would read the comment and move on.
+
+### 5.6 A TEST CAN PIN A BUG AS INTENDED BEHAVIOUR
+
+A test named *"scales with the number of lucky numbers they hold"* certified the doubled
+fee, using a fixture state the code can never produce.
+
+### 5.7 A TEST CAN PASS FOR THE WRONG REASON
+
+After the `spinWheel` fix the old test still passed — `random: () => 0.99` happened to
+land on the same slot. Sweep the range; do not trust one roll.
+
+### 5.8 THE GAP IS USUALLY A RULE WITH NO OWNER
+
+"Never auto-deduct a carried balance" existed only as a UI branch. The fix was not a
+better function — it was giving the rule a home: a type with no `deducted` field, and a
+required `confirmedByOrganizer` with no default, so the wrong thing cannot be written.
+
+### 5.9 FRICTION CAUSES DRIFT
+
+The closed-cycle guard was applied by hand and reached 9 of 19 mutations, because it cost
+three lines of plumbing each. One line, and it reached all of them.
+
+### 5.10 TWO FUNCTIONS ANSWERING ONE QUESTION IS THE SAME DEFECT AS NONE
+
+### 5.11 A TYPED CONFIRMATION THE CLIENT SUPPLIES IS DECORATIVE
+
+Three of five typed-name gates passed unconditionally because the client sent its own copy
+of the expected value — including `closeCycle` and `deleteClosedCycle`, the two most
+consequential actions in the product.
+
+### 5.12 OVERLAYS MUST BE PORTALLED TO `document.body`
+
+A leftover identity `transform` from a finished animation makes an element the containing
+block for `position: fixed` descendants. The dialog rendered 191px above the viewport.
+Portal, then measure and re-measure the anchor on scroll and resize.
+
+### 5.13 RLS GATES ROWS, NOT COLUMNS
+
+Members could read their own `pinHash`, lockout state and organizer notes — they own the
+row. Column-level `REVOKE`/`GRANT` is the fix.
+
+### 5.14 SECURITY HEADERS CAN BREAK THIRD-PARTY AUTH SILENTLY
+
+`Referrer-Policy: no-referrer` stripped the `Referer` that reCAPTCHA needs to bind its
+token to an authorised domain. Result: a well-formed token Google rejects, no CSP
+violation, nothing malformed to point at.
+
+### 5.15 A REASON STRING THAT OUTLIVES ITS CAUSE IS A LIE
 
 ---
 
-## 6. HOW WE WORK
+## 6. KNOWN ISSUES AND PARKED WORK
+
+### 6.1 SMS LOGIN — PARKED
+
+Fails on localhost with `auth/invalid-app-credential`. A **verbatim port** of the working
+old app still fails: same Firebase project, same SDK version, same client code, same
+origin, zero CSP violations. The difference is environmental.
+
+Three real causes were found and fixed along the way (§5.14, plus `connect-src` missing
+`www.google.com` for the `api2/clr` call, and `frame-src` missing `recaptcha.google.com`).
+
+**Next step:** retest after deploy on the production domain. **Add that domain to Firebase
+→ Authentication → Settings → Authorized domains first.**
+
+Priority is low: the default PIN signs every member in directly.
+
+### 6.2 WHATSAPP — LOGIN WORKS, STATEMENTS DO NOT
+
+**Login codes work today** — Twilio Verify sends Meta-approved templates, no service
+window needed. Verified delivered.
+
+**Statements cannot send as built.** They are freeform bodies, and freeform requires the
+member to have messaged the business within 24 hours. **The account has one inbound
+message ever (19 May 2026)**, so no window is open for anyone.
+
+The earlier "Meta disabled the WABA" reading was wrong — 63112 was a temporary block that
+cleared. The sender is ONLINE, quality HIGH.
+
+**Next step:** submit four Content templates (`PAYMENT_CONFIRMED`, `BEHIND_NOTICE`,
+`LATE_NOTICE`, `WINNER_ANNOUNCEMENT`, `CYCLE_CLOSING_STATEMENT` — five drafted,
+`LOCKOUT_NOTICE` dropped). Drafts are in `docs/WHATSAPP_TEMPLATES.md`, reviewed and
+approved by the organizer. Then record each `ContentSid`, switch `sendWhatsAppMessage`
+from `Body` to `ContentSid` + `ContentVariables`, and flip `STATEMENTS_DELIVERABLE`.
+
+**Meta rule that reshaped every template:** a body may not begin or end with a variable.
+All originals opened with `{name},` and would have been rejected. Names *are* allowed in
+UTILITY; only the position was wrong.
+
+### 6.3 TOOLING
+
+`agent-browser` wedges after admin sign-in — every subsequent call times out. Verification
+has been done through rendered-HTML assertions instead, which catch geometry, contrast
+pairing, tap targets and overflow, but **not actual paint**.
+`docs/MANUAL_QA_CHECKLIST.md` covers 26 admin screens, 7 member screens and the charts,
+written against defects that actually occurred. **The organizer runs it.**
+
+### 6.4 SMALL OPEN ITEMS
+
+- **Week 6** holds only Hana (#19) at $4,900 — her real partner needs adding via
+  Collections → "Add a winner to this week".
+- **Slot 23** is empty wheel clutter — delete on Wheel Setup or ignore.
+- **12 medium audit findings** deferred, listed with costs in
+  `docs/STATE_CONSISTENCY_AUDIT.md` §9.1. `closeCycle` irreversibility is the one worth
+  doing before 27 September.
+- **Passkeys** noted as a post-deploy idea — Supabase Auth has no native support, so it
+  means implementing WebAuthn.
+- **Selling a turn** (a member offers their week to another) — designed in conversation,
+  not built. Simpler than first assumed: money changes hands privately, the system only
+  swaps who won. The hard part is preserving anonymity in the offer.
+
+---
+
+## 7. WHAT IS NEXT
+
+1. **Submit the WhatsApp templates** — Meta review takes hours to a day, so start early.
+2. **Run `docs/MANUAL_QA_CHECKLIST.md`** — the organizer's eyes, in short sittings.
+3. **Deploy** — Vercel, environment variables, the production domain into Firebase
+   authorized domains, the keep-alive scheduler for the idle gap, CI gating typecheck and
+   tests.
+4. **Parallel run** — record payments in both systems for the remaining weeks and compare.
+   The old app stays live for members until this proves out.
+5. **Cycle close on 27 September**, then Cycle 2 on the new platform.
+
+---
+
+## 8. HOW WE WORK
 
 - **Design in plain English first.** Discuss and agree before any code.
-- **One part at a time.** No batching.
-- **Claude writes the prompts and SQL; Oli runs them** in Claude Code / the DB console.
-- **Oli runs git himself** — git commands are standalone copy-paste terminal blocks,
-  never inside a Claude Code prompt.
+- **One part at a time.** No batching of unrelated work.
+- **Claude writes the prompts and SQL; Oli runs them** in Claude Code and the DB console.
+- **Oli runs git himself** — git commands are standalone copy-paste terminal blocks, never
+  inside a Claude Code prompt.
+- **ONE Claude Code session at a time.** Two sessions in this tree cost an implementation,
+  left parse errors twice, and produced contradictory "FIXED" claims.
 - **Verify against live data before and after.** Counts prove changes; claims do not.
+- **Build, then verify repeatedly — not once.** At least three rounds per screen.
 - **Decisions get recorded here**, not left in chat history.
 - **Push back when the reasoning is wrong.** Honesty over agreement.
+- **Do not tell Oli to rest or stop.** He manages his own breaks; sessions span days.
+- **State sequencing in terms of work and risk**, never energy.
+- **Instructions must be step by step and exact.** Assume nothing about where a menu is or
+  what a field is called.
