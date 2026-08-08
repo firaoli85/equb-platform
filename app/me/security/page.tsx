@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listMySessions } from "@/app/actions/sessions";
 import { getCurrentUser } from "@/lib/auth";
@@ -39,6 +40,46 @@ export default async function MemberSecurityPage() {
           <SessionList sessions={result.data} now={Date.now()} />
         )}
       </section>
+
+      {/* PAST CYCLES — one quiet entry, deliberately.
+          Not a tab and not on the home screen: a finished cycle's figures must
+          never be readable as the current one. This is somewhere you GO to
+          look something up, which is exactly what Account is for. */}
+      <Link
+        href="/me/history"
+        className="flex min-h-11 items-center gap-3 rounded-2xl border border-gray-100 bg-white px-3.5 py-3.5 shadow-sm transition-colors hover:border-gray-200 dark:border-gray-800 dark:bg-[#141414] dark:hover:border-gray-700"
+      >
+        <svg
+          className="h-5 w-5 shrink-0 text-gray-500 dark:text-gray-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 8v4l2.5 2.5M3.05 11a9 9 0 111.6 6M3 15v-4h4"
+          />
+        </svg>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-gray-900 dark:text-white">Past cycles</span>
+          <span className="block text-xs text-gray-600 dark:text-gray-400">
+            Your record of every cycle you have finished — kept for good
+          </span>
+        </span>
+        <svg
+          className="h-4 w-4 shrink-0 text-gray-400"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </Link>
 
       {/* gray-600, not gray-500: measured 4.34:1 on the page background, and
           this is 12px body text needing 4.5:1. */}

@@ -40,24 +40,28 @@ import { createClient } from "@/lib/supabase/server";
  * Ground truth 2.18 already said otherwise: *"Closed members stay visible —
  * not removed from the cycle. They keep access to their own record and can see
  * where they stopped. Dignity, and a useful record for them."* That applies to
- * a closed CYCLE exactly as it applies to a closed participation, which is why
- * neither status is filtered here.
+ * a closed CYCLE exactly as it applies to a closed participation.
+ *
+ * THAT ACCESS IS STILL KEPT — it simply moved. Showing the old cycle HERE
+ * satisfied 2.18 by breaking the rule beside it: this function returned the
+ * member's most recent participation with `readOnly: true`, a flag that was
+ * computed and then read by nothing at all. So a member whose cycle closed in
+ * September opened the app in November and saw their old savings ring, week
+ * grid, payout card and "next payment due" rendered exactly like a live
+ * cycle, with no label saying it had ended. Their finished record read as a
+ * bill they were behind on.
+ *
+ * The record now lives where it cannot be mistaken for the current cycle: the
+ * calm home screen for someone not in one, and Account → past cycles. Both
+ * read the frozen archive rather than live rows, so the member and the
+ * organizer see the same figures.
  */
-async function portalParticipation(
-  personId: string,
-): Promise<{ id: string; readOnly: boolean } | null> {
+async function portalParticipation(personId: string): Promise<{ id: string } | null> {
   const live = await prisma.participation.findFirst({
     where: { personId, status: "ACTIVE", cycle: { status: "ACTIVE" } },
     select: { id: true },
   });
-  if (live) return { id: live.id, readOnly: false };
-
-  const last = await prisma.participation.findFirst({
-    where: { personId },
-    orderBy: [{ cycle: { startDate: "desc" } }, { createdAt: "desc" }],
-    select: { id: true },
-  });
-  return last ? { id: last.id, readOnly: true } : null;
+  return live ? { id: live.id } : null;
 }
 
 export async function getMyPortal() {

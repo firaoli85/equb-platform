@@ -159,6 +159,13 @@ export default async function PersonPage({
         ])
       : [0, 0];
 
+  // MONEY FIRST, THEN TIME. The six were in no order at all — paid in, still
+  // to save, cycle week, weeks behind, overdue, last payment — so the eye had
+  // to sort them. Grouped, the first three answer "what about their money" and
+  // the last three answer "where are they in the cycle".
+  //
+  // `tone` marks the one figure that may need action. Nothing else is
+  // coloured, so when something IS coloured it means something.
   const stats =
     standing?.ok && active
       ? [
@@ -177,6 +184,16 @@ export default async function PersonPage({
                 : "over the rest of their weeks",
           },
           {
+            label: "Overdue",
+            value: formatMoney(standing.data.amountOutstanding),
+            sub:
+              standing.data.amountOutstanding === 0
+                ? "nothing owed right now"
+                : "weeks whose window has closed",
+            tone:
+              standing.data.amountOutstanding > 0 ? ("problem" as const) : ("good" as const),
+          },
+          {
             label: "Cycle week",
             value: `${standing.data.currentCycleWeek}`,
             sub: `of ${active.cycle.plannedWeeks} · their wk ${active.startWeek}–${standing.data.finishWeek}`,
@@ -185,14 +202,6 @@ export default async function PersonPage({
             label: "Weeks behind",
             value: `${standing.data.weeksBehind}`,
             sub: standing.data.weeksBehind === 0 ? "current" : "needs catching up",
-          },
-          {
-            label: "Overdue",
-            value: formatMoney(standing.data.amountOutstanding),
-            sub:
-              standing.data.amountOutstanding === 0
-                ? "nothing owed right now"
-                : "weeks whose window has closed",
           },
           {
             label: "Last payment",
@@ -212,46 +221,70 @@ export default async function PersonPage({
 
   return (
     <main className="space-y-4">
-      {/* ————— HEADER — always visible, never scrolls away ————— */}
-      <header className="sticky top-0 z-20 -mx-4 border-b border-gray-200 dark:border-gray-800 bg-[var(--page-bg)]/95 px-4 pb-2 pt-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--page-bg)]/80 sm:-mx-6 sm:px-6">
-        <p className="mb-1 text-sm">
-          <Link href="/admin/people" className="text-gray-600 dark:text-gray-400 hover:underline">
+      {/* ————— HEADER — a profile, not a row of facts —————
+
+          It was one flat plane: name, phone, three chips of three different
+          KINDS and a big button all on one line, then six figures in a
+          five-column grid so the sixth wrapped alone onto a second row. There
+          was nothing to read first.
+
+          Now it is what a profile is: WHO on the left with their identity
+          chips under the name, the one action on the right, and the figures on
+          their own strip below a rule — separated, evenly weighted, and in a
+          deliberate order. */}
+      <header className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-[var(--page-bg)] px-4 pb-3 pt-3 backdrop-blur supports-[backdrop-filter]:bg-[var(--page-bg)]/85 dark:border-gray-800 sm:-mx-6 sm:px-6">
+        <p className="mb-2 text-sm">
+          <Link
+            href="/admin/people"
+            className="inline-flex min-h-8 items-center gap-1 text-gray-600 transition-colors hover:text-indigo-700 hover:underline dark:text-gray-400 dark:hover:text-indigo-300"
+          >
             ← Directory
           </Link>
         </p>
-        <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+
+        {/* ——— Identity ——— */}
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
           <span
-            className="flex h-11 w-11 shrink-0 select-none items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-lg font-black text-indigo-700 dark:text-indigo-300"
+            className="flex h-14 w-14 shrink-0 select-none items-center justify-center rounded-full bg-indigo-100 text-2xl font-black text-indigo-700 ring-1 ring-indigo-200/70 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-900/70"
             aria-hidden="true"
           >
             {[...person.nameEnglishFirst][0] ?? [...person.nameAmharic][0] ?? "?"}
           </span>
-          <div className="min-w-0">
-            <h1 className="text-xl font-black leading-tight text-gray-900 dark:text-white text-balance">
+
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-black leading-tight tracking-tight text-gray-900 dark:text-white text-balance">
               {person.nameAmharic}
             </h1>
-            <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
-              <span>
-                {person.nameEnglishFirst} {person.nameEnglishLast ?? ""}
-              </span>
-              <span className="tabular-nums">{person.phone ?? "no phone"}</span>
-              {pinState === "own" ? (
-                <Pill tone="good">Own PIN</Pill>
-              ) : pinState === "default" ? (
-                <Pill tone="attention">Default PIN (last 4)</Pill>
-              ) : (
-                <Pill tone="neutral">OTP only</Pill>
+            <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
+              {person.nameEnglishFirst} {person.nameEnglishLast ?? ""}
+              {person.phone && (
+                <>
+                  <span aria-hidden="true" className="mx-1.5 opacity-50">
+                    ·
+                  </span>
+                  <a
+                    href={`tel:${person.phone}`}
+                    className="tabular-nums hover:text-indigo-700 hover:underline dark:hover:text-indigo-300"
+                  >
+                    {person.phone}
+                  </a>
+                </>
               )}
-              <Pill tone={person.authUserId ? "accent" : "neutral"}>
-                {person.authUserId ? "Sign-in linked" : "Never signed in"}
-              </Pill>
+              {!person.phone && (
+                <>
+                  <span aria-hidden="true" className="mx-1.5 opacity-50">
+                    ·
+                  </span>
+                  <span className="text-amber-700 dark:text-amber-400">no phone</span>
+                </>
+              )}
             </p>
-          </div>
 
-          {/* Lucky numbers with amounts — the canonical place they are shown. */}
-          {active && (
-            <span className="flex flex-wrap gap-1.5">
-              {active.luckyNumbers.map((n) => (
+            {/* Chips on their OWN line, in one order: what they hold, then how
+                they get in. Mixed into the name line they read as one
+                undifferentiated cluster. */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {active?.luckyNumbers.map((n) => (
                 <span
                   key={n.id}
                   className="inline-flex select-none items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-black tabular-nums"
@@ -265,52 +298,62 @@ export default async function PersonPage({
                   <span className="font-semibold opacity-75">{formatMoney(n.amount)}/wk</span>
                 </span>
               ))}
-            </span>
-          )}
+              {pinState === "own" ? (
+                <Pill tone="good">Own PIN</Pill>
+              ) : pinState === "default" ? (
+                <Pill tone="attention">Default PIN (last 4)</Pill>
+              ) : (
+                <Pill tone="neutral">OTP only</Pill>
+              )}
+              <Pill tone={person.authUserId ? "accent" : "neutral"}>
+                {person.authUserId ? "Sign-in linked" : "Never signed in"}
+              </Pill>
+            </div>
+          </div>
 
-          {/* The primary action, always reachable. */}
+          {/* The one action. Solid ONLY when something is actually owed — a
+              permanently loud button teaches the organizer to ignore it. */}
           {active && standing?.ok && (
             <Link
               href={`/admin/people/${person.id}?tab=payments`}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-700 active:scale-[0.97]"
+              className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl px-4 text-sm font-bold transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.97] ${
+                standing.data.amountOutstanding > 0
+                  ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                  : "border border-gray-300 bg-white text-gray-800 hover:border-gray-400 dark:border-gray-700 dark:bg-[#141414] dark:text-gray-200 dark:hover:border-gray-600"
+              }`}
             >
-              {standing.data.amountOutstanding > 0
-                ? `${formatMoney(standing.data.amountOutstanding)} overdue — Record payment`
-                : "Record payment"}
+              Record payment
             </Link>
           )}
         </div>
 
-        {/* The five key figures, compact. */}
+        {/* ——— The figures, on their own strip ———
+            Six across at desktop so none is orphaned, three at tablet, two on
+            a phone. Divided rather than merely spaced: at 2-up the eye needs
+            to know which sub-line belongs to which figure. */}
         {stats.length > 0 && (
-          <dl className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1 sm:grid-cols-5">
-            {stats.map((s) => (
-              <div key={s.label}>
+          <dl className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-gray-200 bg-gray-200 dark:border-gray-800 dark:bg-gray-800 sm:grid-cols-3 xl:grid-cols-6">
+            {stats.map((stat) => (
+              <div key={stat.label} className="bg-[var(--page-bg)] px-3 py-2">
                 <dt className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-                  {s.label}
+                  {stat.label}
                 </dt>
-                <dd className="text-sm font-black tabular-nums text-gray-900 dark:text-white">
-                  {s.value}{" "}
-                  <span className="font-normal text-[11px] text-gray-600 dark:text-gray-400">
-                    {s.sub}
-                  </span>
+                <dd
+                  className={`mt-0.5 text-base font-black tabular-nums leading-none ${
+                    "tone" in stat && stat.tone === "problem"
+                      ? "text-red-700 dark:text-red-400"
+                      : "text-gray-900 dark:text-white"
+                  }`}
+                >
+                  {stat.value}
+                </dd>
+                <dd className="mt-1 text-[11px] leading-snug text-gray-600 dark:text-gray-400 text-pretty">
+                  {stat.sub}
                 </dd>
               </div>
             ))}
           </dl>
         )}
-
-        <div className="mt-2">
-          <MemberTabBar
-            personId={person.id}
-            active={tab}
-            counts={{
-              receipts: active?.paymentEvents.length ?? 0,
-              numbers: active?.luckyNumbers.length ?? 0,
-              cycles: person.participations.length,
-            }}
-          />
-        </div>
       </header>
 
       {active === null && tab !== "settings" && tab !== "history" && (

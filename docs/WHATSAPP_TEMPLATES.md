@@ -1,14 +1,37 @@
-# WhatsApp Content templates — draft for review
+# WhatsApp Content templates — submitted to Meta
 
-**Status: DRAFT. Nothing submitted, nothing sent.** For the organizer to review
-before anything goes to Meta.
+**Status: CREATED IN TWILIO, SUBMITTED TO META 7 August 2026. Not yet approved,
+nothing sent.**
+
+The five bodies below are the text that was submitted. They are now the wording
+of record: changing any of them means re-submitting that template and waiting
+for approval again.
 
 Read alongside [WHATSAPP_TEMPLATE_ONLY.md](WHATSAPP_TEMPLATE_ONLY.md), which
 explains why statements need these at all.
 
-The wording cannot change after approval without re-submitting, so it has to be
-right the first time. Review the five bodies below as *final text*, not drafts
-to be tidied later.
+---
+
+## Submitted templates and ContentSids
+
+| Template | Twilio name | ContentSid | Language | Submitted |
+|---|---|---|---|---|
+| PAYMENT_CONFIRMED | payment_confirmed | HX87cb0a437434f7f9bba329958c74544a | en | 2026-08-07 |
+| BEHIND_NOTICE | behind_notice | HX8bb8e24a790e8fafd81f232ecfe6e8dc | en_US | 2026-08-07 |
+| LATE_NOTICE | late_notice | HXc25be8d015fc1d36a6b0caf3ebf89823 | en_US | 2026-08-07 |
+| WINNER_ANNOUNCEMENT | winner_announcement | HX2774ec28d2785140d4610ba2f947f6e5 | en_US | 2026-08-07 |
+| CYCLE_CLOSING_STATEMENT | cycle_closing_statement | HX517e5e10d8f11e741789b5c6ebed9565 | en_US | 2026-08-07 |
+
+- Sample variable values were supplied at save time in Twilio's "Sample
+  variables" dialog, using the rendered examples already in this document.
+- `payment_confirmed` was created as language `en`; the other four as `en_US`.
+  This has no effect on sending, because messages are addressed by ContentSid,
+  not by language. Recorded so the inconsistency is not mistaken for a defect.
+- The "+ Add variable" button in the Content Template Builder appends a new
+  variable to the body rather than exposing sample fields for existing ones.
+  Sample values are collected in a dialog that opens when Save is clicked.
+- LOCKOUT_NOTICE remains undrafted and unsubmitted, per the decision recorded
+  in "Things to decide before submission".
 
 ---
 
