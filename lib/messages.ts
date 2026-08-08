@@ -8,6 +8,13 @@
 // not UI behavior.
 
 import { formatDateLongUTC, formatMoney } from "./format";
+// The registry imports only a TYPE from this file (PlaceholderName), which is
+// erased at build, so this is not a runtime cycle.
+import {
+  APPROVED_TEMPLATE_KEYS,
+  APPROVED_TEMPLATES,
+  type ApprovedTemplateKey,
+} from "./whatsapp-templates";
 
 export const MESSAGE_KEYS = [
   "PAYMENT_CONFIRMED",
@@ -236,39 +243,47 @@ export function unknownPlaceholders(body: string): string[] {
  * These become editable MessageTemplate ROWS on first use — the organizer's
  * wording always wins; this constant is only the starting point.
  */
+/**
+ * THE FIVE APPROVED BODIES ARE NOT WRITTEN HERE. They are read off
+ * APPROVED_TEMPLATES, which is the source of truth (lib/whatsapp-templates.ts).
+ *
+ * THE BUG THIS CLOSES, which had not bitten yet only because all six rows
+ * happen to exist. `deliver()` falls back to DEFAULT_TEMPLATES when a
+ * MessageTemplate row is absent. Twilio sends by ContentSid, so what the member
+ * RECEIVES is always Meta's approved sentence — but the fallback body is what
+ * gets written to MessageLog. A missing row therefore did not fail: it
+ * delivered the approved text and permanently recorded different text as the
+ * thing that was said. The message log is the organizer's proof of what was
+ * said to whom; a log that disagrees with what was sent is worse than no log,
+ * because it is trusted.
+ *
+ * One sentence, written once, in the file Meta's wording belongs in.
+ */
+/**
+ * The organizer-facing LABEL for each type. Ours, not Meta's — Meta approved
+ * the sentence a member reads, never what the admin screen calls it — so these
+ * stay here and are safe to reword.
+ */
+const TEMPLATE_NAMES: Record<ApprovedTemplateKey, string> = {
+  PAYMENT_CONFIRMED: "Payment confirmation",
+  BEHIND_NOTICE: "Behind notice",
+  LATE_NOTICE: "Late notice",
+  WINNER_ANNOUNCEMENT: "Winner announcement",
+  CYCLE_CLOSING_STATEMENT: "Cycle closing statement",
+};
+
+const APPROVED_DEFAULTS = Object.fromEntries(
+  APPROVED_TEMPLATE_KEYS.map((key) => [
+    key,
+    { name: TEMPLATE_NAMES[key], body: APPROVED_TEMPLATES[key].namedBody },
+  ]),
+) as Record<ApprovedTemplateKey, { name: string; body: string }>;
+
 export const DEFAULT_TEMPLATES: Record<MessageKey, { name: string; body: string }> = {
-  PAYMENT_CONFIRMED: {
-    name: "Payment confirmation",
-    body:
-      "{name}, we received {amountReceived} — recorded on week(s) {weeksCovered}. " +
-      "You have paid {weeksPaid} of {weeksTotal} weeks. {weeksLeft} weeks left.",
-  },
-  BEHIND_NOTICE: {
-    name: "Behind notice",
-    body:
-      "{name}, as of week {week}: your last payment was week {lastPaymentWeek}. " +
-      "You are {weeksBehind} weeks behind, {amountOwed} outstanding. " +
-      "You have paid {weeksPaid} of {weeksTotal} weeks.",
-  },
-  LATE_NOTICE: {
-    name: "Late notice",
-    body:
-      "{name}, week(s) {lateWeeks} closed without payment. " +
-      "Your last payment was week {lastPaymentWeek}. " +
-      "You are {weeksBehind} weeks behind, {amountOwed} outstanding.",
-  },
-  WINNER_ANNOUNCEMENT: {
-    name: "Winner announcement",
-    body:
-      "{name}, you receive this week — week {week}. Your payout is {payoutAmount}. " +
-      "You have paid {weeksPaid} of {weeksTotal} weeks; {weeksLeft} weeks remain to week {finishWeek} ({finishDate}).",
-  },
-  CYCLE_CLOSING_STATEMENT: {
-    name: "Cycle closing statement",
-    body:
-      "{name}, closing statement: you paid {weeksPaid} of {weeksTotal} weeks. " +
-      "Last payment week {lastPaymentWeek}. Outstanding: {amountOwed}.",
-  },
+  ...APPROVED_DEFAULTS,
+  // LOCKOUT_NOTICE is deliberately absent from the registry — it has no
+  // approved template and must never look sendable (see the header of
+  // lib/whatsapp-templates.ts). Its wording is ours, so it is written here.
   LOCKOUT_NOTICE: {
     name: "Lockout notice",
     body:

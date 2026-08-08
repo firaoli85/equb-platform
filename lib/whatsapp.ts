@@ -38,10 +38,26 @@ import {
 } from "./settings";
 
 const VERIFY_BASE = "https://verify.twilio.com/v2/Services";
-// The Messages API base is deliberately ABSENT. It was only ever used by the
-// freeform statement send, which no longer exists — see sendWhatsAppMessage.
-// When templates land, the send moves to Content (ContentSid +
-// ContentVariables) and the host comes back with it.
+const API_BASE = "https://api.twilio.com/2010-04-01";
+
+/**
+ * ContentVariables did not match the template (Twilio 21656).
+ *
+ * PERMANENT: it means the object we built does not fit the approved template —
+ * our bug, and retrying sends the identical wrong object. One send already hit
+ * this on 2026-08-07.
+ */
+export const CONTENT_VARIABLES_INVALID_CODE = 21656;
+
+/**
+ * Freeform outside the 24-hour service window (Twilio 63016).
+ *
+ * PERMANENT, and it means something specific: this send carried no ContentSid.
+ * Every statement now goes out as an approved template, and a template needs no
+ * window — so seeing 63016 at all is a CODE DEFECT, not a delivery problem.
+ * Retrying cannot fix a missing ContentSid.
+ */
+export const OUTSIDE_SERVICE_WINDOW_CODE = 63016;
 
 /**
  * Meta disabled the WhatsApp Business Account behind the sender — Twilio's own
@@ -141,6 +157,42 @@ function failure(where: string, status: number, bodyText: string): WhatsAppSendR
       permanent: true,
     };
   }
+
+  // OUR BUG, NOT A DELIVERY PROBLEM — and the distinction is the whole point
+  // of classifying it. A retry re-sends the identical malformed request, and
+  // every attempt is billed and lands another FAILED row in the log.
+  if (code === CONTENT_VARIABLES_INVALID_CODE) {
+    console.error(
+      `WhatsApp ${where}: ContentVariables did not match the approved template ` +
+        `(Twilio ${CONTENT_VARIABLES_INVALID_CODE}). Not retrying — the same variables would be ` +
+        `sent again. Check variableOrder in lib/whatsapp-templates.ts against the template Meta approved.`,
+    );
+    return {
+      ok: false,
+      error:
+        `The message variables did not match the approved template (Twilio ` +
+        `${CONTENT_VARIABLES_INVALID_CODE}). Nothing was sent, and it was not retried.`,
+      code,
+      permanent: true,
+    };
+  }
+
+  if (code === OUTSIDE_SERVICE_WINDOW_CODE) {
+    console.error(
+      `WhatsApp ${where}: sent OUTSIDE the 24-hour window (Twilio ${OUTSIDE_SERVICE_WINDOW_CODE}), ` +
+        `which means this send carried no ContentSid. Every statement is supposed to go as an ` +
+        `approved template, and a template needs no window — so this is a code defect, not a ` +
+        `delivery failure. Not retrying.`,
+    );
+    return {
+      ok: false,
+      error:
+        `This message was sent without an approved template (Twilio ` +
+        `${OUTSIDE_SERVICE_WINDOW_CODE}), so Meta refused it. Nothing was retried.`,
+      code,
+      permanent: true,
+    };
+  }
   return { ok: false, error: message, code, permanent: false };
 }
 
@@ -168,44 +220,90 @@ async function channelRefusal(): Promise<string | null> {
 }
 
 /**
- * Freeform statement bodies (2.21) over the approved WhatsApp sender.
+ * Send one approved WhatsApp TEMPLATE to a member.
  *
- * THIS FUNCTION DOES NOT SEND, AND THAT IS DELIBERATE.
+ * Statements go out as Meta-approved Content templates and never as freeform
+ * text. That is not a preference: Meta accepts a freeform body only inside the
+ * 24-hour service window a member opens by messaging us, and this account has
+ * had ONE inbound message in its history (19 May 2026). A template needs no
+ * window, which is why this path works at all.
  *
- * It refuses before credentials and before the network, unconditionally, and
- * NOT via a setting — because the obstacle is structural, not configuration.
- * Meta accepts a freeform body only inside the 24-hour service window opened
- * by the member's own inbound message. This account has one inbound message
- * ever (19 May 2026), so no window is open for anyone, and this call carries a
- * raw Body with no ContentSid. Every attempt would fail, be billed, and land a
- * failure in MessageLog for a member who was never reachable.
+ * `body` is NOT what Twilio sends — Twilio renders the approved sentence from
+ * the ContentSid and the variables. It is passed so the caller can log the
+ * exact text a member will read. If those two ever disagree, the log is wrong
+ * and lib/whatsapp-templates.test.ts is what catches it.
  *
- * A toggle would be the wrong shape: an organizer could switch it on and get
- * silent non-delivery back. There is no configuration that makes this work —
- * only registering each message shape as a Content template and sending
- * ContentSid + ContentVariables instead of Body. That work is specified in
- * docs/WHATSAPP_TEMPLATE_ONLY.md, and MessageTemplate.metaTemplateSid is where
- * the mapping lands when it happens.
+ * NO MESSAGING SERVICE SID. We send from the number directly: one sender, 27
+ * members, and a service container would add a layer with nothing behind it.
  *
- * The request this USED to make is recorded in the doc rather than left here
- * as unreachable code — POST https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json with
- * To/From/Body — because dead code that looks live is how a freeform send
- * comes back by accident.
- *
- * The signature is unchanged so every caller and every test still type-checks
- * against the same contract; only the answer is different, and it is always
- * the same answer.
+ * Never throws — a failure is an honest result the caller logs.
  */
-export async function sendWhatsAppMessage(
-  _toE164Phone: string,
-  _body: string,
-): Promise<WhatsAppSendResult> {
-  return {
-    ok: false,
-    error: WHATSAPP_STATEMENTS_BLOCKED_REASON,
-    code: null,
-    permanent: true,
-  };
+export async function sendWhatsAppMessage(args: {
+  toE164Phone: string;
+  contentSid: string;
+  contentVariables: Record<string, string>;
+  /** The rendered text, for MessageLog. Not sent to Twilio. */
+  body: string;
+}): Promise<WhatsAppSendResult> {
+  // The channel switch first — before credentials, before the network. A
+  // switched-off channel must cost nothing and reach nobody.
+  const disabled = await channelRefusal();
+  if (disabled) return { ok: false, error: disabled, code: null, permanent: true };
+
+  // A send with no ContentSid is a freeform send, which Meta will refuse with
+  // 63016 and bill us for. Refuse it here instead, where it costs nothing and
+  // says what is actually wrong.
+  if (!args.contentSid.trim()) {
+    return {
+      ok: false,
+      error:
+        "No approved template for this message — nothing was sent. A WhatsApp statement " +
+        "can only go out under a Meta-approved ContentSid.",
+      code: null,
+      permanent: true,
+    };
+  }
+
+  const creds = credentials();
+  if (!creds.ok) return creds;
+  const from = process.env.TWILIO_WHATSAPP_FROM?.trim();
+  if (!from) {
+    return {
+      ok: false,
+      error: "WhatsApp is not configured — set TWILIO_WHATSAPP_FROM in .env.local.",
+      code: null,
+      permanent: true,
+    };
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/Accounts/${creds.value.sid}/Messages.json`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: authHeader(creds.value),
+      },
+      body: new URLSearchParams({
+        To: `whatsapp:${args.toE164Phone}`,
+        From: `whatsapp:${from}`,
+        ContentSid: args.contentSid,
+        ContentVariables: JSON.stringify(args.contentVariables),
+      }).toString(),
+    });
+    const text = await res.text();
+    if (!res.ok) return failure("statement send", res.status, text);
+    const parsed = JSON.parse(text) as { sid?: string; status?: string };
+    // The provider SID is what makes a log row traceable back to Twilio.
+    return { ok: true, sid: parsed.sid ?? "", status: parsed.status ?? "queued" };
+  } catch (e) {
+    // A network throw is NOT permanent — the same message may well send later.
+    return {
+      ok: false,
+      error: `Could not reach Twilio: ${e instanceof Error ? e.message : String(e)}`,
+      code: null,
+      permanent: false,
+    };
+  }
 }
 
 /** Start a WhatsApp login-code verification (Twilio Verify, channel whatsapp). */

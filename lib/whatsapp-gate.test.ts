@@ -17,7 +17,7 @@ describe("the whatsappEnabled setting", () => {
 
   it("carries the exact reason the organizer should see", () => {
     expect(WHATSAPP_DISABLED_REASON).toBe(
-      "WhatsApp is switched off — no login codes will send until it is turned back on.",
+      "WhatsApp is switched off — no codes or statements will send until it is turned back on.",
     );
   });
 
@@ -31,9 +31,12 @@ describe("the whatsappEnabled setting", () => {
     expect(WHATSAPP_DISABLED_REASON).not.toContain("Business Account");
   });
 
+  // Both strings changed with Build 2, and both had to. The switch now stops
+  // statements as well as codes; and the statement block is no longer the
+  // normal state, so it must not say "today" about a condition that has ended.
   it("states the STATEMENT block separately, in the agreed words", () => {
     expect(WHATSAPP_STATEMENTS_BLOCKED_REASON).toBe(
-      "Statements need Meta-approved templates. Login codes work today; statements do not.",
+      "Statements need Meta-approved templates, and none are registered. Login codes are unaffected.",
     );
   });
 });
@@ -57,17 +60,34 @@ describe("every WhatsApp send is gated", () => {
     expect(b.indexOf("channelRefusal()")).toBeLessThan(b.indexOf("fetch("));
   });
 
-  // STATEMENTS ARE NOT GATED BY THE SWITCH, and must not become so. Meta
-  // accepts a freeform body only inside a 24-hour service window this account
-  // has open for nobody, so there is no setting that makes the send work — and
-  // a switch would let an organizer turn it on and get silent non-delivery.
-  // Turning WhatsApp ON restores LOGIN CODES only.
-  it("statements refuse unconditionally — no switch, no network, no Twilio", () => {
+  // STATEMENTS NOW SEND. This guard used to assert sendWhatsAppMessage
+  // contained no fetch( at all, which this build makes false BY DESIGN. The
+  // guard was not deleted and the code was not bent to satisfy it — it is
+  // re-pointed at the invariant that actually protects members: a statement
+  // may reach Twilio, but ONLY behind the switch and ONLY as an approved
+  // template.
+  it("a statement consults the switch BEFORE the network", () => {
     const b = body(transport, "sendWhatsAppMessage");
-    expect(b).toContain("WHATSAPP_STATEMENTS_BLOCKED_REASON");
-    expect(b, "a statement must never reach the network").not.toContain("fetch(");
-    expect(b, "a statement must not depend on the switch").not.toContain("channelRefusal()");
-    expect(b, "and must not depend on any other setting").not.toContain("getSetting(");
+    expect(b, "the statement path must check the channel").toContain("channelRefusal()");
+    expect(b.indexOf("channelRefusal()")).toBeLessThan(b.indexOf("fetch("));
+  });
+
+  it("a send is never attempted without a ContentSid", () => {
+    const b = body(transport, "sendWhatsAppMessage");
+    // The refusal is checked before the network call…
+    expect(b).toContain("contentSid.trim()");
+    expect(b.indexOf("contentSid.trim()")).toBeLessThan(b.indexOf("fetch("));
+    // …and ContentSid is actually on the request.
+    expect(b).toContain("ContentSid:");
+    expect(b).toContain("ContentVariables:");
+  });
+
+  it("a statement is never sent as freeform Body, and never via a service SID", () => {
+    const b = body(transport, "sendWhatsAppMessage");
+    // A Body makes it freeform, which Meta refuses outside a 24-hour window
+    // this account has open for nobody.
+    expect(b, "a Body would make this a freeform send").not.toMatch(/\bBody:\s/);
+    expect(b).not.toContain("MessagingServiceSid");
   });
 
   it("the transport is the ONLY place that calls Twilio, so the gate cannot be bypassed", () => {

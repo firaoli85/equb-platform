@@ -193,3 +193,69 @@ export function driftMessage(key: string, where: string): string {
     `row from the registry.`
   );
 }
+
+/**
+ * The ContentVariables Twilio needs, keyed "1", "2", … in variableOrder order.
+ *
+ * WHY THIS REFUSES INSTEAD OF FILLING GAPS. Twilio does not fail on a missing
+ * variable — it substitutes the SAMPLE VALUE submitted at approval. Ours are
+ * "Sara", "$7,000.00", "11–12". So an incomplete set does not produce a blank
+ * or an error: it delivers a fabricated name and invented arrears to a real
+ * member, formatted exactly like fact, and the member has no way to tell.
+ *
+ * That is the single worst thing this platform could do, and a partial object
+ * is the only way to reach it. So there is no partial object: either every
+ * name in variableOrder resolved, or nothing sends.
+ *
+ * `"—"` IS A VALUE, NOT A GAP. placeholderValues returns it for data that
+ * genuinely does not apply — lastPaymentWeek for a member who has never paid
+ * is legitimately "—", and "no payment recorded yet" is exactly what the
+ * member should read. Only absent and empty-string count as missing.
+ */
+export type ContentVariablesResult =
+  | { ok: true; variables: Record<string, string> }
+  | { ok: false; error: string; missing: string[] };
+
+export function buildContentVariables(
+  key: ApprovedTemplateKey,
+  values: Readonly<Record<string, string>>,
+): ContentVariablesResult {
+  const template = APPROVED_TEMPLATES[key];
+  const variables: Record<string, string> = {};
+  const missing: string[] = [];
+
+  template.variableOrder.forEach((name, index) => {
+    const value = values[name];
+    if (value === undefined || value === null || value === "") {
+      missing.push(name);
+      return;
+    }
+    // Position, not name: Twilio keys ContentVariables by the {{n}} slot.
+    variables[String(index + 1)] = value;
+  });
+
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      missing,
+      error:
+        `Cannot send ${key}: ${missing.length === 1 ? "variable" : "variables"} ` +
+        `${missing.join(", ")} had no value. Twilio substitutes the approval SAMPLE for a ` +
+        `missing variable, so sending would deliver invented figures to a real member. ` +
+        `Nothing was sent.`,
+    };
+  }
+  return { ok: true, variables };
+}
+
+/**
+ * Does this message key have a Meta-approved template?
+ *
+ * A type guard, so the compiler narrows `MessageKey` to
+ * `ApprovedTemplateKey` and a caller cannot reach APPROVED_TEMPLATES with a
+ * key that is not in it. LOCKOUT_NOTICE is the one that returns false, and it
+ * must keep returning false — see the header.
+ */
+export function isApprovedTemplateKey(key: string): key is ApprovedTemplateKey {
+  return Object.hasOwn(APPROVED_TEMPLATES, key);
+}

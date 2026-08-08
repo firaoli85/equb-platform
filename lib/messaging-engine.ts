@@ -29,27 +29,37 @@ import {
   WHATSAPP_STATEMENTS_BLOCKED_REASON,
 } from "./settings";
 
-/**
- * Can a STATEMENT reach a member over WhatsApp at all? No — and this is a
- * code-level fact, not an organizer setting, because no setting can change it.
- *
- * Meta accepts a freeform body only inside the 24-hour service window that a
- * member's own inbound message opens. This account has one inbound message in
- * its entire history (19 May 2026), so the window is open for nobody, and the
- * statement path sends a raw Body with no ContentSid.
- *
- * Annotated `: boolean` deliberately — without it TypeScript narrows the
- * literal `false` and treats everything downstream as dead, which would mean
- * deleting the render-and-log path that becomes correct again untouched the
- * moment templates exist.
- *
- * FLIP THIS when each message shape is registered as a Content template and
- * sendWhatsAppMessage sends ContentSid + ContentVariables.
- * See docs/WHATSAPP_TEMPLATE_ONLY.md.
- */
-export const STATEMENTS_DELIVERABLE: boolean = false;
 import { computeStanding, pinnedMapFromEvents, type Standing } from "./standing";
 import { sendWhatsAppMessage } from "./whatsapp";
+import {
+  APPROVED_TEMPLATES,
+  buildContentVariables,
+  isApprovedTemplateKey,
+} from "./whatsapp-templates";
+
+/**
+ * Can a STATEMENT reach a member over WhatsApp? YES, as of this build.
+ *
+ * Meta approved five Content templates on 7 August 2026 under category UTILITY
+ * (lib/whatsapp-templates.ts). A template needs no 24-hour service window,
+ * which is the whole reason this can now be true: freeform never could be,
+ * because this account has ONE inbound message in its entire history
+ * (19 May 2026), so no window is open for anyone, ever.
+ *
+ * THIS IS NOT THE ORGANIZER'S CONTROL. It records whether approved templates
+ * exist to carry a statement at all. The live control is
+ * getSetting("whatsappEnabled") — checked immediately after this in deliver()
+ * — which the organizer owns from /admin/settings and can turn off at any
+ * moment, and which turning off stops every statement instantly.
+ *
+ * Set back to false if the templates are ever revoked or the registry emptied:
+ * with no ContentSid, a send would carry Twilio's approval SAMPLES and deliver
+ * invented figures to real members.
+ *
+ * Annotated `: boolean` deliberately — without it TypeScript narrows the
+ * literal and marks the downstream path unreachable.
+ */
+export const STATEMENTS_DELIVERABLE: boolean = true;
 
 /**
  * Make sure every message type has its editable row (idempotent — the
@@ -196,19 +206,11 @@ async function deliver(input: {
   });
   if (!decision.send) return { status: "SKIPPED", reason: decision.reason };
 
-  // STATEMENTS CANNOT SEND, whatever the switch says.
-  //
-  // This is checked before the switch because it is not the same question. The
-  // switch is the organizer's choice about the channel; this is Meta's rule
-  // about freeform bodies outside a 24-hour service window, which no setting
-  // can satisfy. Turning WhatsApp ON re-enables LOGIN CODES only, and a
-  // statement must not start attempting sends the moment that happens.
-  //
-  // lib/whatsapp.ts refuses too — that is the un-bypassable backstop — but
-  // stopping HERE keeps the semantics honest: a message that was never
-  // attempted did not FAIL at the provider, so it is a skip like hardship or
-  // no-phone, and it writes no MessageLog row. Otherwise every statement would
-  // bury the real log under provider failures that never happened.
+  // Whether statements can be delivered at all. Checked before the switch
+  // because it is not the same question: the switch is the organizer's choice
+  // about the channel, this is whether Meta-approved templates exist to carry
+  // the message. A skip HERE writes no MessageLog row, which is right — a
+  // message that was never attempted did not FAIL at the provider.
   if (!STATEMENTS_DELIVERABLE) {
     return { status: "SKIPPED", reason: WHATSAPP_STATEMENTS_BLOCKED_REASON };
   }
@@ -221,13 +223,62 @@ async function deliver(input: {
 
   const templates = await loadTemplates();
   const template = templates.get(input.key) ?? null;
+  const values = placeholderValues(input.facts, input.extras);
   const body = renderTemplate(
     template?.body ?? DEFAULT_TEMPLATES[input.key].body,
-    placeholderValues(input.facts, input.extras),
+    values,
   );
 
+  // NOT EVERY MESSAGE HAS AN APPROVED TEMPLATE. LOCKOUT_NOTICE deliberately has
+  // none (see lib/whatsapp-templates.ts) — it is a security message, and
+  // submitting one risks the whole sender. It renders in the app and goes
+  // nowhere, which is the honest outcome. What it must NEVER do is fail: this
+  // fires while a member is locked out of their account, and a throw here would
+  // turn a lockout into an error on top of a lockout.
+  if (!isApprovedTemplateKey(input.key)) {
+    return {
+      status: "SKIPPED",
+      reason:
+        `${input.key} has no Meta-approved WhatsApp template, so it cannot be sent. ` +
+        `It was rendered and recorded, not delivered.`,
+    };
+  }
+
+  // Twilio substitutes the APPROVAL SAMPLE for any variable it is not given —
+  // "Sara", "$7,000.00". So an incomplete set does not fail, it delivers
+  // invented figures to a real member as fact. This refusal is the only thing
+  // between a bug and that outcome, and it is a FAILED row (we tried and
+  // stopped ourselves), not a skip.
   const to = toE164(person.phone!);
-  const result = await sendWhatsAppMessage(to, body);
+  const variables = buildContentVariables(input.key, values);
+  if (!variables.ok) {
+    console.error(`[statement] ${variables.error}`);
+    // Logged like any other FAILED. Every FAILED outcome writes a row — a
+    // failure the organizer is shown but cannot find in the log is how a real
+    // defect gets dismissed as a glitch.
+    await prisma.messageLog.create({
+      data: {
+        personId: person.id,
+        templateId: template?.id ?? null,
+        templateKey: input.key,
+        body,
+        channel: "WHATSAPP",
+        toPhone: to,
+        trigger: input.trigger === "AUTOMATIC" ? "AUTOMATIC" : "MANUAL",
+        status: "FAILED",
+        providerSid: null,
+        error: variables.error,
+      },
+    });
+    return { status: "FAILED", body, error: variables.error };
+  }
+
+  const result = await sendWhatsAppMessage({
+    toE164Phone: to,
+    contentSid: APPROVED_TEMPLATES[input.key].contentSid,
+    contentVariables: variables.variables,
+    body,
+  });
   await prisma.messageLog.create({
     data: {
       personId: person.id,
