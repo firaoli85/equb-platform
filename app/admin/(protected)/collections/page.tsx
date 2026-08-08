@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PayoutProgressBar } from "@/components/charts/payout-progress-bar";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { StatCard } from "@/components/ui/stat-card";
 import { SETTLEMENT_EVENT_WHERE } from "@/lib/draw-settlement";
@@ -43,6 +44,13 @@ export default async function CollectionsPage() {
       },
     },
   });
+  // The fixed denominator for the §5.3 progress bar. LUCKY NUMBERS, not
+  // members: four of the twenty-seven hold two numbers each, so a member count
+  // would report the cycle finished with four payouts still to make.
+  const totalNumbers = await prisma.luckyNumber.count({
+    where: { cycle: { status: "ACTIVE" } },
+  });
+
   const payouts = await prisma.payout.findMany({
     where: { luckyNumber: { cycle: { status: "ACTIVE" } } },
     include: {
@@ -262,6 +270,15 @@ export default async function CollectionsPage() {
           delayClass="animate-fade-in-up-2"
         />
       </div>
+
+      <PayoutProgressBar
+        collectedCount={collected.length}
+        pendingCount={pending.length}
+        totalNumbers={totalNumbers}
+        collectedTotal={collectedTotal}
+        pendingTotal={pendingTotal}
+        className="animate-fade-in-up-2"
+      />
 
       <div className="animate-fade-in-up-2">
         <CollectionsView groups={groups} weeks={weekOptions} cycleName={cycle?.name ?? ""} />

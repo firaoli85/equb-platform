@@ -25,7 +25,7 @@ const { PrismaClient } = await import("../lib/generated/prisma/client");
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DIRECT_URL! }),
 });
-const { refuseIfCycleClosed } = await import("../lib/cycle-guard");
+const { refuseIfCycleClosed, refuseIfParticipationClosed } = await import("../lib/cycle-guard");
 
 const TAG = "CycleLock Fixture";
 let failures = 0;
@@ -168,6 +168,18 @@ async function refuses(ref: Record<string, string>): Promise<string | null> {
   }
 }
 
+/** Does the participation guard refuse this one participation? */
+async function participationRefuses(participationId: string): Promise<string | null> {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await refuseIfParticipationClosed(tx, participationId);
+    });
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 async function main() {
   await wipe();
   console.log("\nCLOSED cycle — every reference must resolve and refuse\n");
@@ -196,6 +208,54 @@ async function main() {
     const message = await refuses({ [key]: id });
     check(`${key} allows`, message === null, message ?? undefined);
   }
+
+  // ————————————————————————————————————————————————————————
+  // The participation guard, against real rows.
+  //
+  // The hole: a member taken OUT of a running cycle keeps an ACTIVE cycle, so
+  // every check above passes and recordPayment was still callable for them.
+  // ————————————————————————————————————————————————————————
+  console.log("\nA CLOSED participation inside an OPEN cycle\n");
+
+  const openParticipationId = active.participationId;
+  const stillIn = await participationRefuses(openParticipationId);
+  check(
+    "an active participation in a live cycle takes money",
+    stillIn === null,
+    stillIn ?? undefined,
+  );
+
+  await prisma.participation.update({
+    where: { id: openParticipationId },
+    data: { status: "CLOSED" },
+  });
+  // The cycle itself is untouched and still open — proving the refusal comes
+  // from the participation, and not from the cycle guard doing it by accident.
+  const cycleStill = await refuses({ participationId: openParticipationId });
+  check(
+    "its cycle is still open, so the CYCLE guard stays silent",
+    cycleStill === null,
+    cycleStill ?? undefined,
+  );
+
+  const closedOne = await participationRefuses(openParticipationId);
+  check(
+    "a closed participation refuses the money",
+    closedOne !== null,
+    closedOne === null ? "the guard ALLOWED money onto a closed participation" : undefined,
+  );
+  check(
+    "and the refusal names the member and sends the money to their ledger",
+    closedOne !== null && closedOne.includes("Lock") && closedOne.includes("carried balance"),
+    closedOne ?? "no refusal",
+  );
+
+  const unknownParticipation = await participationRefuses("does-not-exist");
+  check(
+    "an unknown participation is left to the action's own error",
+    unknownParticipation === null,
+    unknownParticipation ?? undefined,
+  );
 
   console.log("\nA reference to nothing is left to the action's own error\n");
   const missing = await refuses({ payoutId: "does-not-exist" });

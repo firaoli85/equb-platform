@@ -8,6 +8,10 @@ import {
   linePath,
   longestOverdueRun,
   niceCeiling,
+  arcPath,
+  clampFraction,
+  consistencyFromStatus,
+  polarPoint,
   segmentWidths,
 } from "./chart";
 
@@ -217,5 +221,71 @@ describe("longestOverdueRun — the pattern is the point", () => {
 
   it("a run at the very end still counts", () => {
     expect(longestOverdueRun(["paid", "overdue", "overdue"])).toBe(2);
+  });
+});
+
+describe("the grid's status becomes a consistency dot", () => {
+  it("maps each derived status to exactly one dot", () => {
+    expect(consistencyFromStatus("PAID")).toBe("paid");
+    expect(consistencyFromStatus("PARTIAL")).toBe("partial");
+    expect(consistencyFromStatus("DEFERRED")).toBe("deferred");
+    expect(consistencyFromStatus("LATE")).toBe("overdue");
+  });
+
+  it("never draws an UNPAID week as overdue", () => {
+    // UNPAID means owed with the window still open. Red there is an
+    // accusation the calendar does not support.
+    expect(consistencyFromStatus("UNPAID")).toBe("not-due");
+  });
+
+  it("treats a skipped week as owing nothing", () => {
+    expect(consistencyFromStatus("SKIPPED")).toBe("not-due");
+  });
+
+  it("keeps a run of UNPAID out of the overdue run count", () => {
+    const states = (["UNPAID", "UNPAID", "UNPAID"] as const).map(consistencyFromStatus);
+    expect(longestOverdueRun(states)).toBe(0);
+  });
+});
+
+describe("the savings arc", () => {
+  it("puts zero degrees at twelve o'clock and ninety at three", () => {
+    const top = polarPoint(100, 100, 50, 0);
+    expect(top.x).toBeCloseTo(100);
+    expect(top.y).toBeCloseTo(50);
+    const right = polarPoint(100, 100, 50, 90);
+    expect(right.x).toBeCloseTo(150);
+    expect(right.y).toBeCloseTo(100);
+  });
+
+  it("draws nothing for a zero sweep", () => {
+    // A 0° arc with a round linecap renders as a DOT, which on a savings ring
+    // reads as "you have saved a little" when the truth is nothing.
+    expect(arcPath({ cx: 100, cy: 100, radius: 50, from: -135, to: -135 })).toBe("");
+  });
+
+  it("sets the large-arc flag past a half turn", () => {
+    expect(arcPath({ cx: 100, cy: 100, radius: 50, from: 0, to: 90 })).toContain(" 0 1 ");
+    expect(arcPath({ cx: 100, cy: 100, radius: 50, from: 0, to: 270 })).toContain(" 1 1 ");
+  });
+
+  it("stops just short of a full circle rather than drawing nothing", () => {
+    const full = arcPath({ cx: 100, cy: 100, radius: 50, from: 0, to: 360 });
+    expect(full).not.toBe("");
+    expect(full).toContain("A50,50");
+  });
+
+  it("never emits NaN", () => {
+    const p = arcPath({ cx: 100, cy: 100, radius: 50, from: -135, to: 135 });
+    expect(p).not.toContain("NaN");
+  });
+
+  it("clamps a member who has paid ahead to a full ring", () => {
+    // Unclamped, 1.2 wraps past the top and draws a SHORTER arc than someone
+    // who has saved less — the exact opposite of the truth.
+    expect(clampFraction(1.2)).toBe(1);
+    expect(clampFraction(-0.3)).toBe(0);
+    expect(clampFraction(Number.NaN)).toBe(0);
+    expect(clampFraction(0.42)).toBe(0.42);
   });
 });

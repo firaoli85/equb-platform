@@ -57,7 +57,18 @@ async function loadAttachments(
       luckyNumbers: {
         include: {
           payouts: true,
-          slotMembers: { include: { slot: { include: { draws: { include: { week: true } }, members: true } } } },
+          slotMembers: {
+            include: {
+              slot: {
+                include: {
+                  // payouts too: the emptiness test is measured in payouts,
+                  // not in slot members (see toAttachments).
+                  draws: { include: { week: true, payouts: { select: { luckyNumberId: true } } } },
+                  members: true,
+                },
+              },
+            },
+          },
           planNumbers: { include: { plan: { include: { week: true, numbers: true } } } },
         },
       },
@@ -82,8 +93,18 @@ function toAttachments(
       const draw = sm.slot.draws[0] ?? null;
       if (!draw || seenDraw.has(draw.id)) continue;
       seenDraw.add(draw.id);
-      const survivors = sm.slot.members.filter((m) => !mine.has(m.luckyNumberId));
-      if (survivors.length === 0) drawsLeftEmpty.push({ weekNumber: draw.week.weekNumber });
+      // MEASURED IN PAYOUTS, matching what the cascade actually does.
+      //
+      // This counted surviving SLOT MEMBERS, and the cascade now asks whether
+      // any PAYOUT remains (lib/draw-cascade deleteDrawIfEmpty). The two
+      // disagree exactly where it matters: a slot holding someone else’s
+      // number whose payout was deleted earlier has a survivor but no payout,
+      // so the preview said "the draw stands" while the removal deleted it.
+      // A confirmation that understates the consequence is worse than none.
+      const survivingPayouts = draw.payouts.filter(
+        (po) => !mine.has(po.luckyNumberId),
+      );
+      if (survivingPayouts.length === 0) drawsLeftEmpty.push({ weekNumber: draw.week.weekNumber });
     }
   }
 

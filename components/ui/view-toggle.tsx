@@ -77,3 +77,74 @@ export function ViewToggle({
     </div>
   );
 }
+
+// ————————————————— N options, same control —————————————————
+//
+// Payments grew a third representation (the §5.4 consistency strip) and
+// `ViewToggle` above is hard-wired to two. Rather than bend it — its two icons
+// are part of what makes it readable — this is the same control generalised.
+// The binary callers keep the binary component.
+
+/** The same persistence as `useViewMode`, over any set of allowed values. */
+export function usePersistedChoice<T extends string>(
+  storageKey: string,
+  allowed: readonly T[],
+  initial: T,
+): [T, (v: T) => void] {
+  const [choice, setChoice] = useState<T>(initial);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored && (allowed as readonly string[]).includes(stored)) setChoice(stored as T);
+    } catch {}
+    // `allowed` is a literal array at every call site, so it is stable in
+    // practice; keying the effect on its contents avoids depending on identity.
+  }, [storageKey, allowed.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function set(v: T) {
+    setChoice(v);
+    try {
+      localStorage.setItem(storageKey, v);
+    } catch {}
+  }
+  return [choice, set];
+}
+
+export function SegmentedToggle<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: readonly { value: T; label: string; icon?: React.ReactNode }[];
+  /** Names the group for a screen reader — "View", "Range", and so on. */
+  label: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex items-center gap-0.5 rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-white/5"
+    >
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          aria-pressed={value === o.value}
+          className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.97] md:min-h-8 ${
+            value === o.value
+              ? "bg-white text-indigo-700 shadow-sm dark:bg-[#1f1f1f] dark:text-indigo-300"
+              : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+          }`}
+        >
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}

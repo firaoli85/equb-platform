@@ -71,6 +71,38 @@ export function frozenCycleRefusal(cycle: {
   );
 }
 
+/**
+ * Why this participation cannot take money, or null.
+ *
+ * A CLOSED PARTICIPATION IS NOT A PLACE MONEY CAN LAND. `frozenCycleRefusal`
+ * covers a closed CYCLE; it does not cover a member taken OUT of a running
+ * cycle with "keep the money records", whose participation goes CLOSED while
+ * the cycle stays ACTIVE.
+ *
+ * The write itself was correct — what went wrong was WHERE it landed. No admin
+ * screen loads a closed participation, so the receipt was invisible and could
+ * never be undone from the UI: a correction that requires a developer, which
+ * 2.23 forbids outright. Meanwhile the dashboard's cash position DOES count it,
+ * so the group total moved while every per-member breakdown stayed put.
+ *
+ * 2.19 already says where this money goes, so the refusal points there rather
+ * than merely saying no.
+ */
+export function closedParticipationRefusal(p: {
+  status: "ACTIVE" | "CLOSED";
+  memberName: string;
+  cycleName: string;
+}): string | null {
+  if (p.status === "ACTIVE") return null;
+  return (
+    `${p.memberName} is no longer taking part in ${p.cycleName} — their participation was ` +
+    `closed, so their weeks are final and money recorded against them here would be invisible ` +
+    `on every screen that lists the cycle, and impossible to undo. Record it against their ` +
+    `carried balance on their own page instead: the same ledger, reached from the person ` +
+    `rather than the week (2.19).`
+  );
+}
+
 // ————————————————— Blockers (2.27) —————————————————
 
 export type UndrawnMember = { name: string; numbers: number[] };

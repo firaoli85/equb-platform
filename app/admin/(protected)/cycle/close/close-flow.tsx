@@ -96,9 +96,16 @@ export function CloseFlow({ review }: { review: Review }) {
               {review.undrawn.map((m) => (
                 <li key={m.name}>
                   <strong>{m.name}</strong>{" "}
-                  <span className="tabular-nums text-gray-600 dark:text-gray-400">
+                  {/* The blocker says this is resolved on the wheel, so the
+                      numbers ARE the way there — §8: a lucky number opens the
+                      wheel. Naming a fix without a route to it is the gap this
+                      sweep exists to close. */}
+                  <Link
+                    href="/admin/wheel/setup"
+                    className="tabular-nums text-gray-600 hover:text-indigo-700 hover:underline dark:text-gray-400 dark:hover:text-indigo-300"
+                  >
                     ({m.numbers.map((n) => `#${n}`).join(", ")})
-                  </span>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -188,7 +195,15 @@ export function CloseFlow({ review }: { review: Review }) {
               {review.members.map((m) => (
                 <tr key={m.participationId}>
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-5 py-1.5 font-semibold text-gray-900 dark:text-white">
-                    {m.name}
+                    {/* §8: a name is a link to the person it names. This table
+                        is the last look before 25 ledger debts are written —
+                        the moment the organizer most needs to check one. */}
+                    <Link
+                      href={`/admin/participations/${m.participationId}`}
+                      className="hover:text-indigo-700 hover:underline dark:hover:text-indigo-300"
+                    >
+                      {m.name}
+                    </Link>
                   </td>
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-5 py-1.5 tabular-nums text-gray-700 dark:text-gray-300">
                     {m.weeksPaid} of {m.weeksCommitted}

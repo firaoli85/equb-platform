@@ -174,3 +174,46 @@ export function personRemovalConsequences(f: PersonRemovalFacts): string[] {
   );
   return lines;
 }
+
+/**
+ * Why this phone cannot be given to this person, or null.
+ *
+ * A DUPLICATE PHONE MIS-AUTHENTICATES. `Person.phone` carries no unique
+ * constraint and nothing checked for a clash, so two directory rows could hold
+ * the same line. `findPeopleByPhone` is a `findMany` with no ordering, and both
+ * OTP doors then take `candidates[0]` — so whoever proves control of that
+ * number is signed in as whichever row Postgres happened to return first.
+ *
+ * PIN login does not mis-authenticate but degrades badly: the failed-attempt
+ * counter is incremented on EVERY candidate before any comparison, so one
+ * member's typos consume and eventually lock the other member's attempts. If
+ * both are on the phone-digit default, both match, both are refused, and one
+ * directory edit has locked two people out.
+ *
+ * Comparison is CANONICAL, so "+1 240 555 0187" and "(240) 555-0187" are
+ * recognised as the same line — matching what the sign-in lookup itself does.
+ */
+export function duplicatePhoneRefusal(input: {
+  /** The phone being assigned. */
+  phone: string | null | undefined;
+  /** Everyone else in the directory who has a phone. */
+  others: readonly { id: string; nameEnglishFirst: string; phone: string | null }[];
+  /** The person being edited, so their own row never clashes with itself. */
+  selfId?: string;
+}): string | null {
+  const canonical = canonicalPhone(input.phone ?? "");
+  if (!canonical) return null;
+
+  const clash = input.others.find(
+    (o) => o.id !== input.selfId && canonicalPhone(o.phone ?? "") === canonical,
+  );
+  if (!clash) return null;
+
+  return (
+    `That number already belongs to ${clash.nameEnglishFirst}. Two people on one line cannot ` +
+    `both sign in: a WhatsApp or SMS code proves control of the NUMBER, not of the person, so ` +
+    `whoever enters it would be signed in as whichever record the database happened to return ` +
+    `first. Their PIN attempts would also count against each other. Give this person their own ` +
+    `number, or clear ${clash.nameEnglishFirst}'s first if the line has genuinely moved.`
+  );
+}

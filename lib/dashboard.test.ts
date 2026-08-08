@@ -1,6 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 import {
   cashPosition,
+  cashSeries,
   receivedByMember,
   receiptsByWeek,
   memberAttention,
@@ -146,8 +147,11 @@ describe("receiptsByWeek", () => {
       ],
       participations,
       payments: [pay("a", 1, 25_000), pay("b", 13, 50_000)],
+      elapsedThroughWeek: 2,
     });
     expect(series.map((w) => w.weekNumber)).toEqual([1, 2, 13]);
+    // One rule, stamped once: the charts read this rather than re-deriving it.
+    expect(series.map((w) => w.elapsed)).toEqual([true, true, false]);
     expect(series[0].expected).toBe(25_000);
     expect(series[2].expected).toBe(75_000); // both in window at week 13
     expect(series[2].received).toBe(50_000);
@@ -266,5 +270,112 @@ describe("memberAttention — worst first, deferred excluded", () => {
     expect(
       memberAttention({ participations: [participations[0]], payments, elapsedThroughWeek: 5 }),
     ).toEqual([]);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// THE CASH POSITION OVER TIME (ADMIN_IA §5.2)
+//
+// A production-shaped cycle: 20 weeks, money coming in every week, six weeks
+// drawn, one winner still waiting to collect. The figures below are the ones
+// a chart draws, so what is tested is the thing the organizer READS.
+// ————————————————————————————————————————————————————————————————
+
+describe("the cash position week by week", () => {
+  const weeks = Array.from({ length: 20 }, (_, i) => ({ weekNumber: i + 1 }));
+
+  // 27 members × $1,000/week, in cents. Weeks 1-6 fully paid, week 7 partial.
+  const payments = [
+    ...Array.from({ length: 6 }, (_, i) => ({
+      weekNumber: i + 1,
+      amountPaid: 2_700_000,
+    })),
+    { weekNumber: 7, amountPaid: 1_800_000 },
+  ];
+
+  const payouts = [
+    { weekNumber: 1, netAmount: 2_646_000, status: "COLLECTED" as const },
+    { weekNumber: 2, netAmount: 2_646_000, status: "COLLECTED" as const },
+    { weekNumber: 3, netAmount: 2_646_000, status: "COLLECTED" as const },
+    { weekNumber: 4, netAmount: 2_646_000, status: "COLLECTED" as const },
+    { weekNumber: 5, netAmount: 2_646_000, status: "COLLECTED" as const },
+    { weekNumber: 6, netAmount: 2_646_000, status: "PENDING" as const },
+  ];
+
+  const series = cashSeries({ weeks, payments, payouts, elapsedThroughWeek: 6 });
+
+  it("has one point per week, in order", () => {
+    expect(series).toHaveLength(20);
+    expect(series.map((p) => p.weekNumber)).toEqual(weeks.map((w) => w.weekNumber));
+  });
+
+  it("runs the held position forward rather than reporting each week alone", () => {
+    // Week 1: in 2,700,000, out 2,646,000 → 54,000 held.
+    expect(series[0].held).toBe(54_000);
+    // Week 2 adds the same movement again: the position ACCUMULATES.
+    expect(series[1].held).toBe(108_000);
+    expect(series[4].held).toBe(270_000);
+  });
+
+  it("does not let a PENDING payout reduce the position — the cash has not left", () => {
+    // Week 6 was drawn but not collected, so held rises by the full receipt.
+    expect(series[5].paidOut).toBe(0);
+    expect(series[5].pendingOut).toBe(2_646_000);
+    expect(series[5].held).toBe(series[4].held + 2_700_000);
+  });
+
+  it("agrees exactly with cashPosition — the chart and the stat card are one figure", () => {
+    // The whole point of 2.14: two screens showing the same money must not be
+    // able to disagree. The last point of the series IS currentlyHeld.
+    const snapshot = cashPosition({
+      payments: payments.map((p) => ({ amountPaid: p.amountPaid })),
+      payouts,
+    });
+    expect(series[series.length - 1].held).toBe(snapshot.currentlyHeld);
+    const pending = series.reduce((s, p) => s + p.pendingOut, 0);
+    expect(pending).toBe(snapshot.committedPending);
+  });
+
+  it("marks the elapsed/to-come divider from the week window, not from data", () => {
+    // Week 7 has real money in it and is still OPEN. Drawing it as an actual
+    // would show a collapse in the position that has not happened.
+    expect(series[6].received).toBe(1_800_000);
+    expect(series[6].elapsed).toBe(false);
+    expect(series[5].elapsed).toBe(true);
+    expect(series.filter((p) => p.elapsed)).toHaveLength(6);
+  });
+
+  it("keeps weeks with no movement at zero rather than dropping them", () => {
+    // A gap in the axis would compress time and make the slope a lie.
+    expect(series[10].received).toBe(0);
+    expect(series[10].paidOut).toBe(0);
+    expect(series[10].held).toBe(series[9].held);
+  });
+
+  it("folds a payout with no draw into the first week rather than losing it", () => {
+    const undrawn = cashSeries({
+      weeks,
+      payments: [{ weekNumber: 1, amountPaid: 2_700_000 }],
+      payouts: [{ weekNumber: null, netAmount: 1_000_000, status: "COLLECTED" }],
+      elapsedThroughWeek: 1,
+    });
+    // Dropping it would make the chart's final held disagree with the stat card.
+    expect(undrawn[0].paidOut).toBe(1_000_000);
+    expect(undrawn[19].held).toBe(1_700_000);
+  });
+
+  it("refuses a non-integer or negative amount rather than drawing it", () => {
+    expect(() =>
+      cashSeries({
+        weeks,
+        payments: [{ weekNumber: 1, amountPaid: 12.5 }],
+        payouts: [],
+        elapsedThroughWeek: 1,
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it("survives an empty cycle without inventing a position", () => {
+    expect(cashSeries({ weeks: [], payments: [], payouts: [], elapsedThroughWeek: 0 })).toEqual([]);
   });
 });

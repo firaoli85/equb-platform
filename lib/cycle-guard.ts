@@ -1,5 +1,5 @@
 import type { Prisma } from "./generated/prisma/client";
-import { frozenCycleRefusal } from "./cycle-close";
+import { closedParticipationRefusal, frozenCycleRefusal } from "./cycle-close";
 
 // ONE LINE TO FREEZE A CLOSED CYCLE.
 //
@@ -44,6 +44,35 @@ export async function refuseIfCycleClosed(
   const cycle = await resolveCycle(tx, ref);
   if (!cycle) return;
   const refusal = frozenCycleRefusal(cycle);
+  if (refusal) throw new Error(refusal);
+}
+
+/**
+ * Refuse the operation when this PARTICIPATION is closed, even though its
+ * cycle is not. Same shape as `refuseIfCycleClosed` and for the same reason:
+ * a guard that costs three lines of plumbing per action is a guard that gets
+ * skipped.
+ */
+export async function refuseIfParticipationClosed(
+  tx: Prisma.TransactionClient,
+  participationId: string,
+): Promise<void> {
+  const p = await tx.participation.findUnique({
+    where: { id: participationId },
+    select: {
+      status: true,
+      cycle: { select: { name: true } },
+      person: { select: { nameEnglishFirst: true } },
+    },
+  });
+  // Missing id: the action's own lookup gives a better error than a guard
+  // complaining about a row that was never there.
+  if (!p) return;
+  const refusal = closedParticipationRefusal({
+    status: p.status,
+    memberName: p.person.nameEnglishFirst,
+    cycleName: p.cycle.name,
+  });
   if (refusal) throw new Error(refusal);
 }
 

@@ -3,6 +3,7 @@ import { getDashboard } from "@/app/actions/dashboard";
 import { getWaiting } from "@/app/actions/waiting";
 import { WaitingSummary } from "@/components/admin/waiting-summary";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { CollectedVsExpectedChart } from "@/components/charts/collected-vs-expected-chart";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatMoney } from "@/lib/format";
 
@@ -101,7 +102,6 @@ export default async function CommandCenterPage() {
     );
   }
 
-  const maxWeekly = Math.max(1, ...d.series.map((w) => Math.max(w.expected, w.received)));
   const needsYouEmpty =
     d.attention.length === 0 &&
     d.pendingPayouts.length === 0 &&
@@ -136,14 +136,14 @@ export default async function CommandCenterPage() {
             label="Received to date"
             cents={d.position.totalReceived}
             sub="Everyone's contributions, added up"
-            href="/admin/received"
+            href="/admin/cash?view=received"
             emphasis
           />
           <StatCard
             label="Paid out to date"
             cents={d.position.totalPaidOut}
             sub="Who received it and when"
-            href="/admin/paid-out"
+            href="/admin/cash?view=paid-out"
             emphasis
             delayClass="animate-fade-in-up-1"
           />
@@ -151,7 +151,7 @@ export default async function CommandCenterPage() {
             label="Currently held"
             cents={d.position.currentlyHeld}
             sub="Committed vs uncommitted"
-            href="/admin/held"
+            href="/admin/cash?view=held"
             emphasis
             delayClass="animate-fade-in-up-2"
           />
@@ -161,7 +161,7 @@ export default async function CommandCenterPage() {
           {d.drawsCount} week{d.drawsCount === 1 ? "" : "s"} drawn, {d.paidOutCount} paid out.{" "}
           {d.position.pendingPayoutCount > 0 ? (
             <>
-              <Link href="/admin/held" className="font-bold text-gray-900 dark:text-white underline decoration-indigo-400 tabular-nums">
+              <Link href="/admin/cash?view=held" className="font-bold text-gray-900 dark:text-white underline decoration-indigo-400 tabular-nums">
                 {formatMoney(d.position.committedPending)}
               </Link>{" "}
               is already owed to {d.position.pendingPayoutCount} pending payout
@@ -324,43 +324,15 @@ export default async function CommandCenterPage() {
         </div>
       </Card>
 
-      {/* ————— Received by week ————— */}
-      <Card className="animate-fade-in-up-4">
-        <CardHeader
-          title="Received by week"
-          sub="Track = expected (window-aware) · indigo = received"
-        />
-        <div className="space-y-1.5 px-5 pb-5 text-xs">
-          {d.series.map((w) => (
-            <div key={w.weekNumber} className="flex items-center gap-3">
-              <span
-                className={`w-6 text-right tabular-nums ${
-                  w.weekNumber === d.currentWeek
-                    ? "font-black text-indigo-700 dark:text-indigo-300"
-                    : "text-gray-600 dark:text-gray-400"
-                }`}
-              >
-                {w.weekNumber}
-              </span>
-              <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-white/5">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-indigo-200 dark:bg-indigo-900/60"
-                  style={{ width: `${(w.expected / maxWeekly) * 100}%` }}
-                  title={`expected ${formatMoney(w.expected)}`}
-                />
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-indigo-600 dark:bg-indigo-400"
-                  style={{ width: `${(w.received / maxWeekly) * 100}%` }}
-                  title={`received ${formatMoney(w.received)}`}
-                />
-              </div>
-              <span className="w-44 whitespace-nowrap text-right tabular-nums text-gray-600 dark:text-gray-400">
-                {formatMoney(w.received)} / {formatMoney(w.expected)}
-              </span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      {/* ————— Collected vs expected (ADMIN_IA §5.1) —————
+
+          This replaced a 20-row list of CSS bars. The list was honest but it
+          could not carry the one thing that makes the figure safe to read: the
+          divider between weeks whose window has CLOSED and weeks still
+          collecting. Without it the current week reads as a shortfall every
+          single time, which is the false alarm the stored-week-date rule
+          exists to prevent. */}
+      <CollectedVsExpectedChart weeks={d.series} className="animate-fade-in-up-4" />
     </main>
   );
 }

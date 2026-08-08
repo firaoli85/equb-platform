@@ -202,6 +202,35 @@ Full per-finding detail, including each verifier's reproduction sequence, is in 
 workflow transcript. The fixes are being worked in severity order; this table is the
 backlog and each row is struck as it closes.
 
+### 9.1 What is closed, and the twelve left standing
+
+**Closed: 7 of 7 money · 19 of 19 high · 14 of 26 medium.**
+
+Six mediums needed no fix — the verifier's own words were *"THE PRIME SUSPECT IS CLEAN"*
+(27 `deletePayout`), *"It is genuinely LIVE"* (33 `poolCandidates`), *"The write path
+itself is correct and I could not break it"* (31 `createWinnerPlan`), plus 32
+`removeWinnerFromWeek`, 43 `deleteClosedCycle` and the already-repaired 23
+`deleteLuckyNumber`, which shares `reconcileWeeklyAmount` with the `addLuckyNumber` fix.
+
+The twelve below are **deliberately deferred, not forgotten**. None of them loses or
+misreports money — that was the bar for stopping. Each line says what it costs if it
+stays open, so the list can be picked up later without re-deriving the reasoning.
+
+| # | Action | What it costs while it stays open |
+|---|---|---|
+| 28 | `updateCycle` | Shrinking `plannedWeeks` strands a locked winner plan on a week that no longer exists: the plan can never fire, and its numbers stay frozen out of the wheel for the rest of the cycle. Silent — nothing warns at the moment of shrinking. |
+| 29 | `updateWeek` | A backwards week date is accepted, which moves who counts as overdue and mis-dates every week generated after it. Reachable only by calling the action directly; the picker bounds it. |
+| 30 | `ensureWeeksThrough` | Override weeks (2.22) outlive the commitment that created them and no product path deletes them, so a shortened member leaves permanent empty weeks on the end of the cycle. Cosmetic until someone reads a week count. |
+| 35 | `weekChoice` | Its input type cannot see carried-balance deductions, so a replace that strands a ledger PAYMENT is described to the organizer as touching only payouts. The confirmation understates; the mutation is correct. |
+| 37 | `removalConsequences` | Three sentences describe behaviour the code no longer has — including the stranded-draw case, which the cascade now handles and the prose still cannot mention. Wording only; the fix is to re-derive the text from the repaired cascade. |
+| 40 | `getMemberStanding` | A skipped week leaves `stillToSave` permanently one week high and progress stuck at 0.95, so a fully paid-up member never reads as finished. Misreports a *derived* figure, not money in the ledger. |
+| 41 | `createCycle` | The numbering rule is correct; what is missing is the note saying which rule ran, so an organizer who picks carry-over cannot confirm from the screen that it applied. Explanation, not behaviour. |
+| 42 | `closeCycle` | Closing is irreversible with no reopen, and the DEBT rows it writes cannot be removed. A close pressed a week early cannot be walked back without a developer. Highest-consequence of the twelve — worth doing before **27 September 2026**. |
+| 44 | `recordCarryDecision` | The deduct intent never expires and re-arms itself on an unrelated later debt, so a decision made about one balance can silently apply to a different one months later. |
+| 45 | `signInWithPin` | With `defaultPinFromPhone` off and no `pinHash`, attempts increment forever and no lock is ever set — unlimited guessing against an account that cannot be entered by PIN anyway. No door is opened; the throttle simply does not engage. |
+| 46 | `setPinLoginAllowed` | Granting a member a permanent PIN exemption writes no audit entry, so after PIN login is retired platform-wide nothing records who is still allowed through or why. |
+| 48 | `listCarriedBalances` | `oldest` reads `entries[0].occurredAt` from an ordering that is not by date, so one label can name the wrong entry. The money on that screen is right; the label above it is not. |
+
 ---
 
 ## 10. TYPED CONFIRMATIONS — the audit, and where the line is drawn

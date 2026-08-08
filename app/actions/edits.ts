@@ -43,8 +43,8 @@ import {
   takenNumbers,
 } from "@/lib/number-conflict";
 import { reverseCarryDeduction } from "@/lib/carry-reversal";
-import { windowChangeRefusal } from "@/lib/participation-window";
-import { personRemovalBlockers } from "@/lib/person-record";
+import { weekInWindowRefusal, windowChangeRefusal } from "@/lib/participation-window";
+import { duplicatePhoneRefusal, personRemovalBlockers } from "@/lib/person-record";
 import { typedConfirmationRefusal } from "@/lib/typed-confirmation";
 import {
   settlementReceiptAmountRefusal,
@@ -104,6 +104,21 @@ export async function updatePerson(input: {
 
     const person = await serializableTransaction(async (tx) => {
       const before = await tx.person.findUniqueOrThrow({ where: { id: input.personId } });
+      // A DUPLICATE PHONE MIS-AUTHENTICATES (lib/person-record.ts). Both OTP
+      // doors resolve a person with findPeopleByPhone and take candidates[0]
+      // from an unordered findMany, so two rows on one line means whoever
+      // proves control of the number is signed in as whichever one Postgres
+      // returned first.
+      const others = await tx.person.findMany({
+        where: { phone: { not: null } },
+        select: { id: true, nameEnglishFirst: true, phone: true },
+      });
+      const phoneClash = duplicatePhoneRefusal({
+        phone: input.phone,
+        others,
+        selfId: input.personId,
+      });
+      if (phoneClash) throw new Error(phoneClash);
       const after = await tx.person.update({
         where: { id: input.personId },
         data: {
@@ -1296,6 +1311,26 @@ export async function setWeekDeferral(input: {
       // for the same money. (Week NOTES stay editable: they touch no money.)
       const frozen = frozenCycleRefusal(participation.cycle);
       if (frozen) throw new Error(frozen);
+      // THE WEEK MUST BE THEIRS.
+      //
+      // This resolved the week by (cycleId, weekNumber) — any week of the
+      // cycle — and upserted a Payment row for it, while the member's own
+      // startWeek and weeksCommitted sat loaded and unread. The stray row
+      // then survives everything: rebuildParticipationPayments only writes
+      // to in-window rows, so it never deletes it; the grid renders that
+      // week as before-start or after-finish, so it is invisible and
+      // unreachable through the UI that made it; and extending the member
+      // later resurrects it.
+      {
+        const outside = weekInWindowRefusal({
+          memberName: participation.person.nameEnglishFirst,
+          weekNumber: input.weekNumber,
+          startWeek: participation.startWeek,
+          weeksCommitted: participation.weeksCommitted,
+          what: "deferring a week",
+        });
+        if (outside) throw new Error(outside);
+      }
       const week = await tx.week.findUnique({
         where: {
           cycleId_weekNumber: { cycleId: participation.cycleId, weekNumber: input.weekNumber },
@@ -1357,6 +1392,26 @@ export async function setWeekNote(input: {
         where: { id: input.participationId },
         include: { person: true },
       });
+      // THE WEEK MUST BE THEIRS.
+      //
+      // This resolved the week by (cycleId, weekNumber) — any week of the
+      // cycle — and upserted a Payment row for it, while the member's own
+      // startWeek and weeksCommitted sat loaded and unread. The stray row
+      // then survives everything: rebuildParticipationPayments only writes
+      // to in-window rows, so it never deletes it; the grid renders that
+      // week as before-start or after-finish, so it is invisible and
+      // unreachable through the UI that made it; and extending the member
+      // later resurrects it.
+      {
+        const outside = weekInWindowRefusal({
+          memberName: participation.person.nameEnglishFirst,
+          weekNumber: input.weekNumber,
+          startWeek: participation.startWeek,
+          weeksCommitted: participation.weeksCommitted,
+          what: "a note",
+        });
+        if (outside) throw new Error(outside);
+      }
       const week = await tx.week.findUnique({
         where: {
           cycleId_weekNumber: { cycleId: participation.cycleId, weekNumber: input.weekNumber },

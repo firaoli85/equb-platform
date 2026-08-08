@@ -4,6 +4,7 @@ import { errorMessage } from "@/lib/action-result";
 import { requireAdmin } from "@/lib/auth";
 import {
   cashPosition,
+  cashSeries,
   receivedByMember,
   receiptsByWeek,
   memberAttention,
@@ -83,10 +84,28 @@ export async function getDashboard() {
       payouts: payouts.map((p) => ({ netAmount: p.netAmount, status: p.status })),
     });
 
+    // The position OVER TIME (ADMIN_IA §5.2). Attributed by the week the
+    // money is FOR, so every point can be checked against a week row.
+    const cash = cashSeries({
+      weeks: cycle.weeks.map((w) => ({ weekNumber: w.weekNumber })),
+      payments: flatPayments.map((p) => ({
+        weekNumber: p.weekNumber,
+        amountPaid: p.amountPaid,
+      })),
+      payouts: payouts.map((p) => ({
+        weekNumber: p.draw?.week.weekNumber ?? null,
+        netAmount: p.netAmount,
+        status: p.status,
+      })),
+      elapsedThroughWeek: elapsedThroughWeek(cycle.weeks, today),
+    });
+
     const series = receiptsByWeek({
       weeks: cycle.weeks.map((w) => ({ weekNumber: w.weekNumber, isSkipped: w.isSkipped })),
       participations: active,
       payments: flatPayments,
+      // Same boundary the cash series uses — 2.14: each week's OWN stored date.
+      elapsedThroughWeek: elapsedThroughWeek(cycle.weeks, today),
     });
 
     const activeNamed = active.map((p) => ({
@@ -146,6 +165,7 @@ export async function getDashboard() {
         paidOutCount: payouts.filter((p) => p.status === "COLLECTED").length,
         thisWeek: series.find((w) => w.weekNumber === currentWeek) ?? null,
         series,
+        cash,
         attention,
         pendingPayouts: payouts
           .filter((p) => p.status === "PENDING")

@@ -59,6 +59,90 @@ export function cashPosition(input: {
   };
 }
 
+// ————————————————— Cash position OVER TIME (ADMIN_IA §5.2) —————————————————
+
+export type CashPoint = {
+  weekNumber: number;
+  /** Money received FOR this week (cents). */
+  received: number;
+  /** Money actually handed over on this week's draw (cents). */
+  paidOut: number;
+  /** Drawn on this week but not yet collected — owed, still in hand. */
+  pendingOut: number;
+  /** Running received − paidOut through this week: what is held. */
+  held: number;
+  /**
+   * Whether this week's payment window has CLOSED.
+   *
+   * Everything right of the last elapsed week is drawn outlined rather than
+   * filled — the Xero *Actuals | Projected* divider (ADMIN_IA §5.1). Without
+   * it the current week always reads as a collapse in the position, which is
+   * the false alarm the elapsed-week rule exists to prevent.
+   */
+  elapsed: boolean;
+};
+
+/**
+ * The cash position week by week — one running value, and the two movements
+ * that produce it.
+ *
+ * ATTRIBUTED BY WEEK, NOT BY CLOCK TIME. A receipt belongs to the week it
+ * pays for and a payout to the week it was drawn on, because that is the only
+ * reading the organizer can check against a week row. Attributing by
+ * `createdAt` would put a member's catch-up for week 3 into week 9 and make
+ * every historic figure disagree with the payments grid.
+ *
+ * PENDING PAYOUTS DO NOT REDUCE `held`. The cash has not left. It is carried
+ * separately so the chart can show it as committed-but-present, matching
+ * `cashPosition().committedPending` above — the two must never disagree.
+ */
+export function cashSeries(input: {
+  weeks: readonly { weekNumber: number }[];
+  payments: readonly { weekNumber: number; amountPaid: number }[];
+  payouts: readonly {
+    weekNumber: number | null;
+    netAmount: number;
+    status: "PENDING" | "COLLECTED";
+  }[];
+  /** From `elapsedThroughWeek` — the last week whose window has closed. */
+  elapsedThroughWeek: number;
+}): CashPoint[] {
+  const receivedBy = new Map<number, number>();
+  for (const [i, p] of input.payments.entries()) {
+    assertCents(`payments[${i}].amountPaid`, p.amountPaid);
+    receivedBy.set(p.weekNumber, (receivedBy.get(p.weekNumber) ?? 0) + p.amountPaid);
+  }
+
+  const paidBy = new Map<number, number>();
+  const pendingBy = new Map<number, number>();
+  for (const [i, p] of input.payouts.entries()) {
+    assertCents(`payouts[${i}].netAmount`, p.netAmount);
+    // A payout with no draw is not on the timeline yet — it is still real
+    // money and `cashPosition` counts it, so it is deliberately NOT dropped:
+    // it is folded into the first week so the two never disagree on a total.
+    const week = p.weekNumber ?? input.weeks[0]?.weekNumber ?? 1;
+    const target = p.status === "COLLECTED" ? paidBy : pendingBy;
+    target.set(week, (target.get(week) ?? 0) + p.netAmount);
+  }
+
+  let running = 0;
+  return [...input.weeks]
+    .sort((a, b) => a.weekNumber - b.weekNumber)
+    .map((w) => {
+      const received = receivedBy.get(w.weekNumber) ?? 0;
+      const paidOut = paidBy.get(w.weekNumber) ?? 0;
+      running += received - paidOut;
+      return {
+        weekNumber: w.weekNumber,
+        received,
+        paidOut,
+        pendingOut: pendingBy.get(w.weekNumber) ?? 0,
+        held: running,
+        elapsed: w.weekNumber <= input.elapsedThroughWeek,
+      };
+    });
+}
+
 // ————————————————— Per-week receipts —————————————————
 
 export type DashboardParticipation = {
@@ -88,6 +172,15 @@ export type WeekReceipts = {
   shortfall: number;
   membersPaid: number;
   membersExpected: number;
+  /**
+   * This week's payment window has CLOSED.
+   *
+   * Stamped here rather than re-derived per chart. Both the §5.1 bars and the
+   * §5.2 area draw an elapsed/still-open divider, and two copies of that rule
+   * is two chances for one screen to call a week closed while the other calls
+   * it open — the exact class of drift this audit spent a week closing.
+   */
+  elapsed: boolean;
 };
 
 export function weekReceipts(input: {
@@ -96,7 +189,10 @@ export function weekReceipts(input: {
   isSkipped?: boolean;
   participations: readonly DashboardParticipation[];
   payments: readonly DashboardPayment[];
-}): WeekReceipts {
+  // No `elapsed` here on purpose: whether a week has closed is a fact about
+  // the CALENDAR, not about this week's money, and it needs the cycle's stored
+  // week dates that this function is never given. `receiptsByWeek` stamps it.
+}): Omit<WeekReceipts, "elapsed"> {
   const { weekNumber } = input;
   const paymentFor = new Map(
     input.payments
@@ -141,17 +237,20 @@ export function receiptsByWeek(input: {
   weeks: readonly { weekNumber: number; isSkipped: boolean }[];
   participations: readonly DashboardParticipation[];
   payments: readonly DashboardPayment[];
+  /** From `elapsedThroughWeek` — the last week whose window has closed. */
+  elapsedThroughWeek: number;
 }): WeekReceipts[] {
   return [...input.weeks]
     .sort((a, b) => a.weekNumber - b.weekNumber)
-    .map((w) =>
-      weekReceipts({
+    .map((w) => ({
+      ...weekReceipts({
         weekNumber: w.weekNumber,
         isSkipped: w.isSkipped,
         participations: input.participations,
         payments: input.payments,
       }),
-    );
+      elapsed: w.weekNumber <= input.elapsedThroughWeek,
+    }));
 }
 
 // ————————————————— Drill-downs: no dead figures —————————————————

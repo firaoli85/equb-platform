@@ -1,5 +1,6 @@
 "use server";
 
+import { duplicatePhoneRefusal } from "@/lib/person-record";
 import { revalidatePath } from "next/cache";
 import { totalContributed } from "@/lib/contribution";
 import { ledgerBalance } from "@/lib/ledger";
@@ -100,6 +101,15 @@ export async function createPerson(input: CreatePersonInput) {
     const nameEnglishFirst = input.nameEnglishFirst?.trim();
     if (!nameAmharic) return { ok: false as const, error: "Amharic name is required." };
     if (!nameEnglishFirst) return { ok: false as const, error: "English first name is required." };
+
+    // Same rule at creation: a number that already belongs to someone
+    // else makes both of them unable to sign in reliably.
+    const others = await prisma.person.findMany({
+      where: { phone: { not: null } },
+      select: { id: true, nameEnglishFirst: true, phone: true },
+    });
+    const phoneClash = duplicatePhoneRefusal({ phone: input.phone, others });
+    if (phoneClash) return { ok: false as const, error: phoneClash };
 
     const person = await prisma.person.create({
       data: {

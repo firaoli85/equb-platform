@@ -94,3 +94,37 @@ export function windowChangeRefusal(input: {
 
   return null;
 }
+
+/**
+ * Why a week-scoped write cannot target this week, or null.
+ *
+ * `setWeekNote` and `setWeekDeferral` resolved the week by `(cycleId,
+ * weekNumber)` — any week of the cycle — and upserted a Payment row for it.
+ * The member's own `startWeek` and `weeksCommitted` were loaded and never
+ * consulted.
+ *
+ * The stray row then survives everything: `rebuildParticipationPayments`
+ * zeroes `amountPaid` across ALL of a participation's payments but only ever
+ * writes to IN-WINDOW rows, so it never deletes it. The grid renders that week
+ * as before-start or after-finish, so the note or the deferral is invisible and
+ * unreachable through the very UI that created it. And if the member is later
+ * extended past that week, the row reappears carrying a note — or a silent
+ * deferral — from a week they were never in.
+ */
+export function weekInWindowRefusal(input: {
+  memberName: string;
+  weekNumber: number;
+  startWeek: number;
+  weeksCommitted: number;
+  /** What the caller was trying to do, for the message. */
+  what: string;
+}): string | null {
+  const finish = calculateFinishWeek(input.startWeek, input.weeksCommitted);
+  if (input.weekNumber >= input.startWeek && input.weekNumber <= finish) return null;
+  return (
+    `Week ${input.weekNumber} is outside ${input.memberName}'s window (weeks ` +
+    `${input.startWeek}–${finish}), so ${input.what} there would be invisible on their ` +
+    `schedule and impossible to undo from it. Change their participation first if the week ` +
+    `should be theirs.`
+  );
+}

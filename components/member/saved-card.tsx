@@ -1,3 +1,4 @@
+import { SavingsArc } from "@/components/member/savings-arc";
 import { formatMoney } from "@/lib/format";
 import type { Contribution } from "@/lib/contribution";
 
@@ -23,30 +24,27 @@ export function SavedCard({
   /** True once a payout has actually been collected. */
   payoutReceived: boolean;
 }) {
-  const pct = Math.round(c.progress * 100);
-
   return (
     <section
       className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-[#141414] px-5 py-5 shadow-sm animate-fade-in-up"
       aria-labelledby="saved-heading"
     >
-      <h2
-        id="saved-heading"
-        className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400"
-      >
-        You have paid in
+      <h2 id="saved-heading" className="sr-only">
+        What you have saved
       </h2>
 
-      <p className="mt-1 text-4xl font-black leading-none tracking-tight tabular-nums text-gray-900 dark:text-white">
-        {formatMoney(c.paidIn)}
-      </p>
+      {/* The ring carries the headline figure and its label (ADMIN_IA §6). The
+          flat bar it replaced said the same thing and nobody read it. */}
+      <SavingsArc
+        paidIn={c.paidIn}
+        progress={c.progress}
+        weeksCovered={c.weeksCovered}
+        weeksCommitted={c.weeksCommitted}
+        overdue={c.overdue}
+      />
 
-      <p className="mt-2 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
-        {c.weeksCovered} of {c.weeksCommitted} weeks
-        <span className="text-gray-600 dark:text-gray-400">
-          {" "}
-          at {formatMoney(weeklyAmount)} a week
-        </span>
+      <p className="mt-3 text-center text-sm text-gray-700 dark:text-gray-300 tabular-nums">
+        {formatMoney(weeklyAmount)} a week
         {c.surplus > 0 && (
           <span className="text-emerald-700 dark:text-emerald-400">
             {" "}
@@ -54,18 +52,6 @@ export function SavedCard({
           </span>
         )}
       </p>
-
-      {/* Saved so far, against the whole commitment. */}
-      <div
-        className="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-white/10"
-        role="img"
-        aria-label={`${pct}% of your commitment saved`}
-      >
-        <div
-          className="h-full rounded-full bg-emerald-600 dark:bg-emerald-500 transition-[width] duration-500 ease-out motion-reduce:transition-none"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-gray-100 dark:border-gray-800 pt-4">
         <div>

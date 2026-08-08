@@ -103,6 +103,10 @@ export default async function CyclePage() {
           { href: "/admin/wheel/setup", label: "Wheel setup" },
           { href: "/admin/cycle/edit", label: "Edit cycle" },
           { href: "/admin/cycle/close", label: "Close cycle" },
+          // Where this cycle GOES once it is closed. 2.9 promises past cycles
+          // stay viewable, and the index that makes them so was unreachable
+          // from the screen about the cycle itself.
+          { href: "/admin/cycles", label: "Past cycles" },
         ].map((l) => (
           <Link
             key={l.href}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { updateCycle } from "@/app/actions/edits";
@@ -251,7 +252,14 @@ export function CycleEditForm({
             <tbody>
               {projection.perMember.map((m) => (
                 <tr key={m.id} className="border-b border-gray-200 dark:border-gray-800">
-                  <td className="py-1 pr-3">{m.name}</td>
+                  <td className="py-1 pr-3">
+                    <Link
+                      href={`/admin/participations/${m.id}`}
+                      className="hover:text-indigo-700 hover:underline dark:hover:text-indigo-300"
+                    >
+                      {m.name}
+                    </Link>
+                  </td>
                   <td className="py-1 pr-3">{formatMoney(m.gross)}</td>
                   <td className="py-1 pr-3">{formatMoney(m.fee)}</td>
                   <td className="py-1">{formatMoney(m.net)}</td>

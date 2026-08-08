@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
-import { refuseIfCycleClosed } from "@/lib/cycle-guard";
+import { refuseIfCycleClosed, refuseIfParticipationClosed } from "@/lib/cycle-guard";
 import { allocatePayment, type AllocationWeek } from "@/lib/allocation";
 import { formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
@@ -193,6 +193,14 @@ export async function recordPayment(input: RecordPaymentInput) {
       // lib/cycle-guard so the check is one line and cannot be skipped
       // for want of plumbing — which is how 14 actions lost it.
       await refuseIfCycleClosed(tx, { participationId: input.participationId });
+
+      // A closed PARTICIPATION is not a place money can land either. A member
+      // taken out of a running cycle with "keep the money records" keeps an
+      // ACTIVE cycle, so the guard above passes and this one is what stops it
+      // — see closedParticipationRefusal in lib/cycle-close.ts for why the
+      // receipt would otherwise be invisible and impossible to undo.
+      await refuseIfParticipationClosed(tx, input.participationId);
+
       // The receipt is created FIRST: a duplicate submission dies here on the
       // database's unique idempotencyKey before anything else is touched. Any
       // later guard throwing rolls the event back too, so a corrected retry

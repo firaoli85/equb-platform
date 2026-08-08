@@ -116,7 +116,10 @@ function PinDots({ length }: { length: number }) {
       {Array.from({ length: slots }).map((_, i) => (
         <div
           key={i}
-          className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${
+          // Named properties, never `transition-all`: `all` animates every
+          // computed property the class flip touches, including layout ones,
+          // and the three that actually change here are cheap and composited.
+          className={`w-4 h-4 rounded-full border-2 transition-[background-color,border-color,transform] duration-150 ease-out motion-reduce:transition-none ${
             length > i ? "bg-indigo-600 border-indigo-600 scale-110" : "border-gray-300 dark:border-gray-600"
           }`}
         />

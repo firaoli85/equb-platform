@@ -134,9 +134,19 @@ export function segmentWidths(
   minPercent = 2,
 ): { key: string; percent: number }[] {
   if (total <= 0) return segments.map((s) => ({ key: s.key, percent: 0 }));
+
+  // THE SEGMENTS CAN OUTRUN THE DENOMINATOR, and a bar that claims 129% of
+  // itself is drawn by clipping whatever hangs off the right-hand end —
+  // silently, because the container hides its overflow. That reads as a
+  // segment that does not exist. So the parts are scaled down to fit and the
+  // CALLER is left to say that the total was exceeded; this function's job is
+  // only to make sure nothing is drawn off the end of the bar.
+  const sum = segments.reduce((s, seg) => s + Math.max(0, seg.value), 0);
+  const denominator = Math.max(total, sum);
+
   const raw = segments.map((s) => ({
     key: s.key,
-    percent: (Math.max(0, s.value) / total) * 100,
+    percent: (Math.max(0, s.value) / denominator) * 100,
   }));
   // Lift the tiny-but-real ones to the floor, then take the difference back
   // from the largest segment that was NOT lifted — taking it from the lifted
@@ -200,4 +210,101 @@ export function longestOverdueRun(states: readonly ConsistencyState[]): number {
     }
   }
   return best;
+}
+
+/**
+ * The grid's DERIVED status, as a consistency dot.
+ *
+ * Deliberately a mapping rather than a second derivation. `consistencyState`
+ * above exists for callers holding raw amounts; every admin screen already
+ * holds `PaymentStatusValue` from `computeStanding`, and re-deriving from
+ * amounts there would give the strip its own opinion about who is late. Two
+ * opinions about lateness on two screens is the drift this codebase has spent
+ * an audit removing.
+ *
+ * SKIPPED collapses into `not-due` because the two say the same thing to the
+ * reader — nothing is owed — and a sixth dot shape to distinguish "never owed"
+ * from "not owed yet" would cost more in legend than it returns in meaning.
+ * The strip's footnote says so in words.
+ */
+export function consistencyFromStatus(
+  status: "PAID" | "PARTIAL" | "DEFERRED" | "SKIPPED" | "UNPAID" | "LATE",
+): ConsistencyState {
+  switch (status) {
+    case "PAID":
+      return "paid";
+    case "PARTIAL":
+      return "partial";
+    case "DEFERRED":
+      return "deferred";
+    case "LATE":
+      return "overdue";
+    // UNPAID is "owed, window still open" — NOT overdue. Drawing it red is
+    // the accusation the elapsed-week rule exists to prevent.
+    case "UNPAID":
+    case "SKIPPED":
+      return "not-due";
+  }
+}
+
+// ————————————— The member's savings arc (ADMIN_IA §6, Revolut) —————————————
+
+/**
+ * A point on a circle, in SVG coordinates.
+ *
+ * Angles are DEGREES CLOCKWISE FROM TWELVE O'CLOCK, because that is how a
+ * person describes a dial. SVG's own convention is radians anticlockwise from
+ * three o'clock, and every arc bug in a hand-rolled chart starts with someone
+ * converting between the two in their head.
+ */
+export function polarPoint(
+  cx: number,
+  cy: number,
+  radius: number,
+  degreesFromTop: number,
+): { x: number; y: number } {
+  const radians = ((degreesFromTop - 90) * Math.PI) / 180;
+  return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) };
+}
+
+/**
+ * An arc as an SVG path, swept clockwise from `from` to `to`.
+ *
+ * A zero-length sweep returns an empty path rather than a degenerate `A`
+ * command: a 0° arc drawn with a round linecap renders as a DOT, which on a
+ * savings ring reads as "you have saved a little" when the truth is nothing.
+ */
+export function arcPath(input: {
+  cx: number;
+  cy: number;
+  radius: number;
+  /** Degrees clockwise from twelve o'clock. */
+  from: number;
+  to: number;
+}): string {
+  const sweep = input.to - input.from;
+  if (Math.abs(sweep) < 0.01) return "";
+  // A full circle cannot be drawn as one arc — start and end coincide, and
+  // the renderer draws nothing at all. Stop just short; the gap is invisible.
+  const to = Math.abs(sweep) >= 360 ? input.from + 359.99 : input.to;
+  const start = polarPoint(input.cx, input.cy, input.radius, input.from);
+  const end = polarPoint(input.cx, input.cy, input.radius, to);
+  const largeArc = Math.abs(to - input.from) > 180 ? 1 : 0;
+  return (
+    `M${start.x.toFixed(2)},${start.y.toFixed(2)} ` +
+    `A${input.radius},${input.radius} 0 ${largeArc} 1 ${end.x.toFixed(2)},${end.y.toFixed(2)}`
+  );
+}
+
+/**
+ * A fraction, clamped into [0, 1].
+ *
+ * Paying ahead makes progress exceed 1, and an unclamped sweep wraps past the
+ * top of the dial and draws a SHORTER arc than a member who has saved less.
+ * The surplus is stated in words beside the ring instead — a ring cannot say
+ * "more than everything".
+ */
+export function clampFraction(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
 }

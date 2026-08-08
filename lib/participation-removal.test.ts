@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   feeAttributable,
@@ -253,5 +255,47 @@ describe("refusals", () => {
     expect(
       removalRefusal({ cycleStatus: "ACTIVE", choice: "remove-completely", alreadyClosed: false }),
     ).toBeNull();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// GUARD — the PREVIEW and the CASCADE measure emptiness the same way.
+//
+// The preview computed "this draw will be left empty" from surviving SLOT
+// MEMBERS. The cascade asks whether any PAYOUT remains. They disagree exactly
+// where it matters: a slot holding someone else's number whose payout was
+// deleted earlier has a survivor but no payout, so the preview said "the draw
+// stands" while the removal deleted it.
+//
+// A confirmation that UNDERSTATES the consequence is worse than none — the
+// organizer types a name against a description of something that will not
+// happen.
+// ————————————————————————————————————————————————————————————————
+
+describe("GUARD — the preview measures what the cascade does", () => {
+  const GUARD_ROOT = join(import.meta.dirname, "..");
+
+  it("the preview counts PAYOUTS, not slot members", () => {
+    const source = readFileSync(
+      join(GUARD_ROOT, "app/actions/participation-removal.ts"),
+      "utf8",
+    );
+    const fn = source.split("function toAttachments(")[1].split("\nexport ")[0];
+    expect(fn).toMatch(/draw\.payouts\.filter/);
+    // The old test, which is the one that drifted.
+    expect(fn).not.toMatch(/sm\.slot\.members\.filter\([^)]*mine\.has/);
+  });
+
+  it("the cascade goes through the shared emptiness rule", () => {
+    const source = readFileSync(
+      join(GUARD_ROOT, "app/actions/participation-removal.ts"),
+      "utf8",
+    );
+    const fn = source.split("export async function removeFromCycle(")[1];
+    expect(fn).toMatch(/deleteDrawIfEmpty\(/);
+    expect(fn).toMatch(/purgeEmptyWinnerPlans\(/);
+    // Hand-rolled sweeps are what let the two definitions drift.
+    expect(fn).not.toMatch(/tx\.draw\.deleteMany/);
+    expect(fn).not.toMatch(/tx\.winnerPlan\.deleteMany/);
   });
 });

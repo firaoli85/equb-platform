@@ -124,6 +124,16 @@ body {
     transform: translateY(0);
   }
 }
+/* The member's savings ring drawing itself in. pathLength=100 on the path
+   normalises the dash maths, so these two numbers work at any sweep. */
+@keyframes arcDraw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
 @keyframes pulseGreen {
   0%,
   100% {
@@ -193,6 +203,9 @@ body {
   }
 }
 
+.animate-arc-draw {
+  animation: arcDraw 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
 .animate-fade-in-up {
   animation: fadeInUp 0.28s ease-out both;
 }
@@ -241,6 +254,7 @@ body {
   .animate-fade-in-up-2,
   .animate-fade-in-up-3,
   .animate-fade-in-up-4,
+  .animate-arc-draw,
   .animate-pulse-green,
   .animate-paid-flash,
   .animate-check-bounce,

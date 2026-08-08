@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { closedCycleAllows, closeTiming, CLOSING_WAIT_DAYS_DEFAULT } from "./cycle-lock";
-import { frozenCycleRefusal } from "./cycle-close";
+import { closedParticipationRefusal, frozenCycleRefusal } from "./cycle-close";
 
 const SEP_27 = new Date(Date.UTC(2026, 8, 27));
 const LABEL = "Sunday, September 27, 2026";
@@ -231,5 +231,65 @@ describe("GUARD — every cycle-mutating action refuses a CLOSED cycle", () => {
         "action to EXEMPT above with the reason it is safe.\n" +
         offenders.join("\n"),
     ).toEqual([]);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// A CLOSED PARTICIPATION IS NOT A PLACE MONEY CAN LAND
+//
+// The audit found recordPayment fully callable for a member taken OUT of a
+// running cycle with "keep the money records": their participation goes
+// CLOSED while the cycle stays ACTIVE, so the closed-CYCLE guard passes. The
+// write then succeeded and was correct — and landed where no admin screen
+// looks, so it could never be undone without a developer.
+// ————————————————————————————————————————————————————————————————
+
+describe("money cannot land on a closed participation", () => {
+  const active = { status: "ACTIVE" as const, memberName: "Almaz", cycleName: "2026 Equb" };
+
+  it("says nothing while they are still taking part", () => {
+    expect(closedParticipationRefusal(active)).toBeNull();
+  });
+
+  it("refuses once their participation is closed, even in a live cycle", () => {
+    const refusal = closedParticipationRefusal({ ...active, status: "CLOSED" });
+    expect(refusal).not.toBeNull();
+    // The organizer must be able to tell WHO and WHICH CYCLE from the message
+    // alone — it is raised from a transaction and surfaces as a bare toast.
+    expect(refusal).toContain("Almaz");
+    expect(refusal).toContain("2026 Equb");
+  });
+
+  it("sends the money somewhere real rather than only saying no", () => {
+    // 2.19: after a participation ends, money recorded on the profile reduces
+    // the LEDGER balance. A refusal that did not say this would leave the
+    // organizer holding cash with nowhere to put it.
+    const refusal = closedParticipationRefusal({ ...active, status: "CLOSED" }) ?? "";
+    expect(refusal.toLowerCase()).toContain("carried balance");
+    expect(refusal).toContain("2.19");
+  });
+
+  it("names both consequences: invisible, and impossible to undo", () => {
+    const refusal = closedParticipationRefusal({ ...active, status: "CLOSED" }) ?? "";
+    expect(refusal.toLowerCase()).toContain("invisible");
+    expect(refusal.toLowerCase()).toContain("undo");
+  });
+});
+
+describe("recordPayment is wired to the participation guard", () => {
+  it("calls refuseIfParticipationClosed inside its transaction", () => {
+    // Pinning the WIRING, not just the message. The pure function above can be
+    // perfect and the hole still open if the action never calls it — which is
+    // exactly how the closed-CYCLE guard went missing from 14 actions.
+    const src = readFileSync(join(process.cwd(), "app/actions/payments.ts"), "utf8");
+    const body = src.slice(src.indexOf("export async function recordPayment"));
+    const end = body.indexOf("export async function", 1);
+    const recordPayment = end > 0 ? body.slice(0, end) : body;
+
+    expect(recordPayment).toContain("refuseIfParticipationClosed(tx, input.participationId)");
+    // Before the first write, so nothing is left half-recorded.
+    expect(recordPayment.indexOf("refuseIfParticipationClosed")).toBeLessThan(
+      recordPayment.indexOf("tx.paymentEvent.create"),
+    );
   });
 });
