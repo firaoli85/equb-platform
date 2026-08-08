@@ -2,11 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCatchUpWeeks } from "@/app/actions/payments-view";
 import { getMemberStanding } from "@/app/actions/payments";
+import { getMemberMessaging } from "@/app/actions/member-messaging";
 import { listMemberSignIns } from "@/app/actions/sessions";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
 import { PayoutEquation } from "@/components/admin/payout-equation";
-import { TruncationNotice } from "@/components/ui/pager";
+import { Pager, TruncationNotice } from "@/components/ui/pager";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
@@ -21,6 +22,7 @@ import { calculatePayout } from "@/lib/wheel";
 import { AssignPayout } from "./assign-payout";
 import { CarriedBalance } from "./carried-balance";
 import { MemberPayments } from "./member-payments";
+import { MemberMessaging } from "./member-messaging";
 import { MemberSignIns } from "./member-sign-ins";
 import {
   MemberTabBar,
@@ -140,6 +142,10 @@ export default async function PersonPage({
       ? await prisma.paymentEvent.count({ where: { participationId: active.id } })
       : 0;
   const receiptInfo = pageInfo(receiptTotal, receiptsPage, PAGE_SIZES.receipts);
+  // Only for the tab that shows it.
+  const messaging =
+    tab === "messages" ? await getMemberMessaging({ personId: person.id }) : null;
+
   const paymentEvents =
     active && tab === "receipts"
       ? await prisma.paymentEvent.findMany({
@@ -190,16 +196,25 @@ export default async function PersonPage({
         ? "default"
         : "none";
 
-  // The two counts the removal dialog needs to tell the truth about what the
-  // database will actually allow, and what the delete would take with it.
-  // Only the Settings tab renders that form.
-  const [messageCount, sessionCount] =
+  // THREE COUNTS, ON EVERY TAB.
+  //
+  // The tab bar shows a number beside Receipts, Messages and History, so these
+  // are needed whichever tab is open — and they are `count` queries, not row
+  // loads, which is the whole reason the rows themselves could stop being
+  // fetched everywhere. The message count also feeds the removal dialog on
+  // Settings, which states what the delete is blocked by.
+  const [messageCount, paymentEventCount] = await Promise.all([
+    prisma.messageLog.count({ where: { personId: person.id } }),
+    active
+      ? prisma.paymentEvent.count({ where: { participationId: active.id } })
+      : Promise.resolve(0),
+  ]);
+
+  // Only the Settings tab renders the removal form that needs this one.
+  const sessionCount =
     tab === "settings"
-      ? await Promise.all([
-          prisma.messageLog.count({ where: { personId: person.id } }),
-          prisma.signInSession.count({ where: { personId: person.id } }),
-        ])
-      : [0, 0];
+      ? await prisma.signInSession.count({ where: { personId: person.id } })
+      : 0;
 
   // THE PAYOUT TOTALS, across every number they hold. A member with two
   // numbers receives twice, so the figure that answers "what do they get" is
@@ -423,6 +438,19 @@ export default async function PersonPage({
             ))}
           </dl>
         )}
+        {/* The tabs belong INSIDE the sticky header: they are how you move
+            around this page, and a navigation that scrolls away is a
+            navigation you have to scroll back to find. */}
+        <MemberTabBar
+          personId={person.id}
+          active={tab}
+          counts={{
+            receipts: paymentEventCount,
+            numbers: active?.luckyNumbers.length ?? 0,
+            cycles: person.participations.length,
+            messages: messageCount,
+          }}
+        />
       </header>
 
       {active === null && tab !== "settings" && tab !== "history" && (
@@ -677,11 +705,44 @@ export default async function PersonPage({
                 }))}
               />
             )}
+            {/* Always rendered, even on a single page: "All 12 receipts." is
+                what stops someone concluding a receipt was never recorded
+                because they could not scroll to it. */}
+            {active !== null && (
+              <Pager
+                className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
+                info={receiptInfo}
+                noun={{ one: "receipt", many: "receipts" }}
+                label="Receipt pages"
+                hrefFor={(p) => `?tab=receipts&receiptsPage=${p}`}
+              />
+            )}
           </div>
         </Card>
       )}
 
-      {/* ————— TAB 4: SETTINGS — participation lives HERE and nowhere else ————— */}
+      {/* ————— TAB 4: MESSAGES — the individual case —————
+
+          The batch composer sends one type to everyone it applies to, and
+          that stays. What it could not do is the common thing: the organizer
+          is looking at someone six weeks behind and wants to send HER a
+          notice, which meant leaving her page, opening Messages, finding her
+          in a batch and unchecking twenty-six people. */}
+      {tab === "messages" && (
+        <div className="animate-fade-in-up-1">
+          {messaging === null || !messaging.ok ? (
+            <Card className="px-5 py-4">
+              <p className="text-sm text-red-800 dark:text-red-400">
+                {messaging && !messaging.ok ? messaging.error : "Could not load messaging."}
+              </p>
+            </Card>
+          ) : (
+            <MemberMessaging view={messaging.data} personName={person.nameEnglishFirst} />
+          )}
+        </div>
+      )}
+
+      {/* ————— TAB 5: SETTINGS — participation lives HERE and nowhere else ————— */}
       {/* ————— TAB 4: SETTINGS — three jobs, one at a time —————
 
           This was a single scroll holding participation, lucky numbers, names,
@@ -893,7 +954,7 @@ export default async function PersonPage({
         </div>
       )}
 
-      {/* ————— TAB 5: HISTORY ————— */}
+      {/* ————— TAB 6: HISTORY ————— */}
       {tab === "history" && (
         <Card>
           <CardHeader title="History" sub="Every cycle this person has been part of." />

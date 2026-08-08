@@ -215,6 +215,74 @@ check(
   (await prisma.cashReading.count({ where: { id: reading.id } })) === 0,
 );
 
+// ————————————————— 5. PAGING THE HISTORY MUST NOT MOVE THE VERDICT —————————
+
+console.log("\n5. The verdict compares against the NEWEST reading, on any page");
+
+// Enough readings to force a second page, each a different figure and date.
+const PAGE_SIZE = 25;
+const made: { readAt: Date; total: number }[] = [];
+for (let i = 0; i < PAGE_SIZE + 8; i += 1) {
+  made.push({
+    readAt: new Date(Date.UTC(2026, 0, 1 + i)),
+    total: 1_000_00 + i * 1_000,
+  });
+}
+await prisma.cashReading.createMany({
+  data: made.map((m) => ({
+    cycleId: f.cycleId,
+    totalAmount: m.total,
+    readAt: m.readAt,
+    note: fixture.FIXTURE_TAG,
+  })),
+});
+
+const newest = made.reduce((a, b) => (b.readAt > a.readAt ? b : a));
+const total = await prisma.cashReading.count({ where: { cycleId: f.cycleId } });
+check("there are enough readings for two pages", total > PAGE_SIZE, `${total}`);
+
+// Page 1 — the newest is simply the first row.
+const page1 = await prisma.cashReading.findMany({
+  where: { cycleId: f.cycleId },
+  orderBy: { readAt: "desc" },
+  skip: 0,
+  take: PAGE_SIZE,
+});
+check("page 1's first row IS the newest reading", page1[0].totalAmount === newest.total);
+
+// PAGE 2 — the failing path. A naive `readings[0]` here is the newest row on
+// THIS PAGE, which is 25 readings old, so the whole verdict would silently
+// describe a stale figure the moment the organizer clicked "next".
+const page2 = await prisma.cashReading.findMany({
+  where: { cycleId: f.cycleId },
+  orderBy: { readAt: "desc" },
+  skip: PAGE_SIZE,
+  take: PAGE_SIZE,
+});
+check("page 2 has rows", page2.length > 0, `${page2.length}`);
+check(
+  "page 2's first row is NOT the newest — the hazard is real, not hypothetical",
+  page2[0].totalAmount !== newest.total,
+);
+
+// What the action does instead: ask the database for the newest, always.
+const latestOverall = await prisma.cashReading.findFirst({
+  where: { cycleId: f.cycleId },
+  orderBy: { readAt: "desc" },
+});
+check(
+  "the newest reading is found regardless of the page being read",
+  latestOverall?.totalAmount === newest.total,
+  `${latestOverall?.totalAmount} vs ${newest.total}`,
+);
+
+const onPage1 = positionVerdict({ expected: holding, actual: page1[0].totalAmount, formatMoney });
+const onPage2 = positionVerdict({ expected: holding, actual: latestOverall!.totalAmount, formatMoney });
+check(
+  "so the verdict reads the same on page 1 and page 2",
+  onPage1.sentence === onPage2.sentence,
+);
+
 // ————————————————— Cleanup —————————————————
 
 await prisma.cashReading.deleteMany({ where: { cycleId: f.cycleId } });

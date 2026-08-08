@@ -61,6 +61,13 @@ async function ownedEntityIds(personId: string): Promise<string[]> {
   return ids;
 }
 
+/**
+ * The most candidates the person filter will read before filtering in JS.
+ * Far above any real person's history; `truncated` says so if it is ever hit,
+ * because a bound that silently drops rows is worse than a slow query.
+ */
+const AUDIT_CANDIDATE_CAP = 5_000;
+
 export type AuditRow = {
   id: string;
   createdAt: string;
@@ -131,12 +138,23 @@ export async function listAuditLog(input: AuditFilterInput = {}) {
       const candidates = await prisma.auditLog.findMany({
         where,
         orderBy: { createdAt: "desc" },
-        take: 5_000,
+        take: AUDIT_CANDIDATE_CAP,
       });
       const ownedIds = new Set(await ownedEntityIds(filter.personId));
       const matched = candidates.filter(
         (row) => ownedIds.has(row.entityId) || namePattern!.test(row.summary),
       );
+      // THE CAP IS FINE UNTIL IT BITES, AND THEN IT LIES.
+      //
+      // This reads the most recent N candidates and filters them in JS,
+      // because the name half of a person filter cannot be expressed in SQL.
+      // N is far above a real person's history — but if it is ever reached,
+      // the rows BELOW it are silently absent and the page count is computed
+      // from a truncated set. The organizer looking for something from cycle
+      // one would find nothing and conclude it was never recorded.
+      //
+      // So it says so, on screen, only when it has actually happened.
+      const capReached = candidates.length === AUDIT_CANDIDATE_CAP;
       const info = auditPageInfo(matched.length, filter.page);
       return {
         ok: true as const,
@@ -148,10 +166,17 @@ export async function listAuditLog(input: AuditFilterInput = {}) {
           filtered: auditFilterActive(filter),
           summary: auditFilterSummary(filter, info, personName),
           entities: await listAuditEntities(),
+          truncated: capReached
+            ? `Only the most recent ${AUDIT_CANDIDATE_CAP.toLocaleString("en-US")} entries were ` +
+              `searched for this person, and there are more. Narrow the filter — by entity or ` +
+              `by date — to reach the older ones.`
+            : null,
         },
       };
     }
 
+    // The other branch counts in SQL and pages properly, so nothing is ever
+    // cut: the field is present and null so both shapes match.
     const total = await prisma.auditLog.count({ where });
     const info = auditPageInfo(total, filter.page);
     const rows = await prisma.auditLog.findMany({
@@ -171,6 +196,7 @@ export async function listAuditLog(input: AuditFilterInput = {}) {
         filtered: auditFilterActive(filter),
         summary: auditFilterSummary(filter, info, personName),
         entities: await listAuditEntities(),
+        truncated: null,
       },
     };
   } catch (e) {

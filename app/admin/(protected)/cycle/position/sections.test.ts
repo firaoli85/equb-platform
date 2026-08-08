@@ -1,0 +1,104 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_SECTION, parsePositionSection, positionSections } from "./sections";
+
+// The nav is worth reading BEFORE clicking, or it is just four buttons. The
+// counts and the attention dots come from real state, so a dot means something
+// every time it appears — a dot that is always on teaches the reader to skip it.
+
+describe("parsePositionSection — never trusts the URL", () => {
+  it("accepts the real sections", () => {
+    expect(parsePositionSection("collection")).toBe("collection");
+    expect(parsePositionSection("ahead")).toBe("ahead");
+    expect(parsePositionSection("holding")).toBe("holding");
+    expect(parsePositionSection("cash")).toBe("cash");
+  });
+
+  it("falls back to the default for anything else", () => {
+    expect(parsePositionSection(undefined)).toBe(DEFAULT_SECTION);
+    expect(parsePositionSection("")).toBe(DEFAULT_SECTION);
+    expect(parsePositionSection("../../etc/passwd")).toBe(DEFAULT_SECTION);
+    expect(parsePositionSection("Cash")).toBe(DEFAULT_SECTION);
+  });
+
+  it("takes the first value when the parameter repeats", () => {
+    expect(parsePositionSection(["cash", "holding"])).toBe("cash");
+  });
+
+  it("opens on Collection — the week he is living in", () => {
+    expect(DEFAULT_SECTION).toBe("collection");
+  });
+});
+
+describe("positionSections — the dots mean something", () => {
+  const clean = {
+    owedByCount: 0,
+    shortfall: 0,
+    aheadByCount: 0,
+    paidAhead: 0,
+    uncommitted: 500_000,
+    verdictKind: "surplus" as const,
+  };
+
+  it("a cycle in good order shows no dots at all", () => {
+    const s = positionSections(clean);
+    expect(s.filter((x) => x.attention)).toEqual([]);
+  });
+
+  it("marks Collection when money is genuinely outstanding", () => {
+    const s = positionSections({ ...clean, shortfall: 40_000, owedByCount: 2 });
+    const collection = s.find((x) => x.key === "collection")!;
+    expect(collection.attention).toBe(true);
+    expect(collection.count).toBe(2);
+  });
+
+  it("marks Paid ahead only when there IS money paid ahead", () => {
+    expect(positionSections(clean).find((x) => x.key === "ahead")!.attention).toBe(false);
+    const s = positionSections({ ...clean, paidAhead: 75_000, aheadByCount: 3 });
+    expect(s.find((x) => x.key === "ahead")!.attention).toBe(true);
+    expect(s.find((x) => x.key === "ahead")!.count).toBe(3);
+  });
+
+  // The whole point of the screen: a negative uncommitted figure IS
+  // "I am using other people's money".
+  it("marks What you should hold when uncommitted has gone NEGATIVE", () => {
+    const s = positionSections({ ...clean, uncommitted: -1 });
+    expect(s.find((x) => x.key === "holding")!.attention).toBe(true);
+  });
+
+  it("does not mark it when uncommitted is merely zero", () => {
+    const s = positionSections({ ...clean, uncommitted: 0 });
+    expect(s.find((x) => x.key === "holding")!.attention).toBe(false);
+  });
+
+  it("marks What you hold when no reading has been taken — the comparison cannot run", () => {
+    const s = positionSections({ ...clean, verdictKind: null });
+    expect(s.find((x) => x.key === "cash")!.attention).toBe(true);
+  });
+
+  it("marks it when he is short", () => {
+    const s = positionSections({ ...clean, verdictKind: "short" });
+    expect(s.find((x) => x.key === "cash")!.attention).toBe(true);
+  });
+
+  it("leaves it clear when the cash is reconciled", () => {
+    for (const kind of ["covered", "surplus", "exact"] as const) {
+      const s = positionSections({ ...clean, verdictKind: kind });
+      expect(s.find((x) => x.key === "cash")!.attention).toBe(false);
+    }
+  });
+
+  it("omits a zero count rather than rendering an empty bubble", () => {
+    const s = positionSections(clean);
+    expect(s.find((x) => x.key === "collection")!.count).toBeUndefined();
+    expect(s.find((x) => x.key === "ahead")!.count).toBeUndefined();
+  });
+
+  it("keeps the organizer's own order", () => {
+    expect(positionSections(clean).map((s) => s.key)).toEqual([
+      "collection",
+      "ahead",
+      "holding",
+      "cash",
+    ]);
+  });
+});

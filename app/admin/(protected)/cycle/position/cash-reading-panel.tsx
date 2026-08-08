@@ -10,6 +10,8 @@ import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { Alert, buttonCls, Card, CardHeader, inputCls } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import type { PositionVerdict } from "@/lib/cycle-position";
+import { Pager } from "@/components/ui/pager";
+import type { PageInfo } from "@/lib/paging";
 
 // WHAT HE ACTUALLY HOLDS — the only stored fact on this page.
 //
@@ -35,11 +37,13 @@ export function CashReadingPanel({
   verdict,
   latest,
   readings,
+  readingInfo,
 }: {
   expected: number;
   verdict: PositionVerdict | null;
   latest: { totalAmount: number; readAt: string } | null;
   readings: Reading[];
+  readingInfo: PageInfo;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -210,7 +214,7 @@ export function CashReadingPanel({
         )}
 
         {/* ————— HISTORY: drift across the cycle, not only today ————— */}
-        {readings.length > 0 && (
+        {readingInfo.total > 0 && (
           <div>
             <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
               Past readings
@@ -277,6 +281,13 @@ export function CashReadingPanel({
                 </li>
               ))}
             </ul>
+            <Pager
+              className="mt-2"
+              info={readingInfo}
+              noun={{ one: "reading", many: "readings" }}
+              label="Cash reading pages"
+              hrefFor={(p) => `?readingsPage=${p}`}
+            />
             <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
               The comparison is against what is expected <strong>today</strong> — it shows drift,
               not what the books said on each of those days.

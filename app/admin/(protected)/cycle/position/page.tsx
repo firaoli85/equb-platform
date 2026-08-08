@@ -5,6 +5,9 @@ import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatDateUTC, formatMoney } from "@/lib/format";
+import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
+import { parsePage } from "@/lib/paging";
+import { parsePositionSection, positionSections } from "./sections";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +22,17 @@ export const dynamic = "force-dynamic";
 // Every figure is derived (2.14) and drills down to who makes it up. The one
 // stored fact on the page is the cash reading he enters himself.
 
-export default async function CyclePositionPage() {
-  const result = await getCyclePosition();
+export default async function CyclePositionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    readingsPage?: string | string[];
+    section?: string | string[];
+  }>;
+}) {
+  const { readingsPage, section: rawSection } = await searchParams;
+  const section = parsePositionSection(rawSection);
+  const result = await getCyclePosition({ readingsPage: parsePage(readingsPage) });
   if (!result.ok) {
     if (result.error === PRESENTATION_HIDDEN) {
       return <PresentationHidden what="The cycle position" />;
@@ -34,6 +46,15 @@ export default async function CyclePositionPage() {
   const d = result.data;
   const c = d.collection;
   const h = d.holding;
+  const sections = positionSections({
+    owedByCount: c.owedBy.length,
+    shortfall: c.shortfall,
+    aheadByCount: c.aheadBy.length,
+    paidAhead: c.paidAhead,
+    uncommitted: h.uncommitted,
+    verdictKind: d.verdict?.kind ?? null,
+  });
+  const href = (key: string) => `?section=${key}`;
 
   return (
     <main className="space-y-6">
@@ -56,7 +77,22 @@ export default async function CyclePositionPage() {
         {d.collectionSentence}
       </p>
 
+      <SectionNav
+        sections={sections}
+        active={section}
+        hrefFor={href}
+        label="Cycle position sections"
+        className="animate-fade-in-up-1"
+      />
+
       {/* ————— Collection: should vs actual ————— */}
+      {section === "collection" && (
+        <>
+          <SectionHeading title="What should have come in, and what did">
+            Every elapsed week&apos;s expectation against what actually arrived. Elapsed means
+            the week&apos;s own payment window has closed — not a week number counted off the
+            start date.
+          </SectionHeading>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 animate-fade-in-up-1">
         <StatCard
           label="Should have come in"
@@ -81,7 +117,16 @@ export default async function CyclePositionPage() {
         />
       </div>
 
+        </>
+      )}
+
       {/* ————— PAID AHEAD — the piece he could not see ————— */}
+      {section === "ahead" && (
+        <>
+          <SectionHeading title="Money paid toward weeks that have not happened">
+            It is in your hands and it is not yours to spend. Kept separate from collection
+            for exactly that reason.
+          </SectionHeading>
       <Card className="animate-fade-in-up-2">
         <CardHeader
           title={
@@ -123,8 +168,12 @@ export default async function CyclePositionPage() {
         </div>
       </Card>
 
-      {/* ————— Who makes up the shortfall ————— */}
-      {c.owedBy.length > 0 && (
+        </>
+      )}
+
+      {/* Who makes up the shortfall belongs with Collection, not on its own:
+          the figure and the people behind it are one question. */}
+      {section === "collection" && c.owedBy.length > 0 && (
         <Card className="animate-fade-in-up-2">
           <CardHeader
             title="Who the outstanding money is with"
@@ -149,6 +198,12 @@ export default async function CyclePositionPage() {
       )}
 
       {/* ————— What he SHOULD be holding, decomposed ————— */}
+      {section === "holding" && (
+        <>
+          <SectionHeading title="What the books say you are holding">
+            Received minus paid out, split into what is claimed and what is free. A healthy
+            balance may simply be your fee accumulating.
+          </SectionHeading>
       <Card className="animate-fade-in-up-2">
         <CardHeader
           title="What you should be holding"
@@ -187,7 +242,16 @@ export default async function CyclePositionPage() {
         </div>
       </Card>
 
+        </>
+      )}
+
       {/* ————— What he ACTUALLY holds, and the verdict ————— */}
+      {section === "cash" && (
+        <>
+          <SectionHeading title="What you actually hold, and what it means">
+            The one figure you enter yourself. Everything it is compared against is worked
+            out from money already recorded.
+          </SectionHeading>
       <div className="animate-fade-in-up-2">
         <CashReadingPanel
           expected={h.expected}
@@ -200,6 +264,7 @@ export default async function CyclePositionPage() {
                 }
               : null
           }
+          readingInfo={d.readingInfo}
           readings={d.readings.map((r) => ({
             id: r.id,
             readAt: r.readAt.toISOString(),
@@ -211,6 +276,9 @@ export default async function CyclePositionPage() {
           }))}
         />
       </div>
+
+        </>
+      )}
 
       <p className="text-xs text-gray-500 dark:text-gray-400">
         Every figure above except your entered reading is derived from the money already

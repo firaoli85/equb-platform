@@ -30,6 +30,7 @@ import {
 import { cashPosition, receiptsByWeek } from "@/lib/dashboard";
 import { formatMoney } from "@/lib/format";
 import { calculateFinishWeek, MAX_MONEY_CENTS } from "@/lib/money";
+import { PAGE_SIZES, pageInfo } from "@/lib/paging";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
@@ -43,7 +44,7 @@ import { computeStanding, pinnedMapFromEvents } from "@/lib/standing";
  * money, the organizer's own fee, and his actual bank balance on one page. It
  * is withheld entirely in presentation mode rather than redacted.
  */
-export async function getCyclePosition() {
+export async function getCyclePosition(input?: { readingsPage?: number }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -175,11 +176,26 @@ export async function getCyclePosition() {
       paidAhead: collection.paidAhead,
     });
 
+    // A SILENT `take: 24` WAS A LIE WAITING TO HAPPEN.
+    //
+    // The history exists so drift across the cycle is visible. Cutting it at
+    // 24 with nothing on screen saying so means that in a long cycle the
+    // earliest readings simply vanish, and the organizer scrolling for what he
+    // held in week 8 concludes he never recorded it. Paged, with the count
+    // always stated (lib/paging.ts).
+    const readingTotal = await prisma.cashReading.count();
+    const readingInfo = pageInfo(readingTotal, input?.readingsPage ?? 1, PAGE_SIZES.cashReadings);
     const readings = await prisma.cashReading.findMany({
       orderBy: { readAt: "desc" },
-      take: 24,
+      skip: readingInfo.skip,
+      take: readingInfo.take,
     });
-    const latest = readings[0] ?? null;
+    // The LATEST reading is what the verdict compares against, and it must be
+    // the newest overall — not the newest on whichever page is being read.
+    const latest =
+      readingInfo.page === 1
+        ? (readings[0] ?? null)
+        : await prisma.cashReading.findFirst({ orderBy: { readAt: "desc" } });
 
     return {
       ok: true as const,
@@ -208,6 +224,7 @@ export async function getCyclePosition() {
           note: r.note,
           differenceVsExpectedToday: r.totalAmount - holding.expected,
         })),
+        readingInfo,
       },
     };
   } catch (e) {

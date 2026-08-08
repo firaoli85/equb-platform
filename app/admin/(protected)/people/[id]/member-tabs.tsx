@@ -4,13 +4,21 @@ import Link from "next/link";
 // reload — and, because these are plain links to a server-rendered page, only
 // the chosen tab's content is ever built.
 
-export const MEMBER_TABS = ["payments", "payout", "receipts", "settings", "history"] as const;
+export const MEMBER_TABS = [
+  "payments",
+  "payout",
+  "receipts",
+  "messages",
+  "settings",
+  "history",
+] as const;
 export type MemberTab = (typeof MEMBER_TABS)[number];
 
 const LABELS: Record<MemberTab, string> = {
   payments: "Payments",
   payout: "Payout",
   receipts: "Receipts",
+  messages: "Messages",
   settings: "Settings",
   history: "History",
 };
@@ -56,11 +64,12 @@ export function MemberTabBar({
 }: {
   personId: string;
   active: MemberTab;
-  counts: { receipts: number; numbers: number; cycles: number };
+  counts: { receipts: number; numbers: number; cycles: number; messages: number };
 }) {
   const count: Partial<Record<MemberTab, number>> = {
     payout: counts.numbers,
     receipts: counts.receipts,
+    messages: counts.messages,
     history: counts.cycles,
   };
   return (

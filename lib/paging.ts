@@ -117,6 +117,8 @@ export const CAPS = {
   memberSignIns: 25,
   /** A member's own devices. */
   ownSessions: 50,
+  /** Messages sent to one member, newest first, on their profile. */
+  memberMessages: 25,
 } as const;
 
 /**

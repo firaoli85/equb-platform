@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  applicableTypes,
   DEFAULT_TEMPLATES,
   formatWeekList,
   MANUAL_MESSAGE_KEYS,
@@ -430,5 +433,161 @@ describe("{finishDate} — the member's own finish date is renderable", () => {
     expect(text).toContain("week 19");
     expect(text).not.toContain("{finishDate}");
     expect(text).not.toContain("undefined");
+  });
+});
+
+// ————————————— Per-member sending: which types apply —————————————
+//
+// The batch composer sends one type to everyone it applies to. This is the
+// individual case — the organizer on Tsion's profile who wants to send HER a
+// notice — and the risk it introduces is offering a type her state cannot
+// support: a winner announcement for someone never drawn renders a payout of
+// zero and a drawn week of nothing.
+
+describe("which message types apply to one member", () => {
+  const base = {
+    name: "Tsion",
+    weeksBehind: 0,
+    amountOutstanding: 0,
+    drawnWeek: null as number | null,
+    cycleClosed: false,
+    noMessages: false,
+    hasPhone: true,
+  };
+
+  const forKey = (state: Parameters<typeof applicableTypes>[0], key: string) =>
+    applicableTypes(state).find((t) => t.key === key)!;
+
+  it("never offers an automatic type by hand", () => {
+    // PAYMENT_CONFIRMED and LOCKOUT_NOTICE fire from their own events (2.20).
+    const keys = applicableTypes(base).map((t) => t.key);
+    expect(keys).not.toContain("PAYMENT_CONFIRMED");
+    expect(keys).not.toContain("LOCKOUT_NOTICE");
+  });
+
+  it("offers the behind notice only to someone actually behind", () => {
+    expect(forKey(base, "BEHIND_NOTICE").applicable).toBe(false);
+    expect(forKey({ ...base, weeksBehind: 6 }, "BEHIND_NOTICE").applicable).toBe(true);
+  });
+
+  it("says WHY a type is not offered, naming the member", () => {
+    // A greyed option with no explanation is a bug report waiting to be filed.
+    const reason = forKey(base, "BEHIND_NOTICE").reason ?? "";
+    expect(reason).toContain("Tsion");
+    expect(reason).toContain("window has closed");
+  });
+
+  it("offers the late notice only when money is actually owed", () => {
+    expect(forKey(base, "LATE_NOTICE").applicable).toBe(false);
+    expect(forKey({ ...base, amountOutstanding: 250_000 }, "LATE_NOTICE").applicable).toBe(true);
+  });
+
+  it("refuses a winner announcement for someone never drawn", () => {
+    // It would render a payout of zero and a drawn week of nothing.
+    const undrawn = forKey(base, "WINNER_ANNOUNCEMENT");
+    expect(undrawn.applicable).toBe(false);
+    expect(undrawn.reason).toContain("not been drawn");
+    expect(forKey({ ...base, drawnWeek: 7 }, "WINNER_ANNOUNCEMENT").applicable).toBe(true);
+  });
+
+  it("holds the closing statement until the cycle has actually closed", () => {
+    expect(forKey(base, "CYCLE_CLOSING_STATEMENT").applicable).toBe(false);
+    expect(forKey({ ...base, cycleClosed: true }, "CYCLE_CLOSING_STATEMENT").applicable).toBe(true);
+  });
+
+  it("blocks EVERY type for a member with no phone, and says so once", () => {
+    const all = applicableTypes({
+      ...base,
+      hasPhone: false,
+      weeksBehind: 6,
+      amountOutstanding: 250_000,
+      drawnWeek: 7,
+      cycleClosed: true,
+    });
+    expect(all.every((t) => !t.applicable)).toBe(true);
+    expect(all.every((t) => (t.reason ?? "").includes("no phone number"))).toBe(true);
+  });
+
+  it("blocks EVERY type for a member who has opted out (2.28)", () => {
+    const all = applicableTypes({
+      ...base,
+      noMessages: true,
+      weeksBehind: 6,
+      amountOutstanding: 250_000,
+      drawnWeek: 7,
+      cycleClosed: true,
+    });
+    expect(all.every((t) => !t.applicable)).toBe(true);
+    expect(all.every((t) => (t.reason ?? "").includes("no messages"))).toBe(true);
+  });
+
+  it("marks the two chasing types, and only those", () => {
+    const chasing = applicableTypes(base)
+      .filter((t) => t.chasing)
+      .map((t) => t.key);
+    expect(chasing.sort()).toEqual(["BEHIND_NOTICE", "LATE_NOTICE"]);
+  });
+
+  it("offers everything at once to a member whose state supports it", () => {
+    const all = applicableTypes({
+      ...base,
+      weeksBehind: 6,
+      amountOutstanding: 250_000,
+      drawnWeek: 7,
+      cycleClosed: true,
+    });
+    expect(all.every((t) => t.applicable)).toBe(true);
+    expect(all.every((t) => t.reason === null)).toBe(true);
+  });
+});
+
+describe("per-member sending inherits the batch's gate, never its own", () => {
+  const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+  const action = read("app/actions/member-messaging.ts");
+
+  it("sends through sendStatement, the same path the batch uses", () => {
+    // A second implementation of "may this leave" is how two screens end up
+    // disagreeing about whether a member can be messaged.
+    expect(action).toContain("sendStatement(");
+  });
+
+  it("does not reimplement any gate inside the SEND path", () => {
+    // READING the statements flag to say why nothing can leave is fine — the
+    // screen has to state it. DECIDING with it in the send path is not: that
+    // is deliver()'s job, and a second copy is how the two drift apart.
+    //
+    // The first version of this test forbade the flag anywhere in the file
+    // and failed on the line that renders the explanation. The distinction is
+    // display versus decision, so the assertion is scoped to the function
+    // that actually sends.
+    const send = action.slice(action.indexOf("export async function sendToMember"));
+    const code = send.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toContain("STATEMENTS_DELIVERABLE");
+    expect(code).not.toContain("noMessages");
+    expect(code).not.toContain("twilio");
+    expect(code).not.toContain("hardship");
+  });
+
+  it("refuses the automatic types by hand (2.20)", () => {
+    // PAYMENT_CONFIRMED and LOCKOUT_NOTICE fire from their own events.
+    expect(action).toContain('input.key === "PAYMENT_CONFIRMED"');
+    expect(action).toContain('input.key === "LOCKOUT_NOTICE"');
+  });
+
+  it("re-validates the key server-side rather than trusting the browser", () => {
+    expect(action).toContain("isMessageKey(input.key)");
+  });
+
+  it("reports a SKIP as neither sent nor failed", () => {
+    // The organizer pressed send and nothing left. He has to be told which,
+    // and why, in the engine's own words — not a generic "done".
+    expect(action).toContain('outcome.status === "SKIPPED"');
+    expect(action).toContain("outcome.reason");
+  });
+
+  it("states the statements block rather than hiding the buttons", () => {
+    const ui = read("app/admin/(protected)/people/[id]/member-messaging.tsx");
+    expect(ui).toContain("Statements cannot send yet");
+    expect(ui).toContain("Login codes are unaffected");
   });
 });

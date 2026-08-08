@@ -335,3 +335,99 @@ export function sendDecision(input: {
   }
   return { send: true };
 }
+
+// ————————————— Which types apply to ONE member, right now —————————————
+//
+// The batch composer sends one type to everyone it applies to. The case it
+// cannot serve is the common one: the organizer is looking at Tsion's profile,
+// sees she is six weeks behind, and wants to send HER a notice — which meant
+// leaving her page, opening Messages, and unchecking twenty-six people.
+//
+// Offering all four manual types on her profile would be the same failure in
+// reverse: a winner announcement for someone never drawn renders a payout of
+// zero and a drawn week of nothing. So the offer is derived from her state,
+// with the reason attached to every type that is NOT offered — a greyed
+// option with no explanation is a bug report waiting to be filed.
+
+export type ApplicableType = {
+  key: MessageKey;
+  /** Whether it can be sent to this member now. */
+  applicable: boolean;
+  /** Why not, in the organizer's words. Null when it applies. */
+  reason: string | null;
+  /** True when it is a chase, which deferral and hardship suppress. */
+  chasing: boolean;
+};
+
+/** What this member's state has to say about each manual message type. */
+export function applicableTypes(state: {
+  name: string;
+  /** Weeks whose window has CLOSED with money still owed. */
+  weeksBehind: number;
+  amountOutstanding: number;
+  /** Their number has been drawn — a winner announcement has something to say. */
+  drawnWeek: number | null;
+  /** The cycle has been closed, so a closing statement is real. */
+  cycleClosed: boolean;
+  /** 2.28: they have asked to receive nothing. */
+  noMessages: boolean;
+  /** No number on file — nothing can be delivered anywhere. */
+  hasPhone: boolean;
+}): ApplicableType[] {
+  const blockedForAll = !state.hasPhone
+    ? `${state.name} has no phone number on file, so nothing can be delivered.`
+    : state.noMessages
+      ? `${state.name} is marked as receiving no messages (2.28).`
+      : null;
+
+  const chasing = (key: MessageKey) =>
+    (CHASING_MESSAGE_KEYS as readonly string[]).includes(key);
+
+  return MANUAL_MESSAGE_KEYS.map((key): ApplicableType => {
+    if (blockedForAll) {
+      return { key, applicable: false, reason: blockedForAll, chasing: chasing(key) };
+    }
+    switch (key) {
+      case "BEHIND_NOTICE":
+        return state.weeksBehind > 0
+          ? { key, applicable: true, reason: null, chasing: true }
+          : {
+              key,
+              applicable: false,
+              // Named precisely: "not applicable" invites the organizer to
+              // wonder whether the screen is wrong.
+              reason: `${state.name} is not behind on any week whose window has closed.`,
+              chasing: true,
+            };
+      case "LATE_NOTICE":
+        return state.amountOutstanding > 0
+          ? { key, applicable: true, reason: null, chasing: true }
+          : {
+              key,
+              applicable: false,
+              reason: `${state.name} owes nothing right now.`,
+              chasing: true,
+            };
+      case "WINNER_ANNOUNCEMENT":
+        return state.drawnWeek !== null
+          ? { key, applicable: true, reason: null, chasing: false }
+          : {
+              key,
+              applicable: false,
+              reason: `${state.name}'s number has not been drawn yet, so there is no payout to announce.`,
+              chasing: false,
+            };
+      case "CYCLE_CLOSING_STATEMENT":
+        return state.cycleClosed
+          ? { key, applicable: true, reason: null, chasing: false }
+          : {
+              key,
+              applicable: false,
+              reason: "The cycle is still running — the closing statement is sent when it ends.",
+              chasing: false,
+            };
+      default:
+        return { key, applicable: false, reason: "Not sent by hand.", chasing: chasing(key) };
+    }
+  });
+}
