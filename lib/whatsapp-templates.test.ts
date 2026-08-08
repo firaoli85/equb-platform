@@ -7,7 +7,7 @@ import {
   toNamedBody,
   type ApprovedTemplateKey,
 } from "./whatsapp-templates";
-import { MESSAGE_KEYS, placeholderValues } from "./messages";
+import { DEFAULT_TEMPLATES, MESSAGE_KEYS, placeholderValues } from "./messages";
 
 // THE DRIFT GUARD.
 //
@@ -149,5 +149,61 @@ describe("toApprovedBody leaves unknown tokens alone", () => {
 
   it("maps a repeated token to the same position, as Twilio does", () => {
     expect(toApprovedBody("{name} and {name}", ["name"])).toBe("{{1}} and {{1}}");
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// DEFAULT_TEMPLATES IS NOT A SECOND COPY OF THE APPROVED WORDING.
+//
+// It used to hold its own freeform text for the five approved keys, and
+// deliver() falls back to it when a MessageTemplate row is absent. Twilio
+// sends by ContentSid, so a member would still have received Meta's sentence
+// — while MessageLog permanently recorded the fallback as the thing that was
+// said. The log is the organizer's proof of what was said to whom; one that
+// disagrees with what was sent is worse than none, because it is believed.
+// ————————————————————————————————————————————————————————————————
+
+describe("DEFAULT_TEMPLATES agrees with the registry", () => {
+  it("every approved key's default body IS the registry's namedBody", () => {
+    for (const key of APPROVED_TEMPLATE_KEYS) {
+      expect(DEFAULT_TEMPLATES[key].body, driftMessage(key, "DEFAULT_TEMPLATES body")).toBe(
+        APPROVED_TEMPLATES[key].namedBody,
+      );
+    }
+  });
+
+  it("round-trips back to the exact sentence Meta approved", () => {
+    // The stronger check: named form → {{n}} form → must equal approvedBody
+    // character for character, em dash included.
+    for (const key of APPROVED_TEMPLATE_KEYS) {
+      const t = APPROVED_TEMPLATES[key];
+      expect(
+        toApprovedBody(DEFAULT_TEMPLATES[key].body, t.variableOrder),
+        driftMessage(key, "DEFAULT_TEMPLATES body"),
+      ).toBe(t.approvedBody);
+    }
+  });
+
+  it("carries no leftover {token} the approved template does not have", () => {
+    for (const key of APPROVED_TEMPLATE_KEYS) {
+      const t = APPROVED_TEMPLATES[key];
+      const tokens = [...DEFAULT_TEMPLATES[key].body.matchAll(/\{([a-zA-Z]+)\}/g)].map((m) => m[1]);
+      expect(new Set(tokens), key).toEqual(new Set(t.variableOrder));
+    }
+  });
+
+  it("LOCKOUT_NOTICE keeps its own wording and is NOT in the registry", () => {
+    // It has no approved template and must never look sendable.
+    expect(APPROVED_TEMPLATE_KEYS).not.toContain("LOCKOUT_NOTICE");
+    expect(DEFAULT_TEMPLATES.LOCKOUT_NOTICE.body).toContain("{lockMinutes}");
+    expect(DEFAULT_TEMPLATES.LOCKOUT_NOTICE.body).not.toContain("{{");
+  });
+
+  it("the organizer-facing NAMES are ours, and still present", () => {
+    // Meta approved the sentence a member reads, never the admin screen label.
+    for (const key of APPROVED_TEMPLATE_KEYS) {
+      expect(DEFAULT_TEMPLATES[key].name.trim().length, key).toBeGreaterThan(0);
+    }
+    expect(DEFAULT_TEMPLATES.PAYMENT_CONFIRMED.name).toBe("Payment confirmation");
   });
 });

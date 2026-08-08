@@ -101,24 +101,26 @@ export const SETTING_DEFAULTS: SettingDefaults = {
  * delivered again on 2026-08-08. The switch is now just a switch.
  */
 export const WHATSAPP_DISABLED_REASON =
-  "WhatsApp is switched off — no login codes will send until it is turned back on.";
+  "WhatsApp is switched off — no codes or statements will send until it is turned back on.";
 
 /**
- * Why STATEMENTS cannot send, which is a different thing entirely from the
- * switch above and is NOT something the organizer can turn on.
+ * Why STATEMENTS cannot send — shown ONLY when there is no approved template
+ * to carry them, which is not something the organizer can turn on.
  *
- * Meta allows a freeform body only inside the 24-hour service window that
- * opens when a member messages the sender. This account has ONE inbound
- * message in its entire history (19 May 2026), so that window is open for
- * nobody, and `sendWhatsAppMessage` posts a raw Body with no ContentSid.
- * Login codes are unaffected: Twilio Verify sends a pre-approved template,
- * which needs no window — that is exactly why codes work today and statements
- * do not.
+ * NO LONGER THE NORMAL STATE. Meta approved five templates on 7 August 2026,
+ * so `STATEMENTS_DELIVERABLE` is true and this string is not reached. It stays
+ * because the condition it describes can return: if the registry is emptied or
+ * the templates are revoked, sending would fall back to Twilio's approval
+ * SAMPLES and deliver invented figures to real members, so the code must still
+ * be able to say why it stopped.
+ *
+ * It is therefore worded for that state and not for "today" — a reason string
+ * that outlives its cause is a lie, and this one has already outlived one.
  *
  * See docs/WHATSAPP_TEMPLATE_ONLY.md for what registering templates involves.
  */
 export const WHATSAPP_STATEMENTS_BLOCKED_REASON =
-  "Statements need Meta-approved templates. Login codes work today; statements do not.";
+  "Statements need Meta-approved templates, and none are registered. Login codes are unaffected.";
 
 export type SettingKey = keyof SettingDefaults;
 export type SettingValue<K extends SettingKey> = SettingDefaults[K];

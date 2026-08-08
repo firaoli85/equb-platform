@@ -31,6 +31,7 @@
 // make it look sendable. Do not.
 
 import type { PlaceholderName } from "./messages";
+import { isMoneyPlaceholder, mayRenderAsNoValue, NO_VALUE } from "./placeholder-kinds";
 
 /** The five keys Meta has approved. Deliberately NOT `MessageKey`. */
 export type ApprovedTemplateKey =
@@ -224,25 +225,73 @@ export function buildContentVariables(
   const variables: Record<string, string> = {};
   const missing: string[] = [];
 
+  // A MONEY PLACEHOLDER MAY NEVER BE THE DASH.
+  //
+  // THE BUG THIS CLOSES, from a message a real member received:
+  //
+  //   "Hi Firaoli, your Equb payout for week 12 is —."
+  //
+  // {payoutAmount} is fed from `extras.payoutNet`, and a caller that omitted
+  // the extras got the NO_VALUE sentinel instead of a figure. Every check
+  // above passed it: "—" is not undefined, not null, and not empty. So the
+  // send succeeded, the log recorded it as SENT, and the member was told they
+  // had won without being told how much.
+  //
+  // That failure is worse than a refusal precisely because it LOOKS FINE.
+  // Nothing alerts, nothing retries, and the only way to discover it is for
+  // someone to read the delivered message.
+  //
+  // "—" stays legitimate in ONE place: {lastPaymentWeek} for a member who has
+  // never paid is honestly a dash and reads correctly. Everywhere else it is a
+  // hole — see DASHABLE_PLACEHOLDERS for the two further templates guarding
+  // money alone had left open.
+  // Placeholders that came back as the sentinel where a fact belongs.
+  const dashed: string[] = [];
+
   template.variableOrder.forEach((name, index) => {
     const value = values[name];
     if (value === undefined || value === null || value === "") {
       missing.push(name);
       return;
     }
+    // Default-deny: only lastPaymentWeek may honestly be a dash. Guarding
+    // MONEY alone left weeksCovered and lateWeeks open, and the sentinel is a
+    // missing-fact problem rather than a money one — money was just where it
+    // was noticed. See DASHABLE_PLACEHOLDERS.
+    if (value === NO_VALUE && !mayRenderAsNoValue(name)) {
+      dashed.push(name);
+      return;
+    }
     // Position, not name: Twilio keys ContentVariables by the {{n}} slot.
     variables[String(index + 1)] = value;
   });
 
-  if (missing.length > 0) {
+  if (missing.length > 0 || dashed.length > 0) {
+    const names = [...missing, ...dashed];
+    // Money is called out separately because it is the more alarming shape of
+    // the same fault — a member told a figure exists without being told what
+    // it is — and because that is the one that actually reached someone.
+    const dashedMoney = dashed.filter(isMoneyPlaceholder);
+    const dashedOther = dashed.filter((n) => !isMoneyPlaceholder(n));
     return {
       ok: false,
-      missing,
+      missing: names,
       error:
-        `Cannot send ${key}: ${missing.length === 1 ? "variable" : "variables"} ` +
-        `${missing.join(", ")} had no value. Twilio substitutes the approval SAMPLE for a ` +
-        `missing variable, so sending would deliver invented figures to a real member. ` +
-        `Nothing was sent.`,
+        `Cannot send ${key}: ` +
+        (missing.length > 0
+          ? `${missing.length === 1 ? "variable" : "variables"} ${missing.join(", ")} had no value. `
+          : "") +
+        (dashedMoney.length > 0
+          ? `${dashedMoney.join(", ")} is a money figure and rendered as "${NO_VALUE}" — the ` +
+            `amount was never supplied, so the message would tell the member a figure exists ` +
+            `without saying what it is. `
+          : "") +
+        (dashedOther.length > 0
+          ? `${dashedOther.join(", ")} rendered as "${NO_VALUE}", which leaves a hole where a ` +
+            `fact belongs in a sentence that otherwise reads normally. `
+          : "") +
+        `Twilio substitutes the approval SAMPLE for a missing variable, so sending would ` +
+        `deliver invented figures to a real member. Nothing was sent.`,
     };
   }
   return { ok: true, variables };

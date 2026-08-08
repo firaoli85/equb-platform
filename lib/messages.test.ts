@@ -129,13 +129,17 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     expect(BEHIND_MEMBER.weeksBehind).toBe(late);
   });
 
+  // The five default bodies are now Meta's APPROVED wording, derived from
+  // lib/whatsapp-templates.ts. The approved templates deliberately carry FEWER
+  // facts than the freeform ones did — fewer variables is fewer chances of the
+  // 21656 mismatch that fabricates figures — so these assert what the approved
+  // sentence actually says, not what the old one used to.
   it("BEHIND_NOTICE states last payment, weeks behind, and the amount", () => {
     const text = renderMessage("BEHIND_NOTICE", BEHIND_MEMBER);
     expect(text).toContain("Meheret");
-    expect(text).toContain("week 5");
+    expect(text).toContain("last payment week 5");
     expect(text).toContain("6 weeks behind");
     expect(text).toContain("$1,500 outstanding");
-    expect(text).toContain("5 of 20 weeks");
   });
 
   it("LATE_NOTICE names the weeks whose windows actually closed", () => {
@@ -143,9 +147,10 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     const text = renderMessage("LATE_NOTICE", BEHIND_MEMBER);
     expect(text).toContain("6–11");
     expect(text).not.toContain("12");
-    expect(text).toContain("week 5");
-    // The amount and the named weeks now come from the SAME boundary.
+    // The amount and the named weeks come from the SAME boundary. The approved
+    // LATE_NOTICE does not carry lastPaymentWeek at all.
     expect(text).toContain("$1,500");
+    expect(text).toContain("across 6 weeks");
   });
 
   it("PAYMENT_CONFIRMED states the receipt, the weeks it covered, and progress", () => {
@@ -157,7 +162,6 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     expect(text).toContain("$750");
     expect(text).toContain("4–6");
     expect(text).toContain("6 of 20 weeks");
-    expect(text).toContain("14 weeks left");
   });
 
   it("WINNER_ANNOUNCEMENT carries the drawn week and the net payout", () => {
@@ -167,7 +171,9 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     });
     expect(text).toContain("week 8");
     expect(text).toContain("$4,900");
-    expect(text).toContain("6 of 20 weeks");
+    // The approved winner announcement states the finish WEEK, not the paid
+    // count — see the note on 2.22 in the build report.
+    expect(text).toContain("continue to week 20");
   });
 
   it("CYCLE_CLOSING_STATEMENT is factual for a completed member ($0)", () => {
@@ -180,13 +186,14 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     });
     const text = renderMessage("CYCLE_CLOSING_STATEMENT", done);
     expect(text).toContain("20 of 20 weeks");
-    expect(text).toContain("Outstanding: $0");
+    expect(text).toContain("Outstanding balance $0");
   });
 
   it("CYCLE_CLOSING_STATEMENT is factual for a member who stopped", () => {
     const text = renderMessage("CYCLE_CLOSING_STATEMENT", BEHIND_MEMBER);
     expect(text).toContain("5 of 20 weeks");
-    expect(text).toContain("Last payment week 5");
+    // The approved closing statement carries totalPaid and the balance; it does
+    // not name the last payment week.
     expect(text).toContain("$1,500");
   });
 
@@ -409,19 +416,27 @@ describe("{finishDate} — the member's own finish date is renderable", () => {
     expect(PLACEHOLDER_DOCS.map((p) => p.token)).toContain("{finishDate}");
   });
 
-  it("renders the real calendar date, not a week number", () => {
-    expect(renderMessage("WINNER_ANNOUNCEMENT", FACTS, { payoutNet: 1_960_000, drawnWeek: 12 })).toContain(
-      "Sunday, September 20, 2026",
-    );
+  it("renders the real calendar date wherever a template uses the token", () => {
+    // The token still works; what changed is which template spends a variable
+    // on it. Asserted through a custom body so the capability stays covered.
+    expect(
+      renderMessage("WINNER_ANNOUNCEMENT", FACTS, { payoutNet: 1_960_000, drawnWeek: 12 }, "You finish {finishDate}."),
+    ).toContain("Sunday, September 20, 2026");
   });
 
-  it("the default winner announcement states BOTH the week and the date", () => {
+  // 2.22 SAYS A MEMBER ALWAYS SEES THEIR OWN FINISH DATE. The Meta-approved
+  // WINNER_ANNOUNCEMENT states the finish WEEK and not the date — the date was
+  // one of two variables dropped to get the template from six to four. This is
+  // a real narrowing of 2.22 on this one message, it arrived with Meta's
+  // approval, and only re-submission can undo it. Pinned so the loss is a
+  // recorded decision rather than something noticed later by a member.
+  it("the approved winner announcement states the finish WEEK, not the date", () => {
     const text = renderMessage("WINNER_ANNOUNCEMENT", FACTS, {
       payoutNet: 1_960_000,
       drawnWeek: 12,
     });
-    expect(text).toContain("week 19");
-    expect(text).toContain("Sunday, September 20, 2026");
+    expect(text).toContain("continue to week 19");
+    expect(text).not.toContain("Sunday, September 20, 2026");
   });
 
   it("falls back to the week number when no date is supplied — never blank", () => {

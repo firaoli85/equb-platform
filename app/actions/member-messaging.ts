@@ -13,6 +13,7 @@ import { applicableTypes, isMessageKey, renderMessage, type MessageKey } from "@
 import { CAPS } from "@/lib/paging";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
+import { winnerExtrasForParticipation } from "@/lib/winner-extras";
 import { getSetting } from "@/lib/settings";
 
 // SEND ONE MESSAGE TO ONE MEMBER, FROM WHERE YOU ARE.
@@ -103,6 +104,11 @@ export async function getMemberMessaging(input: { personId: string }) {
         })
       : null;
 
+    // THE FACTS THE WINNER ANNOUNCEMENT NEEDS, derived through the SAME
+    // helper the batch uses. Both the preview below and the send re-derive
+    // from here, so what the organizer reads is what the member receives.
+    const winnerExtras = active ? await winnerExtrasForParticipation(prisma, active.id) : null;
+
     const types = applicableTypes({
       name: person.nameEnglishFirst,
       weeksBehind: loaded?.standing.weeksBehind ?? 0,
@@ -131,9 +137,7 @@ export async function getMemberMessaging(input: { personId: string }) {
           ? renderMessage(
               t.key,
               loaded.facts,
-              t.key === "WINNER_ANNOUNCEMENT"
-                ? { drawnWeek: drawn?.draw?.week.weekNumber ?? undefined }
-                : {},
+              t.key === "WINNER_ANNOUNCEMENT" ? (winnerExtras ?? {}) : {},
               // The organizer's OWN wording, not the default — a preview of
               // text he did not write is a preview of the wrong message.
               templates.get(t.key)?.body,
@@ -193,10 +197,27 @@ export async function sendToMember(input: { participationId: string; key: string
       };
     }
 
+    // THE DEFECT THAT REACHED A MEMBER.
+    //
+    // This called sendStatement with NO extras. For a winner announcement that
+    // meant {payoutAmount} rendered as the NO_VALUE dash — "your Equb payout
+    // for week 12 is —" — and {week} silently fell back to the CURRENT cycle
+    // week instead of the week actually drawn, which happened to look right.
+    //
+    // Derived here through the same helper the batch and the preview use, so
+    // the figure the organizer read before pressing send is the figure that
+    // leaves. buildContentVariables now refuses a dashed money placeholder as
+    // well, so even a future caller that forgets this cannot deliver the hole.
+    const extras =
+      input.key === "WINNER_ANNOUNCEMENT"
+        ? ((await winnerExtrasForParticipation(prisma, input.participationId)) ?? undefined)
+        : undefined;
+
     const outcome = await sendStatement({
       participationId: input.participationId,
       key: input.key,
       trigger: "MANUAL",
+      extras,
     });
 
     // A SKIP IS NOT A FAILURE AND IS NOT A SUCCESS. The organizer pressed

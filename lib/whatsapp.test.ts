@@ -56,36 +56,124 @@ afterEach(() => {
 // a window this account has open for nobody (one inbound message ever, 19 May
 // 2026). Sharing a single switch is what kept a WORKING login channel switched
 // off, so these are now tested as the separate things they are.
-describe("statements — blocked at the transport, whatever the switch says", () => {
-  for (const state of [true, false]) {
-    it(`never touches the network, with the switch ${state ? "ON" : "OFF"}`, async () => {
-      enabled = state;
-      const fetchSpy = vi.fn();
-      vi.stubGlobal("fetch", fetchSpy);
-      const { sendWhatsAppMessage } = await freshModule();
+const SEND = {
+  toE164Phone: "+12405550187",
+  contentSid: "HX87cb0a437434f7f9bba329958c74544a",
+  contentVariables: { "1": "Sara", "2": "$750", "3": "4–6", "4": "6", "5": "20" },
+  body: "Hi Sara, we received $750 …",
+};
 
-      const result = await sendWhatsAppMessage("+12405550187", "hello");
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBe(WHATSAPP_STATEMENTS_BLOCKED_REASON);
-        expect(result.permanent).toBe(true);
-      }
-    });
-  }
+describe("statements now SEND — but only as an approved template", () => {
+  it("posts ContentSid and ContentVariables, never a Body", async () => {
+    const calls: { url: string; body: string }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: { body: string }) => {
+        calls.push({ url: String(url), body: String(init.body) });
+        return twilioResponse(201, { sid: "SM123", status: "queued" });
+      }),
+    );
+    const { sendWhatsAppMessage } = await freshModule();
 
-  it("refuses without credentials — there is no config that makes it work", async () => {
-    vi.stubEnv("TWILIO_ACCOUNT_SID", "");
-    vi.stubEnv("TWILIO_AUTH_TOKEN", "");
+    const result = await sendWhatsAppMessage(SEND);
+    expect(result).toEqual({ ok: true, sid: "SM123", status: "queued" });
+
+    const sent = new URLSearchParams(calls[0].body);
+    expect(calls[0].url).toContain("api.twilio.com");
+    expect(sent.get("To")).toBe("whatsapp:+12405550187");
+    expect(sent.get("From")).toBe("whatsapp:+15559620327");
+    expect(sent.get("ContentSid")).toBe(SEND.contentSid);
+    expect(JSON.parse(sent.get("ContentVariables")!)).toEqual(SEND.contentVariables);
+    // A Body would make it freeform, which Meta refuses outside the window.
+    expect(sent.get("Body")).toBeNull();
+    // One sender, 27 members — a service container adds a layer with nothing
+    // behind it, and would silently override From.
+    expect(sent.get("MessagingServiceSid")).toBeNull();
+  });
+
+  it("NEVER sends without a ContentSid — that would be a freeform send", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { sendWhatsAppMessage } = await freshModule();
+
+    const result = await sendWhatsAppMessage({ ...SEND, contentSid: "  " });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.permanent).toBe(true);
+  });
+
+  it("the switch still stops every statement dead", async () => {
+    enabled = false;
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { sendWhatsAppMessage } = await freshModule();
+
+    const result = await sendWhatsAppMessage(SEND);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe(WHATSAPP_DISABLED_REASON);
+  });
+
+  it("refuses cleanly when the sender number is not configured", async () => {
     vi.stubEnv("TWILIO_WHATSAPP_FROM", "");
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const { sendWhatsAppMessage } = await freshModule();
 
-    const result = await sendWhatsAppMessage("+12405550187", "hello");
+    const result = await sendWhatsAppMessage(SEND);
     expect(fetchSpy).not.toHaveBeenCalled();
-    // NOT a "not configured" message — configuring it would change nothing.
-    if (!result.ok) expect(result.error).toBe(WHATSAPP_STATEMENTS_BLOCKED_REASON);
+    if (!result.ok) expect(result.error).toContain("TWILIO_WHATSAPP_FROM");
+  });
+});
+
+describe("classifying a statement failure", () => {
+  async function sendWith(status: number, body: unknown) {
+    vi.stubGlobal("fetch", vi.fn(async () => twilioResponse(status, body)));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { sendWhatsAppMessage } = await freshModule();
+    return sendWhatsAppMessage(SEND);
+  }
+
+  it("21656 is PERMANENT — our variables, so a retry repeats the bug", async () => {
+    const r = await sendWith(400, { code: 21656, message: "ContentVariables invalid" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe(21656);
+      expect(r.permanent).toBe(true);
+    }
+  });
+
+  it("63016 is PERMANENT — it means we sent with no ContentSid, a code defect", async () => {
+    const r = await sendWith(400, { code: 63016, message: "outside window" });
+    if (!r.ok) {
+      expect(r.code).toBe(63016);
+      expect(r.permanent).toBe(true);
+    }
+  });
+
+  it("63112 is PERMANENT — the sender is blocked", async () => {
+    const r = await sendWith(400, { code: 63112, message: "disabled" });
+    if (!r.ok) expect(r.permanent).toBe(true);
+  });
+
+  it("a 429 or 5xx is NOT permanent — the same message may send later", async () => {
+    for (const status of [429, 500, 503]) {
+      const r = await sendWith(status, { code: 20429, message: "slow down" });
+      if (!r.ok) expect(r.permanent, String(status)).not.toBe(true);
+    }
+  });
+
+  it("a network throw is NOT permanent", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNRESET"); }));
+    const { sendWhatsAppMessage } = await freshModule();
+    const r = await sendWhatsAppMessage(SEND);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.permanent).not.toBe(true);
+  });
+
+  it("an unrecognised code is NOT permanent", async () => {
+    const r = await sendWith(400, { code: 12345, message: "something new" });
+    if (!r.ok) expect(r.permanent).not.toBe(true);
   });
 });
 
@@ -179,11 +267,15 @@ describe("Twilio 63112 — Meta disabled the Business Account", () => {
   });
 
   it("OTHER Twilio errors stay non-permanent and keep their own message", async () => {
-    // 63016 is the 24-hour window rule — a different message could succeed.
+    // 63016 USED TO BE THE EXAMPLE HERE, as "the 24-hour window rule — a
+    // different message could succeed". That reading is now wrong. Every
+    // statement goes out as an approved template and a template needs no
+    // window, so 63016 can only mean the send carried no ContentSid — a code
+    // defect, and permanent. A genuinely transient code is used instead.
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        twilioResponse(400, { code: 63016, message: "Outside messaging window" }),
+        twilioResponse(429, { code: 20429, message: "Too Many Requests" }),
       ),
     );
     const { sendWhatsAppVerification } = await freshModule();
@@ -191,9 +283,9 @@ describe("Twilio 63112 — Meta disabled the Business Account", () => {
     const result = await sendWhatsAppVerification("+12405550187");
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe(63016);
+      expect(result.code).toBe(20429);
       expect(result.permanent).toBe(false);
-      expect(result.error).toContain("Outside messaging window");
+      expect(result.error).toContain("Too Many Requests");
     }
   });
 

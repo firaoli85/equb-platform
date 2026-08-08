@@ -8,6 +8,9 @@
 // not UI behavior.
 
 import { formatDateLongUTC, formatMoney } from "./format";
+// The sentinel and the money classification live in a leaf module so the
+// registry can import them as values without closing an import cycle.
+import { NO_VALUE } from "./placeholder-kinds";
 // The registry imports only a TYPE from this file (PlaceholderName), which is
 // erased at build, so this is not a runtime cycle.
 import {
@@ -43,6 +46,8 @@ export const AUTOMATIC_MESSAGE_KEYS = ["PAYMENT_CONFIRMED", "LOCKOUT_NOTICE"] as
 export const CHASING_MESSAGE_KEYS = ["BEHIND_NOTICE", "LATE_NOTICE"] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
+
+export { NO_VALUE, MONEY_PLACEHOLDERS, isMoneyPlaceholder } from "./placeholder-kinds";
 
 export function isMessageKey(value: string): value is MessageKey {
   return (MESSAGE_KEYS as readonly string[]).includes(value);
@@ -116,7 +121,7 @@ export function hasChaseableWeeks(
 /** "8" · "8–10" · "3, 8–10" — compact human form for a list of week numbers. */
 export function formatWeekList(weeks: readonly number[]): string {
   const sorted = [...new Set(weeks)].sort((a, b) => a - b);
-  if (sorted.length === 0) return "—";
+  if (sorted.length === 0) return NO_VALUE;
   const runs: string[] = [];
   let start = sorted[0];
   let prev = sorted[0];
@@ -167,17 +172,17 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
     weeksLeft: String(weeksLeft),
     weeksBehind: String(standing.weeksBehind),
     amountOwed: formatMoney(standing.amountOutstanding),
-    lastPaymentWeek: standing.lastPaymentWeek === null ? "—" : String(standing.lastPaymentWeek),
+    lastPaymentWeek: standing.lastPaymentWeek === null ? NO_VALUE : String(standing.lastPaymentWeek),
     finishWeek: String(standing.finishWeek),
     finishDate: standing.finishDate ? formatDateLongUTC(standing.finishDate) : String(standing.finishWeek),
     weeklyAmount: formatMoney(standing.weeklyAmount),
     totalPaid: formatMoney(standing.totalPaid),
     amountReceived:
-      extras.amountReceived === undefined ? "—" : formatMoney(extras.amountReceived),
-    weeksCovered: extras.weeksCovered?.length ? formatWeekList(extras.weeksCovered) : "—",
+      extras.amountReceived === undefined ? NO_VALUE : formatMoney(extras.amountReceived),
+    weeksCovered: extras.weeksCovered?.length ? formatWeekList(extras.weeksCovered) : NO_VALUE,
     lateWeeks: formatWeekList(lateWeeks),
-    payoutAmount: extras.payoutNet === undefined ? "—" : formatMoney(extras.payoutNet),
-    lockMinutes: extras.lockMinutes === undefined ? "—" : String(extras.lockMinutes),
+    payoutAmount: extras.payoutNet === undefined ? NO_VALUE : formatMoney(extras.payoutNet),
+    lockMinutes: extras.lockMinutes === undefined ? NO_VALUE : String(extras.lockMinutes),
   };
 }
 
