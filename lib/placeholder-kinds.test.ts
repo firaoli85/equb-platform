@@ -213,6 +213,9 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
 
     const r = buildContentVariables("PAYMENT_CONFIRMED", values);
     expect(r.ok, "a confirmation must say which weeks the money landed on").toBe(false);
+    // Guarded: a block entered only on failure passes vacuously if the
+    // call unexpectedly SUCCEEDS, which is the failure worth catching.
+    expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.missing).toEqual(["weeksCovered"]);
       expect(r.error).toContain("hole where a fact belongs");

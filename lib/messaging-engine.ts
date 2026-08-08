@@ -34,6 +34,7 @@ import { sendWhatsAppMessage } from "./whatsapp";
 import {
   APPROVED_TEMPLATES,
   buildContentVariables,
+  checkRequiredExtras,
   isApprovedTemplateKey,
 } from "./whatsapp-templates";
 
@@ -219,6 +220,52 @@ async function deliver(input: {
   // delivered, and this is the choice about whether to.
   if (!(await getSetting("whatsappEnabled"))) {
     return { status: "SKIPPED", reason: WHATSAPP_DISABLED_REASON };
+  }
+
+  // ————— THE EXTRAS BOUNDARY — checked BEFORE anything renders —————
+  //
+  // This is the last moment the evidence still exists.
+  //
+  // `placeholderValues` resolves {week} as
+  // `drawnWeek ?? lastCovered ?? standing.currentCycleWeek`. A caller that
+  // omits `drawnWeek` therefore does not produce a blank for a later guard to
+  // catch — it produces a PLAUSIBLE WRONG NUMBER. That is the invisible half
+  // of the message delivered on 8 Aug 2026: "your Equb payout for week 12"
+  // named the member's current week, not the week drawn, and read as correct
+  // only because the two coincided. One line later there is nothing left to
+  // detect, because "12" is a perfectly valid string.
+  //
+  // The money-sentinel refusal in buildContentVariables STAYS. Two nets at
+  // two layers is not duplication here: this one catches a caller that forgot
+  // to supply a fact, and that one catches a fact that arrived empty. Neither
+  // can see the other's failure.
+  if (isApprovedTemplateKey(input.key)) {
+    const required = checkRequiredExtras(input.key, input.extras);
+    if (!required.ok) {
+      console.error(`[statement] ${required.error}`);
+      // Logged like any other FAILED — a failure the organizer is shown but
+      // cannot find in the log is how a real defect gets dismissed as a glitch.
+      //
+      // The body is deliberately EMPTY rather than rendered. A rendered body
+      // here would show "week 12" beside the failure and read as though the
+      // message had been fine, which is the exact confusion this whole guard
+      // exists to prevent.
+      await prisma.messageLog.create({
+        data: {
+          personId: person.id,
+          templateId: null,
+          templateKey: input.key,
+          body: "",
+          channel: "WHATSAPP",
+          toPhone: toE164(person.phone!),
+          trigger: input.trigger === "AUTOMATIC" ? "AUTOMATIC" : "MANUAL",
+          status: "FAILED",
+          providerSid: null,
+          error: required.error,
+        },
+      });
+      return { status: "FAILED", body: "", error: required.error };
+    }
   }
 
   const templates = await loadTemplates();

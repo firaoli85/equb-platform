@@ -151,6 +151,9 @@ describe("ContentVariables are built in the approved ORDER", () => {
 
   it("BEHIND_NOTICE — name, week, last payment, weeks behind, outstanding", () => {
     const r = buildContentVariables("BEHIND_NOTICE", VALUES);
+    // Without this the block is skipped on a refusal and the test
+    // passes with ZERO assertions — on the template that shipped the bug.
+    expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
@@ -164,6 +167,9 @@ describe("ContentVariables are built in the approved ORDER", () => {
 
   it("LATE_NOTICE — name, late weeks, outstanding, weeks behind (only four)", () => {
     const r = buildContentVariables("LATE_NOTICE", VALUES);
+    // Without this the block is skipped on a refusal and the test
+    // passes with ZERO assertions — on the template that shipped the bug.
+    expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
@@ -177,6 +183,9 @@ describe("ContentVariables are built in the approved ORDER", () => {
 
   it("WINNER_ANNOUNCEMENT — name, drawn week, payout, finish week", () => {
     const r = buildContentVariables("WINNER_ANNOUNCEMENT", VALUES);
+    // Without this the block is skipped on a refusal and the test
+    // passes with ZERO assertions — on the template that shipped the bug.
+    expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
@@ -189,6 +198,9 @@ describe("ContentVariables are built in the approved ORDER", () => {
 
   it("CYCLE_CLOSING_STATEMENT — name, paid, total, total paid, outstanding", () => {
     const r = buildContentVariables("CYCLE_CLOSING_STATEMENT", VALUES);
+    // Without this the block is skipped on a refusal and the test
+    // passes with ZERO assertions — on the template that shipped the bug.
+    expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",

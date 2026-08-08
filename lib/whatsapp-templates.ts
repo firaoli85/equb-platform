@@ -30,7 +30,7 @@
 // Adding LOCKOUT_NOTICE to this record without an approved ContentSid would
 // make it look sendable. Do not.
 
-import type { PlaceholderName } from "./messages";
+import type { MessageExtras, PlaceholderName } from "./messages";
 import { isMoneyPlaceholder, mayRenderAsNoValue, NO_VALUE } from "./placeholder-kinds";
 
 /** The five keys Meta has approved. Deliberately NOT `MessageKey`. */
@@ -65,6 +65,23 @@ export type ApprovedTemplate = {
    * receives a fabricated name and invented figures presented as fact.
    */
   variableOrder: readonly PlaceholderName[];
+  /**
+   * The `MessageExtras` keys a caller MUST supply for this template.
+   *
+   * NAMED BY THEIR EXTRAS KEY, not their placeholder name, because that is the
+   * boundary where the fact still exists. By the time placeholderValues has
+   * run, a missing `drawnWeek` has already become
+   * `standing.currentCycleWeek` and is indistinguishable from a real
+   * week — the evidence is destroyed before any placeholder-level guard can
+   * see it. That is the invisible half of the message delivered on 8 Aug 2026:
+   * "your Equb payout for week 12" named the CURRENT week, not the drawn one,
+   * and only looked right because they happened to coincide.
+   *
+   * Typed against `keyof MessageExtras` for the same reason variableOrder
+   * is typed against PlaceholderName: a mistyped key must be a compile error,
+   * not a guard that silently never fires.
+   */
+  requiredExtras: readonly (keyof MessageExtras)[];
   /**
    * The same sentence with {name}-style tokens — what the database stores and
    * the organizer reads.
@@ -134,6 +151,7 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
     approvedBody:
       "Hi {{1}}, we received {{2}} for your Equb — recorded on week(s) {{3}}. You have paid {{4}} of {{5}} weeks. Thank you.",
     variableOrder: ["name", "amountReceived", "weeksCovered", "weeksPaid", "weeksTotal"],
+    requiredExtras: ["amountReceived", "weeksCovered"],
   }),
 
   BEHIND_NOTICE: approved({
@@ -142,6 +160,7 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
     approvedBody:
       "Hi {{1}}, your Equb record as of week {{2}}: last payment week {{3}}, and {{4}} weeks behind, {{5}} outstanding. Please contact Firaoli with any questions.",
     variableOrder: ["name", "week", "lastPaymentWeek", "weeksBehind", "amountOwed"],
+    requiredExtras: [],
   }),
 
   LATE_NOTICE: approved({
@@ -150,6 +169,7 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
     approvedBody:
       "Hi {{1}}, your Equb week(s) {{2}} closed without a payment recorded. Your balance is {{3}} outstanding across {{4}} weeks. Please contact Firaoli if this does not match your records.",
     variableOrder: ["name", "lateWeeks", "amountOwed", "weeksBehind"],
+    requiredExtras: [],
   }),
 
   WINNER_ANNOUNCEMENT: approved({
@@ -158,6 +178,7 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
     approvedBody:
       "Hi {{1}}, your Equb payout for week {{2}} is {{3}}. Your contributions continue to week {{4}}. Firaoli will arrange the handover.",
     variableOrder: ["name", "week", "payoutAmount", "finishWeek"],
+    requiredExtras: ["drawnWeek", "payoutNet"],
   }),
 
   CYCLE_CLOSING_STATEMENT: approved({
@@ -166,7 +187,65 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
     approvedBody:
       "Hi {{1}}, your Equb closing statement: you paid {{2}} of {{3}} weeks, {{4}} in total. Outstanding balance {{5}}. Please contact Firaoli to confirm.",
     variableOrder: ["name", "weeksPaid", "weeksTotal", "totalPaid", "amountOwed"],
+    requiredExtras: [],
   }),
+};
+
+export type RequiredExtrasResult =
+  | { ok: true }
+  | { ok: false; missing: (keyof MessageExtras)[]; error: string };
+
+/**
+ * Does this caller carry the facts this template cannot derive?
+ *
+ * CHECKED AT THE EXTRAS BOUNDARY, BEFORE RENDERING. That placement is the
+ * whole point. `placeholderValues` resolves {week} as
+ * `drawnWeek ?? lastCovered ?? standing.currentCycleWeek` — so a caller that
+ * omits `drawnWeek` does not produce a blank to be caught later, it produces a
+ * PLAUSIBLE WRONG NUMBER. Once that has happened there is nothing left to
+ * detect: "12" is a valid string and every downstream guard passes it.
+ *
+ * `null` counts as absent as well as `undefined`. A caller that looked the
+ * fact up, found nothing, and passed the miss along is in exactly the position
+ * this refuses — it has no value to state and must not state one anyway.
+ */
+export function checkRequiredExtras(
+  key: ApprovedTemplateKey,
+  extras: MessageExtras | undefined,
+): RequiredExtrasResult {
+  const required = APPROVED_TEMPLATES[key].requiredExtras;
+  if (required.length === 0) return { ok: true };
+
+  const supplied = extras ?? {};
+  const missing = required.filter((name) => {
+    const value = supplied[name];
+    return value === undefined || value === null;
+  });
+  if (missing.length === 0) return { ok: true };
+
+  return {
+    ok: false,
+    missing,
+    error:
+      `Cannot send ${key}: the caller did not supply ` +
+      `${missing.map((m) => `extras.${m}`).join(" or ")}. ` +
+      `${key} states ${FACT_DESCRIPTIONS[key]}, and ${missing.length === 1 ? "that fact is" : "those facts are"} ` +
+      `not derivable from the member's standing — ${missing.length === 1 ? "it" : "they"} must come from the draw. ` +
+      `WITHOUT ${missing.length === 1 ? "it" : "them"} the message does not fail: ` +
+      `{week} silently falls back to the member's CURRENT cycle week and {payoutAmount} renders as "${NO_VALUE}", ` +
+      `so a real member is told a confident, wrong figure. ` +
+      `Fix the CALLER: derive the extras with winnerExtrasForParticipation (lib/winner-extras.ts), ` +
+      `which is what app/actions/messages.ts and app/actions/member-messaging.ts both use. Nothing was sent.`,
+  };
+}
+
+/** What each template asserts, for a refusal that explains itself. */
+const FACT_DESCRIPTIONS: Record<ApprovedTemplateKey, string> = {
+  PAYMENT_CONFIRMED: "which weeks a receipt landed on and how much arrived",
+  WINNER_ANNOUNCEMENT: "the week a number was drawn and what that payout is worth",
+  BEHIND_NOTICE: "a member's arrears",
+  LATE_NOTICE: "which weeks closed unpaid",
+  CYCLE_CLOSING_STATEMENT: "a member's final position",
 };
 
 /** The five keys, for scripts and tests that iterate them. */

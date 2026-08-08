@@ -122,6 +122,9 @@ describe("statements now SEND — but only as an approved template", () => {
 
     const result = await sendWhatsAppMessage(SEND);
     expect(fetchSpy).not.toHaveBeenCalled();
+    // Guarded: a block entered only on failure passes vacuously if the
+    // call unexpectedly SUCCEEDS, which is the failure worth catching.
+    expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("TWILIO_WHATSAPP_FROM");
   });
 });
@@ -145,6 +148,9 @@ describe("classifying a statement failure", () => {
 
   it("63016 is PERMANENT — it means we sent with no ContentSid, a code defect", async () => {
     const r = await sendWith(400, { code: 63016, message: "outside window" });
+    // Guarded: a block entered only on failure passes vacuously if the
+    // call unexpectedly SUCCEEDS, which is the failure worth catching.
+    expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.code).toBe(63016);
       expect(r.permanent).toBe(true);
@@ -153,12 +159,18 @@ describe("classifying a statement failure", () => {
 
   it("63112 is PERMANENT — the sender is blocked", async () => {
     const r = await sendWith(400, { code: 63112, message: "disabled" });
+    // Guarded: a block entered only on failure passes vacuously if the
+    // call unexpectedly SUCCEEDS, which is the failure worth catching.
+    expect(r.ok).toBe(false);
     if (!r.ok) expect(r.permanent).toBe(true);
   });
 
   it("a 429 or 5xx is NOT permanent — the same message may send later", async () => {
     for (const status of [429, 500, 503]) {
       const r = await sendWith(status, { code: 20429, message: "slow down" });
+      // Guarded: a block entered only on failure passes vacuously if the
+      // call unexpectedly SUCCEEDS, which is the failure worth catching.
+      expect(r.ok).toBe(false);
       if (!r.ok) expect(r.permanent, String(status)).not.toBe(true);
     }
   });
@@ -173,6 +185,9 @@ describe("classifying a statement failure", () => {
 
   it("an unrecognised code is NOT permanent", async () => {
     const r = await sendWith(400, { code: 12345, message: "something new" });
+    // Guarded: a block entered only on failure passes vacuously if the
+    // call unexpectedly SUCCEEDS, which is the failure worth catching.
+    expect(r.ok).toBe(false);
     if (!r.ok) expect(r.permanent).not.toBe(true);
   });
 });
@@ -200,6 +215,9 @@ describe("whatsappEnabled — the switch, which governs LOGIN CODES", () => {
 
     const result = await sendWhatsAppVerification("+12405550187");
     expect(fetchSpy).not.toHaveBeenCalled();
+    // Guarded: a block entered only on failure passes vacuously if the
+    // call unexpectedly SUCCEEDS, which is the failure worth catching.
+    expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe(WHATSAPP_DISABLED_REASON);
   });
 
