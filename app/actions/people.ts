@@ -1,5 +1,6 @@
 "use server";
 
+import { CAPS } from "@/lib/paging";
 import { duplicatePhoneRefusal } from "@/lib/person-record";
 import { revalidatePath } from "next/cache";
 import { totalContributed } from "@/lib/contribution";
@@ -23,7 +24,14 @@ export async function listPeople(searchTerm?: string) {
       return { ok: false as const, error: PRESENTATION_HIDDEN };
     }
     const q = searchTerm?.trim();
+    // A CEILING, NOT PAGING. The directory grows one row per person the
+    // group has ever had — slow growth, but unbounded, and 2.5 keeps people
+    // for good. Search narrows it, so paging would add machinery for a case
+    // the search box already handles; the cap only exists so one query can
+    // never load an arbitrary number of rows. `truncationNotice` is what
+    // stops it lying when it is actually reached.
     const people = await prisma.person.findMany({
+      take: CAPS.people,
       where: q
         ? {
             OR: [

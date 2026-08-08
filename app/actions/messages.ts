@@ -1,5 +1,6 @@
 "use server";
 
+import { PAGE_SIZES, pageInfo } from "@/lib/paging";
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
@@ -92,7 +93,7 @@ async function winnerExtrasByParticipation(cycleId: string) {
 
 // ————————————————— Overview (templates + members + log) —————————————————
 
-export async function getMessagingOverview() {
+export async function getMessagingOverview(input?: { logPage?: number }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -110,9 +111,19 @@ export async function getMessagingOverview() {
           orderBy: { person: { nameEnglishFirst: "asc" } },
         })
       : [];
+    // PAGED, NOT SILENTLY CUT.
+    //
+    // This took 100 with nothing on screen saying so. An organizer looking for
+    // a notice he sent last cycle scrolled to the bottom, did not find it, and
+    // would reasonably conclude it was never sent — from a log whose whole
+    // purpose is to answer that question. MessageLog is append-only and grows
+    // forever, so the answer is paging, not a bigger number.
+    const logTotal = await prisma.messageLog.count();
+    const logPage = pageInfo(logTotal, input?.logPage ?? 1, PAGE_SIZES.messageLog);
     const log = await prisma.messageLog.findMany({
       orderBy: { createdAt: "desc" },
-      take: 100,
+      skip: logPage.skip,
+      take: logPage.take,
       include: {
         person: { select: { nameAmharic: true, nameEnglishFirst: true, nameEnglishLast: true } },
       },
@@ -160,6 +171,7 @@ export async function getMessagingOverview() {
           error: entry.error,
           createdAt: entry.createdAt,
         })),
+        logPage,
       },
     };
   } catch (e) {

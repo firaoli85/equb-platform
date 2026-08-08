@@ -13,6 +13,7 @@ import { MAX_MONEY_CENTS } from "@/lib/money";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma, serializableTransaction } from "@/lib/prisma";
 import { typedConfirmationRefusal } from "@/lib/typed-confirmation";
+import { PAGE_SIZES, pageInfo } from "@/lib/paging";
 import { getSetting } from "@/lib/settings";
 
 /**
@@ -187,19 +188,74 @@ export async function forgiveBalance(input: {
  * in one place, beside "who is waiting" (money owed BY him). Balances live on
  * the PERSON, so this survives every cycle deletion (2.18).
  */
-export async function listCarriedBalances() {
+export async function listCarriedBalances(input?: { page?: number }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
     if (await getSetting("presentationMode")) {
       return { ok: false as const, error: PRESENTATION_HIDDEN };
     }
-    const people = await prisma.person.findMany({
-      where: { ledgerEntries: { some: {} } },
-      include: { ledgerEntries: { orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }] } },
-    });
 
-    const rows = people
+    // THIS QUERY USED TO LOAD EVERY PERSON WITH EVERY LEDGER ENTRY THEY HAD.
+    //
+    // Fine at 27 members. LedgerEntry grows forever — every debt a close
+    // writes, every payment against it, every write-off — and none of it is
+    // ever deleted (2.18). By cycle three this was the whole ledger in memory
+    // to render a screen that shows one line per person, and most of the rows
+    // it built were thrown away by the balance > 0 filter afterwards.
+    //
+    // Now: TWO AGGREGATES decide who has a balance, each returning one row per
+    // person rather than one per entry, and the entries themselves are loaded
+    // only for the page actually on screen.
+    const [debts, credits] = await Promise.all([
+      prisma.ledgerEntry.groupBy({
+        by: ["personId"],
+        where: { type: "DEBT" },
+        _sum: { amount: true },
+      }),
+      // PAYMENT and FORGIVEN both reduce the balance — `ledgerBalance` treats
+      // every non-DEBT type as a credit, and this must not disagree with it.
+      prisma.ledgerEntry.groupBy({
+        by: ["personId"],
+        where: { type: { not: "DEBT" } },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const creditBy = new Map(credits.map((c) => [c.personId, c._sum.amount ?? 0]));
+    const balances = debts
+      .map((d) => ({
+        personId: d.personId,
+        // Floored at zero, exactly as ledgerBalance does: a person cannot owe
+        // a negative amount, and an overpayment is not a credit note.
+        balance: Math.max(0, (d._sum.amount ?? 0) - (creditBy.get(d.personId) ?? 0)),
+      }))
+      .filter((b) => b.balance > 0);
+
+    const total = balances.reduce((s, b) => s + b.balance, 0);
+
+    // Sorted by the figure the screen is about, so paging is stable and the
+    // largest debt is always on page one.
+    balances.sort((a, b) => b.balance - a.balance || a.personId.localeCompare(b.personId));
+
+    const info = pageInfo(balances.length, input?.page ?? 1, PAGE_SIZES.balances);
+    const pageIds = balances.slice(info.skip, info.skip + info.take).map((b) => b.personId);
+
+    // Only this page's people, and only their entries.
+    const people =
+      pageIds.length > 0
+        ? await prisma.person.findMany({
+            where: { id: { in: pageIds } },
+            include: {
+              ledgerEntries: { orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }] },
+            },
+          })
+        : [];
+
+    const byId = new Map(people.map((p) => [p.id, p]));
+    const rows = pageIds
+      .map((id) => byId.get(id))
+      .filter((p): p is NonNullable<typeof p> => p !== undefined)
       .map((person) => {
         const story = ledgerStory(person.ledgerEntries);
         return {
@@ -214,17 +270,21 @@ export async function listCarriedBalances() {
           origins: person.ledgerEntries
             .filter((e) => e.type === "DEBT")
             .map((e) => e.description),
+          // The entries are ordered by occurredAt ascending directly above,
+          // so [0] genuinely is the oldest.
           oldest: person.ledgerEntries[0]?.occurredAt.toISOString() ?? null,
         };
-      })
-      .filter((r) => r.balance > 0)
-      .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
+      });
 
     return {
       ok: true as const,
       data: {
         rows,
-        total: rows.reduce((s, r) => s + r.balance, 0),
+        // The TOTAL is every balance, not this page's — the organizer is
+        // asking what the group owes him, and a per-page subtotal would be a
+        // different and much less useful number.
+        total,
+        page: info,
       },
     };
   } catch (e) {

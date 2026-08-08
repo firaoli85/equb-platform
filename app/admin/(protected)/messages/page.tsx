@@ -1,6 +1,8 @@
 import { getMessagingOverview } from "@/app/actions/messages";
 import { Card, CardHeader, Pill, Table, Td, Th, trHoverCls } from "@/components/ui/primitives";
+import { Pager } from "@/components/ui/pager";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
+import { parsePage } from "@/lib/paging";
 import { ChannelStatus } from "./channel-status";
 import { ComposeSend } from "./compose-send";
 import { TemplatesEditor } from "./templates-editor";
@@ -17,15 +19,16 @@ type Section = (typeof SECTIONS)[number];
 export default async function MessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ section?: string | string[] }>;
+  searchParams: Promise<{ section?: string | string[]; page?: string | string[] }>;
 }) {
-  const raw = (await searchParams).section;
+  const query = await searchParams;
+  const raw = query.section;
   const value = Array.isArray(raw) ? raw[0] : raw;
   const section: Section = (SECTIONS as readonly string[]).includes(value ?? "")
     ? (value as Section)
     : "send";
 
-  const result = await getMessagingOverview();
+  const result = await getMessagingOverview({ logPage: parsePage(query.page) });
 
   if (!result.ok) {
     return (
@@ -45,6 +48,7 @@ export default async function MessagesPage({
     templates,
     members,
     log,
+    logPage,
   } = result.data;
 
   return (
@@ -80,7 +84,7 @@ export default async function MessagesPage({
         sections={[
           { key: "send", label: "Send" },
           { key: "wording", label: "Wording", count: templates.length },
-          { key: "log", label: "Log", count: log.length },
+          { key: "log", label: "Log", count: logPage.total },
         ]}
         hrefFor={(key) => `/admin/messages?section=${key}`}
         className="animate-fade-in-up-1"
@@ -179,6 +183,12 @@ export default async function MessagesPage({
               </div>
             )}
           </Card>
+          <Pager
+            info={logPage}
+            noun={{ one: "message", many: "messages" }}
+            label="Message log pages"
+            hrefFor={(n) => `/admin/messages?section=log&page=${n}`}
+          />
         </div>
       )}
     </main>

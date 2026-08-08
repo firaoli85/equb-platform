@@ -9,7 +9,9 @@ import {
   Pill,
 } from "@/components/ui/primitives";
 import { StatCard } from "@/components/ui/stat-card";
+import { Pager } from "@/components/ui/pager";
 import { formatDateUTC, formatMoney } from "@/lib/format";
+import { parsePage } from "@/lib/paging";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +19,12 @@ export const dynamic = "force-dynamic";
 // CARRIED BALANCES (2.18) — money owed TO the organizer, in one place, the
 // mirror of "Who is waiting" (money owed BY him). Balances live on the PERSON,
 // so nothing here depends on a cycle still existing.
-export default async function BalancesPage() {
-  const result = await listCarriedBalances();
+export default async function BalancesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string | string[] }>;
+}) {
+  const result = await listCarriedBalances({ page: parsePage((await searchParams).page) });
   if (!result.ok) {
     if (result.error === PRESENTATION_HIDDEN) return <PresentationHidden what="Carried balances" />;
     return (
@@ -27,7 +33,7 @@ export default async function BalancesPage() {
       </main>
     );
   }
-  const { rows, total } = result.data;
+  const { rows, total, page } = result.data;
 
   return (
     <main className="space-y-6">
@@ -131,6 +137,16 @@ export default async function BalancesPage() {
           </ul>
         </Card>
       )}
+      {/* Always rendered, even on one page: a list that shows part of
+          itself while looking whole is how someone concludes a debt was
+          settled when it was only on page two. */}
+      <Pager
+        info={page}
+        noun={{ one: "person carries a balance", many: "people carry a balance" }}
+        label="Balance pages"
+        hrefFor={(n) => `/admin/balances?page=${n}`}
+      />
+
     </main>
   );
 }

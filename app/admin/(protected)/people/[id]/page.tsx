@@ -5,11 +5,14 @@ import { getMemberStanding } from "@/app/actions/payments";
 import { listMemberSignIns } from "@/app/actions/sessions";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { PayoutEquation } from "@/components/admin/payout-equation";
+import { TruncationNotice } from "@/components/ui/pager";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { calculateFinishWeek } from "@/lib/money";
+import { CAPS, PAGE_SIZES, pageInfo, parsePage, truncationNotice } from "@/lib/paging";
 import type { PinState } from "@/lib/person-record";
 import { defaultPinForPhone } from "@/lib/pin";
 import { prisma } from "@/lib/prisma";
@@ -49,7 +52,11 @@ export default async function PersonPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string | string[]; section?: string | string[] }>;
+  searchParams: Promise<{
+    tab?: string | string[];
+    section?: string | string[];
+    receiptsPage?: string | string[];
+  }>;
 }) {
   // A member's identity and money (2.4).
   if (await getSetting("presentationMode")) return <PresentationHidden what="Member" />;
@@ -92,7 +99,14 @@ export default async function PersonPage({
               },
             },
           },
-          paymentEvents: { orderBy: [{ receivedAt: "asc" }, { createdAt: "asc" }] },
+          // RECEIPTS ARE NOT LOADED HERE.
+          //
+          // They were — for EVERY participation, meaning every cycle this
+          // person has ever been in, with no limit. PaymentEvent grows with
+          // every payment and is never deleted, so a member in their fourth
+          // cycle loaded four cycles of receipts to render a page that reads
+          // them for exactly one. They are fetched below for the ACTIVE
+          // participation only, and only on the two tabs that use them.
           payments: { include: { week: true }, orderBy: { week: { weekNumber: "asc" } } },
         },
         orderBy: { createdAt: "asc" },
@@ -108,12 +122,40 @@ export default async function PersonPage({
     ? await Promise.all([getMemberStanding(active.id), getCatchUpWeeks(active.id)])
     : [null, null];
 
+  // RECEIPTS: ONE PAGE, ON THE ONE TAB THAT SHOWS THEM.
+  //
+  // This loaded every receipt the member has ever produced, on BOTH the
+  // Receipts and Settings tabs. PaymentEvent grows with every payment and is
+  // never deleted, so the list has no ceiling — and Settings renders the
+  // receipts section with `receipts: false`, which is a CSS `hidden`, not an
+  // unmount. Every row therefore crossed the wire to be displayed to nobody.
+  //
+  // The old comment justified the whole set by the removal confirmation's
+  // count and total. That was stale: `RemoveFromCycle` takes only ids and
+  // fetches its own figures through `participationRemovalPreview`, which
+  // counts and sums in SQL. Nothing on Settings reads these rows.
+  const receiptsPage = parsePage(query.receiptsPage);
+  const receiptTotal =
+    active && tab === "receipts"
+      ? await prisma.paymentEvent.count({ where: { participationId: active.id } })
+      : 0;
+  const receiptInfo = pageInfo(receiptTotal, receiptsPage, PAGE_SIZES.receipts);
+  const paymentEvents =
+    active && tab === "receipts"
+      ? await prisma.paymentEvent.findMany({
+          where: { participationId: active.id },
+          orderBy: [{ receivedAt: "asc" }, { createdAt: "asc" }],
+          skip: receiptInfo.skip,
+          take: receiptInfo.take,
+        })
+      : [];
+
   // Ruling 6. Fetched only for the tab that shows it — the sign-in history is
   // never needed to render Payments or Payout.
   const signIns =
     tab === "settings"
       ? await listMemberSignIns({ personId: person.id })
-      : ({ ok: true as const, data: [] });
+      : ({ ok: true as const, data: { total: 0, rows: [] } });
 
   // The one finish preview this page shows (2.22) — same pure module as every
   // editable surface, so the card, the editor and the wizard all agree.
@@ -158,6 +200,33 @@ export default async function PersonPage({
           prisma.signInSession.count({ where: { personId: person.id } }),
         ])
       : [0, 0];
+
+  // THE PAYOUT TOTALS, across every number they hold. A member with two
+  // numbers receives twice, so the figure that answers "what do they get" is
+  // the sum — the per-number table below still breaks it down.
+  //
+  // Recorded payouts win over projections: once a number is drawn the stored
+  // gross/fee/net is the fact, and recomputing it would let a later fee
+  // change silently rewrite a payout that already happened (2.14).
+  const payoutTotals = active
+    ? active.luckyNumbers.reduce(
+        (acc, n) => {
+          const recorded = n.payouts[0] ?? null;
+          const projected = calculatePayout({
+            luckyNumber: { id: n.id, amount: n.amount },
+            participation: { weeksCommitted: active.weeksCommitted },
+            cycle: { feePercent: active.cycle.feePercent },
+          });
+          return {
+            gross: acc.gross + (recorded?.grossAmount ?? projected.gross),
+            fee: acc.fee + (recorded?.feeAmount ?? projected.fee),
+            net: acc.net + (recorded?.netAmount ?? projected.net),
+            settled: acc.settled || recorded !== null,
+          };
+        },
+        { gross: 0, fee: 0, net: 0, settled: false },
+      )
+    : null;
 
   // MONEY FIRST, THEN TIME. The six were in no order at all — paid in, still
   // to save, cycle week, weeks behind, overdue, last payment — so the eye had
@@ -404,6 +473,18 @@ export default async function PersonPage({
       {/* ————— TAB 2: PAYOUT ————— */}
       {tab === "payout" && (
         <div className="space-y-4">
+          {/* The fee, findable. It was one column of a five-column table. */}
+          {active && payoutTotals && (
+            <PayoutEquation
+              gross={payoutTotals.gross}
+              fee={payoutTotals.fee}
+              net={payoutTotals.net}
+              feePercent={active.cycle.feePercent}
+              settled={payoutTotals.settled}
+              numberCount={active.luckyNumbers.length}
+              className="animate-fade-in-up-1"
+            />
+          )}
           {(carried > 0 || person.ledgerEntries.length > 0) && (
             <Card>
               <CardHeader
@@ -574,7 +655,7 @@ export default async function PersonPage({
                   number: n.number,
                   amount: n.amount,
                 }))}
-                events={active.paymentEvents.map((e) => ({
+                events={paymentEvents.map((e) => ({
                   id: e.id,
                   amount: e.amount,
                   method: e.method,
@@ -622,7 +703,7 @@ export default async function PersonPage({
               {
                 key: "access",
                 label: SETTINGS_SECTION_LABELS.access,
-                count: signIns.ok ? signIns.data.length : undefined,
+                count: signIns.ok ? signIns.data.total : undefined,
                 // The default PIN is a standing risk, so the section that
                 // fixes it says so from the nav rather than only once opened.
                 attention: pinState === "default",
@@ -673,7 +754,7 @@ export default async function PersonPage({
                     number: n.number,
                     amount: n.amount,
                   }))}
-                  events={active.paymentEvents.map((e) => ({
+                  events={paymentEvents.map((e) => ({
                     id: e.id,
                     amount: e.amount,
                     method: e.method,
@@ -791,7 +872,15 @@ export default async function PersonPage({
                   sub="Device, network and time for this member's last sign-ins — so you can answer “was that you?”"
                 />
                 <div className="px-5 pb-4">
-                  <MemberSignIns rows={signIns.ok ? signIns.data : []} />
+                  <MemberSignIns rows={signIns.ok ? signIns.data.rows : []} />
+              <TruncationNotice
+                notice={truncationNotice({
+                  shown: signIns.ok ? signIns.data.rows.length : 0,
+                  cap: CAPS.memberSignIns,
+                  noun: "sign-ins",
+                  fullListAt: "the audit log",
+                })}
+              />
                   {!signIns.ok && (
                     <p role="alert" className="mt-2 text-sm text-red-800 dark:text-red-400">
                       {signIns.error}

@@ -1,6 +1,8 @@
 import { listPeople } from "@/app/actions/people";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Alert, Card, CardHeader } from "@/components/ui/primitives";
+import { TruncationNotice } from "@/components/ui/pager";
+import { CAPS, truncationNotice } from "@/lib/paging";
 import { defaultPinForPhone } from "@/lib/pin";
 import { getSetting } from "@/lib/settings";
 import { AddPersonForm } from "./add-person-form";
@@ -80,7 +82,18 @@ export default async function PeoplePage({
           {query ? `No one matches “${query}”.` : "The directory is empty."}
         </p>
       ) : (
-        <PeopleDirectory rows={rows} />
+        <>
+          <PeopleDirectory rows={rows} />
+          {/* Silent only until it is actually reached — see lib/paging.ts. */}
+          <TruncationNotice
+            notice={truncationNotice({
+              shown: rows.length,
+              cap: CAPS.people,
+              noun: "people",
+              fullListAt: "a narrower search",
+            })}
+          />
+        </>
       )}
 
       <Card className="max-w-md animate-fade-in-up-2">

@@ -1,5 +1,6 @@
 "use server";
 
+import { CAPS } from "@/lib/paging";
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { getCurrentUser, isAdminClaims, requireAdmin } from "@/lib/auth";
@@ -72,7 +73,7 @@ export async function listMySessions(): Promise<
     const rows = await prisma.signInSession.findMany({
       where: { authUserId: claims.sub, revokedAt: null },
       orderBy: { lastSeenAt: "desc" },
-      take: 50,
+      take: CAPS.ownSessions,
     });
 
     const live = rows.filter(
@@ -236,7 +237,8 @@ export type AdminSignInRow = {
  * about one that is already over.
  */
 export async function listMemberSignIns(input: { personId: string }): Promise<
-  { ok: true; data: AdminSignInRow[] } | { ok: false; error: string }
+  | { ok: true; data: { total: number; rows: AdminSignInRow[] } }
+  | { ok: false; error: string }
 > {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
@@ -244,19 +246,31 @@ export async function listMemberSignIns(input: { personId: string }): Promise<
     // 2.4: the sign-in history is device and network detail about a named
     // person — exactly what presentation mode exists to keep off a shared
     // screen.
-    if (await getSetting("presentationMode")) return { ok: true as const, data: [] };
+    if (await getSetting("presentationMode"))
+      return { ok: true as const, data: { total: 0, rows: [] } };
 
     const limits = await limitsFor("MEMBER");
     const now = new Date();
+    // Capped at 25 and, until now, silently — the screen showed a list
+    // that looked complete. It answers "was that really them?", so a reader
+    // has to know whether they are looking at all of it. The count comes back
+    // with the rows and the screen states the truncation when it happens.
+    const signInTotal = await prisma.signInSession.count({
+      where: { personId: input.personId },
+    });
     const rows = await prisma.signInSession.findMany({
       where: { personId: input.personId },
       orderBy: { createdAt: "desc" },
-      take: 25,
+      take: CAPS.memberSignIns,
     });
 
     return {
       ok: true as const,
-      data: rows.map((r) => ({
+      data: {
+        // The TRUE count travels with the capped rows, so the screen can say
+        // "25 of 63" rather than presenting 25 as the whole history.
+        total: signInTotal,
+        rows: rows.map((r) => ({
         id: r.id,
         label: `${r.browser} on ${r.os}`,
         location: r.location,
@@ -274,7 +288,8 @@ export async function listMemberSignIns(input: { personId: string }): Promise<
           }).state === "active",
         isNewDevice: r.isNewDevice,
         endedReason: r.revokedReason,
-      })),
+        })),
+      },
     };
   } catch (e) {
     console.error("listMemberSignIns failed:", e);
