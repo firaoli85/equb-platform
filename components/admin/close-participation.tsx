@@ -284,6 +284,20 @@ export function CloseParticipation({
         </label>
       )}
 
+      {/* THE REASON, AT THE BUTTON. `msg` also renders at the top of this
+          panel, and the panel is tall — the week field, the consequence list,
+          four reason radios and the typed-name box all sit between them. A
+          refusal shown only up there reads as nothing happening
+          (UI_STANDARDS 6b). */}
+      {msg?.kind === "err" && (
+        <p
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+        >
+          {msg.text}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"

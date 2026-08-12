@@ -882,3 +882,39 @@ written against defects that actually occurred. **The organizer runs it.**
 - **State sequencing in terms of work and risk**, never energy.
 - **Instructions must be step by step and exact.** Assume nothing about where a menu is or
   what a field is called.
+
+### The Sunday check — `npm run check:position`
+
+**Run it before recording payments whenever a figure looks wrong.** One command, no
+arguments, writes nothing:
+
+```
+npm run check:position
+```
+
+It recomputes **17 figures by hand from the raw receipt rows** — a different route from the
+one the screens take — and prints them beside what `/admin/cycle/position`, `/admin/cash`
+and the dashboard actually report:
+
+| It proves | Against |
+|---|---|
+| what should have come in by now, and what did | every elapsed week × every member in window |
+| what is genuinely paid ahead | weeks **after** the current one only |
+| this week's own money | the open week, counted separately |
+| handed out vs drawn-but-not-handed-out | COLLECTED payouts only |
+| what a stopped participation removed | their forward weeks × their weekly |
+| what a member paid out and then stopped costs him | the same weeks, as **his** to cover |
+
+Every figure prints **YES** or **\*\*\*NO\*\*\***, and the command **exits non-zero if
+anything disagrees** — so it is a check, not a report. A figure that agrees with itself
+proves nothing; these agree with the receipts or they do not.
+
+**Why it exists.** Mid-week 13 the position reported 13 members "paid ahead" totalling
+$12,925. $9,375 of that was ordinary on-time money for the current week: the split was made
+on whether a week's payment **window had closed** rather than whether the week **had
+happened**, and those are five different days. Nothing in the platform disagreed with
+itself, so nothing caught it — every screen was reading the same wrong boundary. Only
+arithmetic done a second way, against the rows, could show it.
+
+Run it after any change to a money derivation too. It is the fastest proof that the screens
+and the receipts still say the same thing.

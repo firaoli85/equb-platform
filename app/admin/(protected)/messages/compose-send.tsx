@@ -70,6 +70,12 @@ export function ComposeSend() {
   const checkedRows = rows?.filter((r) => r.checked && r.blocked === null) ?? [];
 
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   function handleSend() {
     if (checkedRows.length === 0 || busy) return;
@@ -95,15 +101,23 @@ export function ComposeSend() {
         participationIds: checkedRows.map((r) => r.participationId),
       });
       if (!result.ok) {
+        // The send button is rendered BELOW the whole recipient list and
+        // `error` renders above it, so a whole-batch refusal ("Nobody is
+        // selected", a stale winner, presentation mode) appeared off-screen
+        // and the send read as having silently done nothing
+        // (UI_STANDARDS 6b). The dialog is still open — put it there.
         setError(result.error);
+        setDialogError(result.error);
+        setBusy(null);
         return;
       }
       setOutcomes(new Map(result.data.results.map((r) => [r.participationId, r.outcome])));
+      setConfirm(null);
     } catch {
       setError("Could not reach the server — check the message log before retrying.");
+      setDialogError("Could not reach the server — check the message log before retrying.");
     } finally {
       setBusy(null);
-      setConfirm(null);
     }
   }
 
@@ -244,9 +258,13 @@ export function ComposeSend() {
       </div>
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy === "send"}
         onConfirm={() => void doSend()}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => {
+          setDialogError(null);
+          setConfirm(null);
+        }}
       />
     </Card>
   );

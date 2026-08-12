@@ -65,6 +65,12 @@ export function CarriedBalance({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   // The confirm handler carries what the organizer TYPED, so an action with
   // a server-side typed-name check gets the real value rather than a copy of
   // the expected one.
@@ -82,9 +88,14 @@ export function CarriedBalance({
   async function run(fn: () => Promise<{ ok: boolean; error?: string }>, okText: string) {
     setBusy(true);
     setMsg(null);
+    /** The refusal, if any — the dialog closes only while this stays null. */
+    let refused: string | null = null;
     try {
       const result = await fn();
-      if (!result.ok) setMsg({ kind: "err", text: `Not recorded: ${result.error}` });
+      if (!result.ok) {
+        refused = `Not recorded: ${result.error}`;
+        setMsg({ kind: "err", text: refused });
+      }
       else {
         setMsg({ kind: "ok", text: okText });
         close();
@@ -94,8 +105,15 @@ export function CarriedBalance({
       setMsg({ kind: "err", text: "Could not reach the server — nothing was recorded." });
     } finally {
       setBusy(false);
-      setConfirm(null);
-      setOnConfirm(null);
+      // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
+      // refusal was thrown away with the dialog that could have shown it
+      // (UI_STANDARDS 6b).
+      if (refused === null) {
+        setConfirm(null);
+        setOnConfirm(null);
+      } else {
+        setDialogError(refused);
+      }
     }
   }
 
@@ -343,9 +361,11 @@ export function CarriedBalance({
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

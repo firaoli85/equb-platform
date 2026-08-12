@@ -79,6 +79,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   busy = false,
+  error = null,
 }: {
   spec: ConfirmSpec | null;
   /**
@@ -93,6 +94,20 @@ export function ConfirmDialog({
   onConfirm: (typedPhrase: string) => void;
   onCancel: () => void;
   busy?: boolean;
+  /**
+   * A REFUSAL FROM THE ACTION THIS DIALOG JUST RAN.
+   *
+   * Every caller used to close the dialog in a `finally`, so a refusal landed
+   * in whatever banner the page happened to have — usually at the very top,
+   * far above the button the organizer had pressed. An audit found fifteen
+   * controls doing this. A real refusal with a real reason read as the app
+   * doing nothing, and "it did not save" got reported with no error to quote.
+   *
+   * Set this and the dialog STAYS OPEN with the reason inside it, beside the
+   * button that caused it, with everything typed still in place to retry
+   * (UI_STANDARDS 6b).
+   */
+  error?: string | null;
 }) {
   const reduce = useReducedMotion();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -283,6 +298,17 @@ export function ConfirmDialog({
                     />
                   </label>
                 </div>
+              )}
+
+              {/* THE REASON, WHERE THE ACTION WAS TAKEN. Directly above the
+                  buttons, so it cannot be missed and cannot scroll away. */}
+              {error && (
+                <p
+                  role="alert"
+                  className="mt-4 rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+                >
+                  {error}
+                </p>
               )}
 
               <div className="mt-4 flex justify-end gap-2">

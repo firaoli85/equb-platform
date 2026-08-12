@@ -56,6 +56,12 @@ export function CashReadingPanel({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
   // When the two lines are given, the total follows from them — he should
@@ -262,13 +268,19 @@ export function CashReadingPanel({
                         ),
                         confirmLabel: "Delete reading",
                       });
+                      setDialogError(null);
                       setOnConfirm(() => () => {
                         void (async () => {
                           setBusy(true);
                           const res = await deleteCashReading({ id: r.id });
-                          if (!res.ok) setMsg({ kind: "err", text: res.error });
-                          else router.refresh();
                           setBusy(false);
+                          if (!res.ok) {
+                            // The reading rows are the LAST block on a long
+                            // page; `msg` renders at the very top of it.
+                            setDialogError(res.error);
+                            return;
+                          }
+                          router.refresh();
                           setConfirm(null);
                           setOnConfirm(null);
                         })();
@@ -298,9 +310,11 @@ export function CashReadingPanel({
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

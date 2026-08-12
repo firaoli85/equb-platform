@@ -41,6 +41,12 @@ export function PinControls({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
   function ask(spec: ConfirmSpec, fn: () => Promise<void>) {
@@ -284,9 +290,11 @@ export function PinControls({
       )}
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={saving !== null}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

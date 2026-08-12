@@ -42,6 +42,13 @@ export function CloseFlow({ review }: { review: Review }) {
   const router = useRouter();
   const [acknowledge, setAcknowledge] = useState("");
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran — shown INSIDE the dialog,
+   * beside the button that caused it. Closing a cycle writes a carried balance
+   * onto every short member; a refusal from it must not land in a banner at
+   * the top of a long review (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -52,6 +59,8 @@ export function CloseFlow({ review }: { review: Review }) {
   async function doClose(typedPhrase: string) {
     setBusy(true);
     setMsg(null);
+    /** The refusal, if any — the dialog closes only while this stays null. */
+    let refused: string | null = null;
     try {
       const result = await closeCycle({
         cycleId: review.cycleId,
@@ -64,7 +73,10 @@ export function CloseFlow({ review }: { review: Review }) {
         typedName: typedPhrase,
         acknowledgeUndrawn: needsAck ? acknowledge : undefined,
       });
-      if (!result.ok) setMsg({ kind: "err", text: `Not closed: ${result.error}` });
+      if (!result.ok) {
+        refused = `Not closed: ${result.error}`;
+        setMsg({ kind: "err", text: refused });
+      }
       else {
         setMsg({
           kind: "ok",
@@ -76,7 +88,10 @@ export function CloseFlow({ review }: { review: Review }) {
       setMsg({ kind: "err", text: "Could not reach the server — nothing was closed." });
     } finally {
       setBusy(false);
-      setConfirm(null);
+      // CLOSE ONLY ON SUCCESS — a refusal must not be discarded with the
+      // dialog that could have shown it (UI_STANDARDS 6b).
+      if (refused === null) setConfirm(null);
+      else setDialogError(refused);
     }
   }
 
@@ -333,9 +348,13 @@ export function CloseFlow({ review }: { review: Review }) {
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={(typedPhrase) => void doClose(typedPhrase)}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => {
+          setDialogError(null);
+          setConfirm(null);
+        }}
       />
     </div>
   );
@@ -350,9 +369,19 @@ export function DeleteCycleCard({
 }) {
   const router = useRouter();
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran — shown INSIDE the dialog,
+   * beside the button that caused it. Closing a cycle writes a carried balance
+   * onto every short member; a refusal from it must not land in a banner at
+   * the top of a long review (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  // No `refused` local here: this only OPENS the dialog (it fetches the review
+  // and calls setConfirm). The destructive action runs in doDelete, which keeps
+  // its own refusal.
   async function openDelete() {
     setBusy(true);
     setMsg(null);
@@ -393,12 +422,17 @@ export function DeleteCycleCard({
   async function doDelete(typedPhrase: string) {
     setBusy(true);
     setMsg(null);
+    /** The refusal, if any — the dialog closes only while this stays null. */
+    let refused: string | null = null;
     try {
       // Same shape, same fix: the typed value, not our copy of it. This one
       // wipes every participation, week, receipt, draw and payout in the
       // cycle.
       const result = await deleteClosedCycle({ cycleId: cycle.id, typedName: typedPhrase });
-      if (!result.ok) setMsg({ kind: "err", text: `Not deleted: ${result.error}` });
+      if (!result.ok) {
+        refused = `Not deleted: ${result.error}`;
+        setMsg({ kind: "err", text: refused });
+      }
       else {
         setMsg({ kind: "ok", text: `✓ ${cycle.name} deleted — its archive and every ledger remain.` });
         router.refresh();
@@ -407,7 +441,10 @@ export function DeleteCycleCard({
       setMsg({ kind: "err", text: "Could not reach the server — nothing was deleted." });
     } finally {
       setBusy(false);
-      setConfirm(null);
+      // CLOSE ONLY ON SUCCESS — a refusal must not be discarded with the
+      // dialog that could have shown it (UI_STANDARDS 6b).
+      if (refused === null) setConfirm(null);
+      else setDialogError(refused);
     }
   }
 
@@ -445,9 +482,13 @@ export function DeleteCycleCard({
       )}
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={(typedPhrase) => void doDelete(typedPhrase)}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => {
+          setDialogError(null);
+          setConfirm(null);
+        }}
       />
     </Card>
   );

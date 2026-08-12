@@ -81,6 +81,12 @@ export function CollectionsView({
   const router = useRouter();
   const [openRow, setOpenRow] = useState<{ id: string; mode: "collect" | "edit" } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   // The confirm handler carries what the organizer TYPED, so an action with
   // a server-side typed-name check gets the real value rather than a copy of
   // the expected one.
@@ -94,24 +100,33 @@ export function CollectionsView({
     okText: string,
   ) {
     setConfirm(spec);
+    setDialogError(null);
     setOnConfirm(() => (typedPhrase: string) => {
       void (async () => {
         setBusy(true);
         try {
           const result = await action(typedPhrase);
           if (!result.ok) {
-            setFeedback({ kind: "err", text: ("error" in result && result.error) || "Failed — nothing changed." });
-          } else {
-            setFeedback({ kind: "ok", text: okText });
-            setOpenRow(null);
-            router.refresh();
+            // THE DIALOG STAYS OPEN WITH THE REASON IN IT.
+            //
+            // This used to write the refusal into `feedback` and then close in
+            // the `finally` below. `feedback` renders once, at the top of the
+            // page above every week group — so a refusal from "Mark collected"
+            // on week 9, or from the winner editor at the foot of a week card,
+            // landed somewhere the organizer was not looking and read as the
+            // app doing nothing (UI_STANDARDS 6b).
+            setDialogError(("error" in result && result.error) || "Failed — nothing changed.");
+            return; // ← the early return is the fix: no close, nothing lost.
           }
-        } catch {
-          setFeedback({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
-        } finally {
-          setBusy(false);
+          setFeedback({ kind: "ok", text: okText });
+          setOpenRow(null);
           setConfirm(null);
           setOnConfirm(null);
+          router.refresh();
+        } catch {
+          setDialogError("Could not reach the server — nothing was confirmed.");
+        } finally {
+          setBusy(false);
         }
       })();
     });
@@ -368,9 +383,11 @@ export function CollectionsView({
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

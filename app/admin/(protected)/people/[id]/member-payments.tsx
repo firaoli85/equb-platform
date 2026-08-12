@@ -62,6 +62,12 @@ export function MemberPayments({
   const [rangeText, setRangeText] = useState("");
   const [expandedWeek, setExpandedWeek] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
   const [preview, setPreview] = useState<{
@@ -191,17 +197,29 @@ export function MemberPayments({
     }
   }
 
-  function askConfirm(spec: ConfirmSpec, action: () => Promise<void>) {
+  /**
+   * `action` reports its own refusal by returning it. It used to return void
+   * and this closed the dialog regardless, so a refusal from the ledger
+   * "Record" button — which sits in the header strip at the TOP of this
+   * component — landed in the alert at line ~500, past the whole week table
+   * (UI_STANDARDS 6b).
+   */
+  function askConfirm(spec: ConfirmSpec, action: () => Promise<string | null | void>) {
     setConfirm(spec);
+    setDialogError(null);
     setOnConfirm(() => () => {
       void (async () => {
         setBusy("week");
         try {
-          await action();
-        } finally {
-          setBusy(null);
+          const refusal = await action();
+          if (typeof refusal === "string" && refusal.length > 0) {
+            setDialogError(refusal);
+            return;
+          }
           setConfirm(null);
           setOnConfirm(null);
+        } finally {
+          setBusy(null);
         }
       })();
     });
@@ -274,14 +292,19 @@ export function MemberPayments({
                   },
                   async () => {
                     const result = await recordLedgerPayment({ personId, amount: cents });
-                    if (!result.ok) setError(result.error);
-                    else {
-                      setSaved(
-                        `✓ Ledger payment recorded — ${formatMoney(result.data.remaining)} still carried.`,
-                      );
-                      setLedgerDollars("");
-                      router.refresh();
+                    // RETURN the refusal so the dialog keeps it. Setting
+                    // `error` alone put it at the foot of a long week table,
+                    // while this button is in the header strip at the top.
+                    if (!result.ok) {
+                      setError(result.error);
+                      return result.error;
                     }
+                    setSaved(
+                      `✓ Ledger payment recorded — ${formatMoney(result.data.remaining)} still carried.`,
+                    );
+                    setLedgerDollars("");
+                    router.refresh();
+                    return null;
                   },
                 );
               }}
@@ -503,9 +526,11 @@ export function MemberPayments({
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy === "week" || busy === "ledger"}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

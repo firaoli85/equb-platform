@@ -143,6 +143,11 @@ export function ParticipationEditor(props: {
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran — shown INSIDE the dialog,
+   * beside the button that caused it (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
   async function run(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
@@ -896,9 +901,11 @@ export function ParticipationEditor(props: {
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

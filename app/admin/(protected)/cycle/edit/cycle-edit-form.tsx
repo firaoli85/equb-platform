@@ -52,6 +52,12 @@ export function CycleEditForm({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   const dirty = JSON.stringify(fields) !== JSON.stringify(initial);
   const set = (key: keyof typeof initial) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -148,6 +154,8 @@ export function CycleEditForm({
     const plannedWeeks = Number.parseInt(fields.plannedWeeks, 10);
     setBusy(true);
     setMsg(null);
+    /** The refusal, if any — the dialog closes only while this stays null. */
+    let refused: string | null = null;
     try {
       const result = await updateCycle({
         cycleId: cycle.id,
@@ -157,7 +165,10 @@ export function CycleEditForm({
         unitAmount,
         feePercent: Number.parseFloat(fields.feePercent),
       });
-      if (!result.ok) setMsg({ kind: "err", text: `Not saved: ${result.error}` });
+      if (!result.ok) {
+        refused = `Not saved: ${result.error}`;
+        setMsg({ kind: "err", text: refused });
+      }
       else {
         setMsg({ kind: "ok", text: "✓ Saved." });
         router.refresh();
@@ -166,7 +177,14 @@ export function CycleEditForm({
       setMsg({ kind: "err", text: "Could not reach the server — nothing confirmed." });
     } finally {
       setBusy(false);
-      setConfirm(null);
+      // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
+      // refusal was thrown away with the dialog that could have shown it
+      // (UI_STANDARDS 6b).
+      if (refused === null) {
+        setConfirm(null);
+      } else {
+        setDialogError(refused);
+      }
     }
   }
 
@@ -239,9 +257,13 @@ export function CycleEditForm({
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={() => void doSave()}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => {
+          setDialogError(null);
+          setConfirm(null);
+        }}
       />
 
       {projection && projection.perMember.length > 0 && (

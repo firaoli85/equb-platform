@@ -98,6 +98,12 @@ export function AssignPayout({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || options) return;
@@ -144,6 +150,8 @@ export function AssignPayout({
   async function doAssign(typedPhrase: string) {
     setBusy(true);
     setMsg(null);
+    /** The refusal, if any — the dialog closes only while this stays null. */
+    let refused: string | null = null;
     try {
       const result = await assignPayoutManually({
         participationId,
@@ -158,7 +166,10 @@ export function AssignPayout({
         // confirmation at all.
         replaceConfirmation: needsPhrase ? typedPhrase : undefined,
       });
-      if (!result.ok) setMsg({ kind: "err", text: `Not assigned: ${result.error}` });
+      if (!result.ok) {
+        refused = `Not assigned: ${result.error}`;
+        setMsg({ kind: "err", text: refused });
+      }
       else {
         const r = result.data;
         const text =
@@ -183,7 +194,14 @@ export function AssignPayout({
       setMsg({ kind: "err", text: "Could not reach the server — nothing was assigned." });
     } finally {
       setBusy(false);
-      setConfirm(null);
+      // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
+      // refusal was thrown away with the dialog that could have shown it
+      // (UI_STANDARDS 6b).
+      if (refused === null) {
+        setConfirm(null);
+      } else {
+        setDialogError(refused);
+      }
     }
   }
 
@@ -372,9 +390,13 @@ export function AssignPayout({
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={(typedPhrase) => void doAssign(typedPhrase)}
-        onCancel={() => setConfirm(null)}
+        onCancel={() => {
+          setDialogError(null);
+          setConfirm(null);
+        }}
       />
     </div>
   );

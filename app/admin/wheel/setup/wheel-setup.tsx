@@ -98,6 +98,12 @@ export function WheelSetup({ state }: { state: SetupState }) {
   const [planMode, setPlanMode] = useState<"ALONE" | "TOGETHER" | "OPEN_PARTNER">("ALONE");
   const [planWeekId, setPlanWeekId] = useState("");
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
@@ -685,14 +691,20 @@ export function WheelSetup({ state }: { state: SetupState }) {
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}
       />
+      {/* A pure navigation guard: it runs no server action, so there is no
+          refusal it could ever be asked to show. Stated explicitly rather
+          than omitted, so the rule 6b scan reads as satisfied on purpose. */}
       <ConfirmDialog
+        error={null}
         spec={
           leaveTo !== null
             ? {

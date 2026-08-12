@@ -46,6 +46,12 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   // The confirm handler carries what the organizer TYPED, so an action with
   // a server-side typed-name check gets the real value rather than a copy of
   // the expected one.
@@ -78,6 +84,8 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
     setError(null);
     setSaved(false);
     setSaving(true);
+    /** The refusal, if any — the dialog closes only while this stays null. */
+    let refused: string | null = null;
     try {
       const result = await updatePerson({
         personId: person.id,
@@ -86,15 +94,26 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
         nameEnglishLast: fields.nameEnglishLast || undefined,
         phone: fields.phone || undefined,
       });
-      if (!result.ok) return setError(result.error);
+      if (!result.ok) {
+        refused = result.error;
+        setError(result.error);
+        return;
+      }
       setSaved(true);
       router.refresh();
     } catch {
       setError("Could not reach the server — not saved.");
     } finally {
       setSaving(false);
-      setConfirm(null);
-      setOnConfirm(null);
+      // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
+      // refusal was thrown away with the dialog that could have shown it
+      // (UI_STANDARDS 6b).
+      if (refused === null) {
+        setConfirm(null);
+        setOnConfirm(null);
+      } else {
+        setDialogError(refused);
+      }
     }
   }
 
@@ -134,20 +153,33 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
   async function doDelete(typedPhrase: string) {
     setSaving(true);
     setError(null);
+    /** The refusal, if any — the dialog closes only while this stays null. */
+    let refused: string | null = null;
     try {
       // The typed name goes to the SERVER too. The dialog alone does not
       // survive a double-submit or a stale replay, and this deletes the
       // directory row together with every sign-in record.
       const result = await deletePerson({ personId: person.id, typedName: typedPhrase });
-      if (!result.ok) return setError(result.error);
+      if (!result.ok) {
+        refused = result.error;
+        setError(result.error);
+        return;
+      }
       router.push("/admin/people");
       router.refresh();
     } catch {
       setError("Could not reach the server — not removed.");
     } finally {
       setSaving(false);
-      setConfirm(null);
-      setOnConfirm(null);
+      // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
+      // refusal was thrown away with the dialog that could have shown it
+      // (UI_STANDARDS 6b).
+      if (refused === null) {
+        setConfirm(null);
+        setOnConfirm(null);
+      } else {
+        setDialogError(refused);
+      }
     }
   }
 
@@ -284,9 +316,11 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       </div>
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={saving}
         onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

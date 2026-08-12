@@ -245,6 +245,18 @@ export function RemoveFromCycle({
         </>
       )}
 
+      {/* THE REASON, AT THE BUTTON. The attachment summary, two tall choice
+          panels and the typed-name box sit between this and the `msg` at the
+          top of the panel (UI_STANDARDS 6b). */}
+      {msg?.kind === "err" && (
+        <p
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+        >
+          {msg.text}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"

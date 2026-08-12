@@ -72,6 +72,12 @@ export function WeekActionPanel({
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  /**
+   * A refusal from the action the dialog just ran. Set it and the dialog stays
+   * open with the reason inside, beside the button that caused it — never only
+   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
   // A fresh idempotency key per submission intent, re-armed after each save,
@@ -179,17 +185,27 @@ export function WeekActionPanel({
     }
   }
 
-  function ask(spec: ConfirmSpec, fn: () => Promise<void>) {
+  /** `fn` returns its refusal, or nothing on success (UI_STANDARDS 6b). */
+  function ask(spec: ConfirmSpec, fn: () => Promise<string | null | void>) {
     setConfirm(spec);
     setOnConfirm(() => () => {
       void (async () => {
         setBusy("week");
+        let refused: string | null = null;
         try {
-          await fn();
+          const reported = await fn();
+          if (typeof reported === "string" && reported.length > 0) refused = reported;
         } finally {
           setBusy(null);
-          setConfirm(null);
-          setOnConfirm(null);
+          // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
+          // refusal was thrown away with the dialog that could have shown it
+          // (UI_STANDARDS 6b).
+          if (refused === null) {
+            setConfirm(null);
+            setOnConfirm(null);
+          } else {
+            setDialogError(refused);
+          }
         }
       })();
     });
@@ -508,9 +524,11 @@ export function WeekActionPanel({
 
       <ConfirmDialog
         spec={confirm}
+        error={dialogError}
         busy={busy === "week"}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
+          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

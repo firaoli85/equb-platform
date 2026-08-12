@@ -148,6 +148,12 @@ export function AddMemberWizard({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The carried-balance decision was refused while the member WAS created.
+   * Shown on the success screen: the save is real, this one part is not, and
+   * the organizer is told exactly what to redo (UI_STANDARDS 6b).
+   */
+  const [carryWarning, setCarryWarning] = useState<string | null>(null);
   // A typed number already in use: the server hands back WHO holds it and what
   // is free, and this panel turns that into the two real options. Nothing is
   // applied until one of them is pressed.
@@ -312,7 +318,7 @@ export function AddMemberWizard({
       // Nothing about the balance changes — "deduct" is an intention, and the
       // deduction itself is still OFFERED at payout time, never automatic.
       if (mode === "existing" && selectedPerson && carried > 0 && carryChoice) {
-        await recordCarryDecision({
+        const decision = await recordCarryDecision({
           personId: selectedPerson.id,
           // D-2: the intention is stored against THIS participation, so it
           // resurfaces as a pre-ticked offer when they are paid out.
@@ -321,6 +327,19 @@ export function AddMemberWizard({
           choice: carryChoice,
           balance: carried,
         });
+        // THE RESULT WAS DISCARDED HERE — no `if (!decision.ok)`, no message —
+        // and the next line renders the green "✓ Saved" panel. A refused
+        // decision therefore reported as success, and the organizer walked
+        // away believing his "deduct at payout" choice was on the record when
+        // nothing had been written (UI_STANDARDS 6b: never discard the result).
+        //
+        // It is NOT an outright failure: the member really was added, and
+        // throwing that away to report this would be worse. So the success
+        // screen says what succeeded and what did not, and names the one
+        // thing left to redo.
+        setCarryWarning(decision.ok ? null : decision.error);
+      } else {
+        setCarryWarning(null);
       }
       setSaved(result.data!);
       router.refresh();
@@ -342,6 +361,18 @@ export function AddMemberWizard({
         data-testid="save-success"
       >
         <p className="text-lg font-semibold">✓ Saved</p>
+
+        {/* NOT SILENT. This used to render green over a discarded refusal. */}
+        {carryWarning !== null && (
+          <p
+            role="alert"
+            className="mt-2 rounded border border-amber-500 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"
+          >
+            But their carried balance decision was NOT recorded: {carryWarning} Everything else
+            above is saved. Set it again from their profile, or the deduction will not be
+            offered when they are paid out.
+          </p>
+        )}
         <p className="mt-2 text-sm">
           {saved.person.nameEnglishFirst} {saved.person.nameEnglishLast ?? ""} is in {cycle.name}:{" "}
           {formatMoney(saved.weeklyAmount)}/week, weeks {saved.startWeek} to{" "}
