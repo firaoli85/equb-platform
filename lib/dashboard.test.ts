@@ -74,8 +74,11 @@ function pay(
   amountPaid: number,
   isDeferred = false,
   isSkipped = false,
+  // The organizer marking a week late himself (2.2) — off unless a test
+  // is about it, exactly like the two flags above.
+  markedLate = false,
 ): DashboardPayment {
-  return { participationId, weekNumber, amountPaid, isDeferred, isSkipped };
+  return { participationId, weekNumber, amountPaid, isDeferred, isSkipped, markedLate };
 }
 
 describe("weekReceipts — window-aware (2.7)", () => {

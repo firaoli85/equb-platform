@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { setNoMessages } from "@/app/actions/messages";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 
 // The hardship flag (2.20): one switch that silences EVERY message to this
 // person — the automatic confirmation included. Enforced server-side at
@@ -17,29 +18,34 @@ export function MessagesOptOut({
 }) {
   const router = useRouter();
   const [value, setValue] = useState(noMessages);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  // A SWITCH HAS NO SAVE BUTTON, so the feedback goes beside the switch —
+  // `SaveFeedback` is the same message without the button (rule 6).
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const saving = save.kind === "saving";
 
   async function handleChange(next: boolean) {
     setValue(next);
-    setError(null);
-    setSuccess(null);
-    setSaving(true);
+    setSave({ kind: "saving" });
     try {
       const result = await setNoMessages({ personId, noMessages: next });
       if (!result.ok) {
-        setError(result.error);
+        setSave({ kind: "err", message: `Not saved: ${result.error}` });
         setValue(noMessages);
         return;
       }
-      setSuccess(next ? "✓ Saved — no messages will be sent to them." : "✓ Saved — messages are on again.");
+      setSave({
+        kind: "ok",
+        message: next
+          ? "Saved — no messages will be sent to them."
+          : "Saved — messages are on again.",
+      });
       router.refresh();
     } catch {
-      setError("Could not reach the server — the change was not confirmed.");
+      setSave({
+        kind: "err",
+        message: "Could not reach the server — the change was not confirmed.",
+      });
       setValue(noMessages);
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -61,16 +67,7 @@ export function MessagesOptOut({
           </span>
         </span>
       </label>
-      {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800 dark:text-red-400">
-          Not saved: {error}
-        </p>
-      )}
-      {success && (
-        <p role="status" className="rounded border border-green-500 bg-green-50 px-3 py-2 text-sm text-green-900">
-          {success}
-        </p>
-      )}
+      <SaveFeedback state={save} />
     </div>
   );
 }

@@ -355,3 +355,279 @@ itself, so a name that function does not return is already a compile error.
 [Template fundamentals](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview) ·
 [Dangling-parameter rejections](https://help.businesschat.io/en/articles/12302864-fixing-whatsapp-template-rejections-caused-by-dangling-parameters) ·
 [Rejection reasons](https://docs.aws.amazon.com/social-messaging/latest/userguide/managing-templates_rejection.html)
+
+---
+
+# REWORK — cycle week numbers must leave the member's messages
+
+**Status: DRAFT FOR REVIEW. Nothing here has been submitted to Meta, and no
+code has been changed. Approve the wording first.**
+
+## The defect, from live use
+
+Henok joins at week 14 and receives *"Your contributions continue to week 23."*
+He has no idea what week 23 is. He is thinking **"I am paying for 10 weeks"** —
+his own count, from his own start.
+
+Cycle week numbers are the **organizer's** frame. They were removed from the
+member portal for exactly this reason (UI_STANDARDS 8c: the portal speaks dates
+and the member's own counts, never the cycle's week numbers). The templates were
+missed, so the one surface that reaches a member on their own phone is still the
+one speaking the organizer's language.
+
+The rule the rework applies, unchanged from 8c:
+
+| Frame | Belongs to | Example |
+|---|---|---|
+| Cycle week number | the ORGANIZER | "week 23" — never in a member message |
+| A date | everyone | "Sunday, October 18, 2026" |
+| The member's own count | the MEMBER | "9 more weekly payments", "13 of 20 weeks" |
+
+**"You have paid 13 of 20 weeks" stays.** That is already their own count, and it
+is the sentence members quote back. Only the CYCLE-frame numbers go.
+
+---
+
+## What needs re-approval, and what does not
+
+Changing a body means **re-submitting that template to Meta and receiving a new
+ContentSid**. It is not an edit — the approved text is a document Meta holds, and
+the current ContentSid points at the current wording. Until the replacement is
+approved, the OLD wording is what sends.
+
+| Template | Body changes? | Re-approval | Why |
+|---|---|---|---|
+| PAYMENT_CONFIRMED | **yes** | **required** | "recorded on week(s) 11-12" is a cycle frame |
+| BEHIND_NOTICE | **yes** | **required** | "as of week 13" and "last payment week 11" are both cycle frames |
+| LATE_NOTICE | **yes** | **required** | "week(s) 11-12 closed" is a cycle frame |
+| WINNER_ANNOUNCEMENT | **yes** | **required** | "payout for week 12" and "continue to week 23" — the defect Henok reported |
+| CYCLE_CLOSING_STATEMENT | **no** | **none** | every figure is already the member's own count or a money amount |
+| LOCKOUT_NOTICE | n/a | n/a | never approved, never sent over WhatsApp (see the header of `lib/whatsapp-templates.ts`) |
+
+**Four of five need re-approval. One is already correct.**
+
+Sequencing note: submit all four together. Each approval produces a new
+ContentSid, and `contentSid` + `approvedBody` must be updated in
+`lib/whatsapp-templates.ts` **in the same commit** — a mismatched pair sends one
+wording under the other's id.
+
+---
+
+## The four reworked bodies
+
+Meta's two shape rules still apply to every draft below: no body begins or ends
+with a variable, and there are at least three words of fixed text per variable.
+
+### 1. PAYMENT_CONFIRMED — replace the week list with a count
+
+The receipt covered three weeks. The member does not need to know *which* three
+in the cycle's numbering — they need to know how much arrived and where they now
+stand.
+
+**Now**
+
+```
+Hi {{1}}, we received {{2}} for your Equb — recorded on week(s) {{3}}. You have paid {{4}} of {{5}} weeks. Thank you.
+```
+
+**Draft**
+
+```
+Hi {{1}}, we received {{2}} for your Equb. That covers {{3}}, and you have now paid {{4}} of {{5}} weekly payments. Thank you.
+```
+
+| Var | Fills from | Change |
+|---|---|---|
+| `{{1}}` | `name` | — |
+| `{{2}}` | `amountReceived` | — |
+| `{{3}}` | **`weeksCoveredCount`** — NEW | "3 weeks" / "1 week", not "11-13" |
+| `{{4}}` | `weeksPaid` | — |
+| `{{5}}` | `weeksTotal` | — |
+
+> Hi Sara, we received $1,500.00 for your Equb. That covers 3 weeks, and you have
+> now paid 12 of 20 weekly payments. Thank you.
+
+**Code needed:** one new placeholder, `weeksCoveredCount`, derived from the
+`weeksCovered` extra already passed. No new database read.
+
+**DECIDED — the count (organizer ruling, Aug 2026).** The alternative was "That
+covers the weeks of August 9, August 16 and August 23", which needs the week
+DATES in `MessageExtras`, a path that does not carry them. It also grows without
+limit: a member catching up on eight weeks gets an eight-date sentence. The count
+is shorter, it never overflows, and it is the number they are holding in their
+head.
+
+This is the ONE place in the rework where a count replaces a date rather than the
+other way round, and the reason is that the underlying fact is genuinely a count:
+the member's question is "how much of my backlog did that clear", not "which
+Sundays". `{{3}}` renders `weeksCoveredCount` — "3 weeks", or "1 week".
+
+---
+
+### 2. BEHIND_NOTICE — a date for "as of", a date for the last payment
+
+**Now**
+
+```
+Hi {{1}}, your Equb record as of week {{2}}: last payment week {{3}}, and {{4}} weeks behind, {{5}} outstanding. Please contact Firaoli with any questions.
+```
+
+**Draft**
+
+```
+Hi {{1}}, your Equb record as of {{2}}: your last payment was for the week of {{3}}, you are {{4}} weekly payments behind, and {{5}} is outstanding. Please contact Firaoli with any questions.
+```
+
+| Var | Fills from | Change |
+|---|---|---|
+| `{{1}}` | `name` | — |
+| `{{2}}` | **`asOfDate`** — NEW | "August 10, 2026", not "week 13" |
+| `{{3}}` | **`lastPaymentDate`** — NEW | the DATE of that week, not its number |
+| `{{4}}` | `weeksBehind` | their own count — kept |
+| `{{5}}` | `amountOwed` | — |
+
+> Hi Sara, your Equb record as of August 10, 2026: your last payment was for the
+> week of July 26, 2026, you are 2 weekly payments behind, and $1,000.00 is
+> outstanding. Please contact Firaoli with any questions.
+
+**Code needed:** `asOfDate` (the send moment — no lookup) and `lastPaymentDate`
+(the stored date of `lastPaymentWeek`'s row — 2.14, the day that actually
+belonged to that week, never a projection).
+
+**A member who has never paid** renders `lastPaymentDate` as the no-value dash
+today. That reads badly mid-sentence. **Recommendation: BEHIND_NOTICE is not
+applicable to someone who has never paid** — they get the first-payment
+conversation, not a record of one. If you want it sendable anyway, the sentence
+needs a second approved variant, which is a second Meta submission.
+
+---
+
+### 3. LATE_NOTICE — dates, and their own count
+
+**Now**
+
+```
+Hi {{1}}, your Equb week(s) {{2}} closed without a payment recorded. Your balance is {{3}} outstanding across {{4}} weeks. Please contact Firaoli if this does not match your records.
+```
+
+**Draft**
+
+```
+Hi {{1}}, your Equb payment for the week of {{2}} has not been recorded. Your balance is {{3}} outstanding across {{4}} weekly payments. Please contact Firaoli if this does not match your records.
+```
+
+| Var | Fills from | Change |
+|---|---|---|
+| `{{1}}` | `name` | — |
+| `{{2}}` | **`lateWeekDates`** — NEW | "August 2, 2026" or "August 2 and August 9, 2026" |
+| `{{3}}` | `amountOwed` | — |
+| `{{4}}` | `weeksBehind` | their own count — kept |
+
+> Hi Sara, your Equb payment for the week of August 2, 2026 has not been
+> recorded. Your balance is $1,000.00 outstanding across 2 weekly payments.
+> Please contact Firaoli if this does not match your records.
+
+**"week of" is singular in the fixed text.** With several late weeks the sentence
+reads "the week of August 2 and August 9, 2026", which is grammatically loose but
+clear. The alternative — "your Equb payments for {{2}}" — reads worse for the far
+more common single-week case. **Recommendation: keep the singular framing.** Most
+late notices name one week.
+
+**This template now has a second trigger.** With the manual late mark (2.2) the
+organizer can mark a week late before its window closes, and this notice becomes
+sendable immediately. The wording above is true either way: it says the payment
+"has not been recorded", which is the fact in both cases, and deliberately does
+**not** claim the week "closed" — under a manual mark it has not.
+
+**A DEFERRED week never reaches this notice.** Deferral beats the mark (ruling,
+Aug 2026): a deferred week reads DEFERRED whatever else is true of it, so it
+never appears in `lateWeeks` and never names itself here. That is the whole
+purpose of deferral — a chase must not reach someone the organizer has decided
+not to pursue.
+
+---
+
+### 4. WINNER_ANNOUNCEMENT — the one Henok reported
+
+**Now**
+
+```
+Hi {{1}}, your Equb payout for week {{2}} is {{3}}. Your contributions continue to week {{4}}. Firaoli will arrange the handover.
+```
+
+**Draft**
+
+```
+Hi {{1}}, your Equb payout for the week of {{2}} is {{3}}. You have {{4}} more weekly payments, finishing {{5}}. Firaoli will arrange the handover.
+```
+
+| Var | Fills from | Change |
+|---|---|---|
+| `{{1}}` | `name` | — |
+| `{{2}}` | **`drawnWeekDate`** — NEW | the date of the drawn week, not its number |
+| `{{3}}` | `payoutAmount` | — |
+| `{{4}}` | `weeksLeft` | **already exists** — their own count |
+| `{{5}}` | `finishDate` | **already exists** — 2.22 requires their own finish date |
+
+> Hi Henok, your Equb payout for the week of August 9, 2026 is $9,500.00. You
+> have 9 more weekly payments, finishing Sunday, October 18, 2026. Firaoli will
+> arrange the handover.
+
+**This is the sentence in the report, verbatim.** It goes from four variables to
+five, which Meta treats as a new template regardless.
+
+**Code needed:** `drawnWeekDate` only. `weeksLeft` and `finishDate` are already
+computed by `placeholderValues`, and `finishDate` already carries the member's
+own finish date per 2.22.
+
+---
+
+### 5. CYCLE_CLOSING_STATEMENT — unchanged, and correct
+
+```
+Hi {{1}}, your Equb closing statement: you paid {{2}} of {{3}} weeks, {{4}} in total. Outstanding balance {{5}}. Please contact Firaoli to confirm.
+```
+
+Every figure is the member's own count or a money amount. **No cycle week number
+appears. No re-approval needed. Do not resubmit this one.**
+
+---
+
+## New placeholders this rework needs
+
+| Placeholder | Derived from | Lookup needed? |
+|---|---|---|
+| `weeksCoveredCount` | `extras.weeksCovered.length` | no — already passed |
+| `asOfDate` | the send moment | no |
+| `lastPaymentDate` | the stored date of `lastPaymentWeek`'s row | yes — one week row |
+| `lateWeekDates` | the stored dates of the LATE weeks | yes — the member's week rows |
+| `drawnWeekDate` | the stored date of the drawn week | yes — one week row |
+
+All five dates must come from the **stored week rows** (2.14), never from
+projecting a week number off the cycle start date — the same rule
+`resolveWeekDate` already enforces for `finishDate`.
+
+`requiredExtras` grows for one template: WINNER_ANNOUNCEMENT gains
+`drawnWeekDate`. PAYMENT_CONFIRMED keeps `weeksCovered` (the count derives from
+it). The boundary check in `checkRequiredExtras` is what stops a caller omitting
+one and having Twilio substitute the approval sample.
+
+---
+
+## What happens between submission and approval
+
+The registry pairs a ContentSid with the exact approved body, and
+`lib/whatsapp-templates.test.ts` fails the build if they drift. So:
+
+1. Submit the four reworked bodies to Meta. **Nothing in the app changes yet.**
+2. While they are pending, the current wording keeps sending. Members receive
+   week numbers for a few more days — the defect persists, but nothing breaks.
+3. On approval, update `contentSid` **and** `approvedBody` together, add the new
+   placeholders, and run `scripts/sync-approved-templates.mts` to rewrite the
+   database rows.
+4. The in-app template editor shows all five as locked with Meta's wording, so
+   the new sentences appear there automatically.
+
+**Do not update `approvedBody` before approval.** It would make the app show and
+log wording that Twilio is not sending — the precise failure the registry exists
+to prevent.

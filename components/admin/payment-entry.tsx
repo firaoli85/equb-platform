@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { recordPayment } from "@/app/actions/payments";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { AmountInput, Select } from "@/components/ui/controls";
@@ -13,6 +13,7 @@ import {
   isPickable,
   quickAmounts,
   remainingOn,
+  stepPickable,
   weeksInDrag,
   weeksTouchedBy,
   type PickableWeek,
@@ -130,22 +131,88 @@ export function PaymentEntry({
     applySelection(next);
   }
 
-  // ————— Drag to sweep a range —————
+  // ————— One range, three inputs —————
   //
-  // STATE, NOT A REF. The in-progress range has to be VISIBLE while the mouse
-  // is down — the squares light up as he sweeps — and anything the render
-  // reads has to be state. A ref held it first, which meant reading
+  // Sweeping a run of weeks was mouse-only, and the organizer records money on
+  // his phone at the meeting more often than at a desk. A finger, an arrow key
+  // and a mouse now reach the same selection.
+  //
+  // THE ANCHOR is what all three extend FROM: the last square he touched
+  // deliberately. Shift + click, Shift + Space and Shift + Arrow all mean
+  // "take the run from the anchor to here".
+  const [anchor, setAnchor] = useState<number | null>(null);
+
+  // STATE, NOT A REF. The in-progress range has to be VISIBLE while the
+  // pointer is down — the squares light up as he sweeps — and anything the
+  // render reads has to be state. A ref held it first, which meant reading
   // `dragFrom.current` during render: `react-hooks/refs` caught it, and it was
   // a real bug rather than a lint preference, because a ref change does not
   // re-render and the highlight would have lagged a square behind the mouse.
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
   const dragRange = drag ? weeksInDrag(weeks, drag.from, drag.to) : [];
 
+  // A sweep is followed by a click on the square it STARTED from. Without
+  // this the sweep would select the run and the trailing click would
+  // immediately untick its first week. A ref, not state, precisely because
+  // nothing renders from it and it must be readable in the same tick — and it
+  // is cleared on the next press, so a sweep that ends outside the grid
+  // cannot swallow an unrelated click later.
+  const afterSweep = useRef(false);
+
+  function extendTo(weekNumber: number, from: number) {
+    applySelection(new Set([...selected, ...weeksInDrag(weeks, from, weekNumber)]));
+  }
+
   function endDrag() {
     if (drag && drag.from !== drag.to) {
-      applySelection(new Set([...selected, ...weeksInDrag(weeks, drag.from, drag.to)]));
+      afterSweep.current = true;
+      extendTo(drag.to, drag.from);
+      setAnchor(drag.to);
     }
     setDrag(null);
+  }
+
+  /** Which square the DOM holds a live reference to, for arrow-key movement. */
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [focusWeek, setFocusWeek] = useState<number | null>(null);
+  // DERIVED, not mirrored: after a payment the weeks change, and a remembered
+  // week that is no longer pickable would leave every square at tabIndex -1 —
+  // a grid Tab could not reach at all.
+  const rovingWeek =
+    focusWeek !== null && pickable.some((w) => w.weekNumber === focusWeek)
+      ? focusWeek
+      : (pickable[0]?.weekNumber ?? null);
+
+  function moveTo(target: number, extend: boolean, from: number) {
+    setFocusWeek(target);
+    gridRef.current?.querySelector<HTMLButtonElement>(`[data-week="${target}"]`)?.focus();
+    if (!extend) return;
+    // Extending UNIONS, exactly as the drag does — Shift + Arrow never quietly
+    // drops a week he already ticked. "Clear" is one control away.
+    const base = anchor ?? from;
+    if (anchor === null) setAnchor(from);
+    extendTo(target, base);
+  }
+
+  function onSquareKeyDown(e: React.KeyboardEvent, weekNumber: number) {
+    const direction =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
+    const target =
+      direction !== 0
+        ? stepPickable(weeks, weekNumber, direction)
+        : e.key === "Home"
+          ? (pickable[0]?.weekNumber ?? null)
+          : e.key === "End"
+            ? (pickable[pickable.length - 1]?.weekNumber ?? null)
+            : undefined;
+    if (target === undefined) return;
+    // Arrows scroll the page by default, and Home/End jump it to the ends.
+    e.preventDefault();
+    if (target !== null) moveTo(target, e.shiftKey, weekNumber);
   }
 
   const selectedTotal = amountForWeeks(weeks, selected);
@@ -182,7 +249,12 @@ export function PaymentEntry({
   }
 
   return (
-    <div className="space-y-3" data-testid="payment-entry" onMouseUp={endDrag} onMouseLeave={endDrag}>
+    <div
+      className="space-y-3"
+      data-testid="payment-entry"
+      onPointerUp={endDrag}
+      onPointerLeave={endDrag}
+    >
       {/* THE SELECTION BAR — appears on first tick, never before. An
           always-present bar of dead controls is noise. It sits ABOVE the
           squares, in the slot the eye already checks, rather than floating
@@ -212,40 +284,81 @@ export function PaymentEntry({
           covers it; half = the leftover part-pays it; ring = ticked. */}
       <div>
         <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400">
-          {memberName}&apos;s weeks — tick them, or drag across a run
+          {memberName}&apos;s weeks — tick one, or sweep across a run
         </p>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Weeks to record">
+        <div
+          ref={gridRef}
+          // `touch-pan-y` gives a sideways sweep to the squares and keeps a
+          // downward swipe as page scrolling: on a phone the grid must not
+          // become a place the page refuses to scroll. When the browser does
+          // take the gesture it sends `pointercancel`, and nothing commits.
+          className="flex touch-pan-y flex-wrap gap-1.5"
+          role="group"
+          aria-label="Weeks to record"
+          aria-describedby="week-grid-help"
+          onPointerMove={(e) => {
+            if (!drag) return;
+            // TOUCH GETS IMPLICIT POINTER CAPTURE: every move is delivered to
+            // the square the finger STARTED on, so `onPointerEnter` on the
+            // siblings never fires and a finger-sweep would select exactly one
+            // week. Asking the document what is under the pointer is the only
+            // way to know, and it works identically for a mouse.
+            const under = document
+              .elementFromPoint(e.clientX, e.clientY)
+              ?.closest<HTMLElement>("[data-week]");
+            const week = Number(under?.dataset.week);
+            if (Number.isFinite(week) && week !== drag.to) setDrag({ ...drag, to: week });
+          }}
+          onPointerCancel={() => setDrag(null)}
+        >
           {weeks.map((w) => {
             const canPick = isPickable(w);
             const ticked = selected.has(w.weekNumber);
             const inDrag = dragRange.includes(w.weekNumber);
             const covered = coverage.fullWeeks.includes(w.weekNumber);
             const partial = coverage.partialWeek === w.weekNumber;
+            const description = canPick
+              ? `Week ${w.weekNumber} — ${formatMoney(remainingOn(w))} still owed`
+              : w.isSkipped
+                ? `Week ${w.weekNumber} — skipped, nobody owes it`
+                : `Week ${w.weekNumber} — already paid`;
             return (
               <button
                 key={w.weekNumber}
                 type="button"
                 disabled={!canPick}
                 aria-pressed={ticked}
+                aria-label={description}
+                // ONE TAB STOP, not twenty. Tab reaches the grid, arrows move
+                // inside it — the pattern every grid of controls uses, and the
+                // reason arrow keys are free to mean something here.
+                tabIndex={w.weekNumber === rovingWeek ? 0 : -1}
                 data-week={w.weekNumber}
                 data-covered={covered ? "full" : partial ? "partial" : undefined}
-                title={
-                  canPick
-                    ? `Week ${w.weekNumber} — ${formatMoney(remainingOn(w))} still owed`
-                    : w.isSkipped
-                      ? `Week ${w.weekNumber} — skipped, nobody owes it`
-                      : `Week ${w.weekNumber} — already paid`
-                }
-                onMouseDown={() => {
+                title={description}
+                onFocus={() => setFocusWeek(w.weekNumber)}
+                onKeyDown={(e) => onSquareKeyDown(e, w.weekNumber)}
+                onPointerDown={() => {
                   if (!canPick) return;
+                  afterSweep.current = false;
                   setDrag({ from: w.weekNumber, to: w.weekNumber });
                 }}
-                onMouseEnter={() => setDrag((d) => (d ? { ...d, to: w.weekNumber } : d))}
-                // A click is a drag that never moved: endDrag ignores it, and
-                // this toggles the one square.
-                onClick={() => {
+                // A click is a sweep that never moved: endDrag ignores it, and
+                // this toggles the one square. Shift takes the run instead —
+                // and a keyboard Space carries `shiftKey` too, so Shift+Space
+                // is the same gesture without a pointer.
+                onClick={(e) => {
                   if (!canPick) return;
-                  if (drag && drag.from !== drag.to) return;
+                  if (afterSweep.current) {
+                    afterSweep.current = false;
+                    return;
+                  }
+                  if (e.shiftKey && anchor !== null) {
+                    extendTo(w.weekNumber, anchor);
+                    setAnchor(w.weekNumber);
+                    return;
+                  }
+                  setAnchor(w.weekNumber);
                   toggleWeek(w.weekNumber);
                 }}
                 className={
@@ -266,6 +379,15 @@ export function PaymentEntry({
             );
           })}
         </div>
+        {/* Said once, quietly, and permanently: this is a screen he uses every
+            week, and a hint that only appears on hover is one a keyboard never
+            finds. It is also the group's description, so it is read aloud. */}
+        <p
+          id="week-grid-help"
+          className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-500"
+        >
+          Drag across a run, or use the arrow keys and hold Shift to take the run with you.
+        </p>
       </div>
 
       {/* THE AMOUNT — the other view of the same number. */}

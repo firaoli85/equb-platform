@@ -135,6 +135,7 @@ export async function loadStandingFacts(participationId: string): Promise<Loaded
           amountDue: participation.weeklyAmount,
           storedPaid: payment?.amountPaid ?? 0,
           isDeferred: payment?.isDeferred ?? false,
+          markedLate: payment?.markedLateAt != null,
           isSkipped: w.isSkipped,
         };
       }),

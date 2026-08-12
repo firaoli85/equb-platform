@@ -99,6 +99,7 @@ async function picture() {
       weekNumber: pm.week.weekNumber,
       amountPaid: pm.amountPaid,
       isDeferred: pm.isDeferred,
+      markedLate: pm.markedLateAt != null,
       isSkipped: pm.week.isSkipped,
     })),
   );

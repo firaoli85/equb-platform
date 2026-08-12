@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { listMySessions } from "@/app/actions/sessions";
 import { getCurrentUser } from "@/lib/auth";
 import { SessionList } from "@/components/session-list";
+import { TruncationNotice } from "@/components/ui/pager";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,13 @@ export default async function MemberSecurityPage() {
         ) : (
           // `now` is stamped on the server so the "2 hours ago" labels match
           // on first paint instead of shifting after hydration.
-          <SessionList sessions={result.data} now={Date.now()} />
+          <>
+            {/* A capped list must say it was cut. This is the list a member
+                reads to answer "is anything signed in that should not be?" —
+                a quietly truncated answer to THAT is the worst kind. */}
+            <TruncationNotice notice={result.notice} />
+            <SessionList sessions={result.data} now={Date.now()} />
+          </>
         )}
       </section>
 

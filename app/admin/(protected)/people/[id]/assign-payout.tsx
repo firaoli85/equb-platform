@@ -6,6 +6,7 @@ import { assignPayoutManually, getManualPayoutOptions } from "@/app/actions/manu
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Checkbox, Select } from "@/components/ui/controls";
 import { Alert, buttonCls, inputCls, Pill } from "@/components/ui/primitives";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatMoney } from "@/lib/format";
 
 // ASSIGN PAYOUT (2.2): the organizer decides, no spin. It creates the same
@@ -95,15 +96,30 @@ export function AssignPayout({
   const [weekId, setWeekId] = useState("");
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
-   * A refusal from the action the dialog just ran. Set it and the dialog stays
-   * open with the reason inside, beside the button that caused it — never only
-   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   * ONE STATE FOR THE ASSIGNMENT (UI_STANDARDS rule 6).
+   *
+   * This held three names for the same fact — a `busy` boolean, a `msg` banner
+   * at the top of the panel, and a `dialogError` string — and they drifted:
+   * the banner sat above the collapsed panel where the organizer was not
+   * looking, and a network failure reached the banner but never the dialog.
+   * `busy` and the dialog's refusal are DERIVED from this below, so there is
+   * no second copy to fall out of step.
    */
-  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  /**
+   * Loading the week/number options is not a save, so it does not belong in
+   * the save state — its failure belongs where the options would have been.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  const busy = save.kind === "saving";
+  /**
+   * A refusal from the action the dialog just ran. While this is set the
+   * dialog stays open with the reason inside, beside the button that caused
+   * it — never only in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const dialogError = save.kind === "err" ? save.message : null;
 
   useEffect(() => {
     if (!open || options) return;
@@ -111,7 +127,7 @@ export function AssignPayout({
     getManualPayoutOptions(participationId).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
-        setMsg({ kind: "err", text: result.error });
+        setLoadError(result.error);
         return;
       }
       setOptions(result.data);
@@ -148,10 +164,10 @@ export function AssignPayout({
   const canConfirm = week !== null && !blocked && selected.length > 0 && !busy;
 
   async function doAssign(typedPhrase: string) {
-    setBusy(true);
-    setMsg(null);
-    /** The refusal, if any — the dialog closes only while this stays null. */
-    let refused: string | null = null;
+    setSave({ kind: "saving" });
+    // Read before the success path clears `options`, so the confirmation can
+    // name the person the money went to.
+    const who = options?.memberName ?? "them";
     try {
       const result = await assignPayoutManually({
         participationId,
@@ -167,52 +183,56 @@ export function AssignPayout({
         replaceConfirmation: needsPhrase ? typedPhrase : undefined,
       });
       if (!result.ok) {
-        refused = `Not assigned: ${result.error}`;
-        setMsg({ kind: "err", text: refused });
+        // THE DIALOG STAYS OPEN, holding the reason, with everything typed
+        // still in place to retry. There is no `finally` closing it any more:
+        // a refusal thrown away with the dialog is UI_STANDARDS 6b's exact
+        // failure.
+        setSave({ kind: "err", message: `Not assigned: ${result.error}` });
+        return;
       }
-      else {
-        const r = result.data;
-        const text =
-          (r.replaced
-            ? `✓ Week ${r.weekNumber}'s previous draw was undone (${r.replaced.payoutCount} payout(s), ` +
-              `${formatMoney(r.replaced.totalNet)}; ${r.replaced.numbersReturned.map((n) => `#${n}`).join(", ")} back in the wheel) and `
-            : "✓ ") +
-          `payout assigned for week ${r.weekNumber} — ` +
-          `${r.numbers.map((n) => `#${n}`).join(", ")}, ${formatMoney(r.totalNet)} net` +
-          (r.settled > 0
-            ? `, with ${formatMoney(r.settled)} of it settling their week-${r.weekNumber} contribution.`
-            : ". It is PENDING in Collections until you mark it collected.");
-        setMsg({ kind: "ok", text });
-        if (onAssigned) onAssigned(text);
-        setOpen(defaultOpen);
-        setOptions(null);
-        setChosen(new Set());
-        setNotes("");
-        router.refresh();
-      }
+      const r = result.data;
+      // WHO AND HOW MUCH, in the confirmation itself. This moves real money;
+      // the organizer reads it back to check he paid the person he meant.
+      const text =
+        (r.replaced
+          ? `Week ${r.weekNumber}'s previous draw was undone (${r.replaced.payoutCount} payout(s), ` +
+            `${formatMoney(r.replaced.totalNet)}; ${r.replaced.numbersReturned.map((n) => `#${n}`).join(", ")} back in the wheel) and `
+          : "") +
+        `${formatMoney(r.totalNet)} net assigned to ${who} for week ${r.weekNumber} — ` +
+        `${r.numbers.map((n) => `#${n}`).join(", ")}` +
+        (r.settled > 0
+          ? `, with ${formatMoney(r.settled)} of it settling their week-${r.weekNumber} contribution.`
+          : ". It is PENDING in Collections until you mark it collected.");
+      setSave({ kind: "ok", message: text });
+      // CLOSE ONLY ON SUCCESS.
+      setConfirm(null);
+      if (onAssigned) onAssigned(text);
+      setOpen(defaultOpen);
+      setOptions(null);
+      setChosen(new Set());
+      setNotes("");
+      router.refresh();
     } catch {
-      setMsg({ kind: "err", text: "Could not reach the server — nothing was assigned." });
-    } finally {
-      setBusy(false);
-      // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
-      // refusal was thrown away with the dialog that could have shown it
-      // (UI_STANDARDS 6b).
-      if (refused === null) {
-        setConfirm(null);
-      } else {
-        setDialogError(refused);
-      }
+      setSave({
+        kind: "err",
+        message: "Could not reach the server — nothing was assigned.",
+      });
     }
   }
 
   return (
     <div className="space-y-3">
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-
       {!open ? (
-        <button type="button" onClick={() => setOpen(true)} className={buttonCls.secondary}>
-          Assign payout…
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => setOpen(true)} className={buttonCls.secondary}>
+            Assign payout…
+          </button>
+          {/* THE CONFIRMATION LANDS HERE, beside the control. A successful
+              assignment collapses the panel, so the message that used to sit
+              at the top of it went with it — and a banner up the page is the
+              off-screen failure rule 6 exists for. */}
+          <SaveFeedback state={save} />
+        </div>
       ) : (
         <div className="space-y-3 rounded-2xl border-2 border-indigo-300 dark:border-indigo-800 bg-white dark:bg-[#141414] p-4">
           <div className="flex items-center gap-3">
@@ -239,7 +259,13 @@ export function AssignPayout({
           </p>
 
           {options === null ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400">Loading the options…</p>
+            // A load that failed is not "still loading". The reason renders
+            // where the options would have been, not in a banner above.
+            loadError !== null ? (
+              <Alert kind="err">Could not load the weeks and numbers: {loadError}</Alert>
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-400">Loading the options…</p>
+            )
           ) : (
             <>
               <label className="block">
@@ -346,7 +372,11 @@ export function AssignPayout({
               <button
                 type="button"
                 disabled={!canConfirm}
-                onClick={() =>
+                onClick={() => {
+                  // A fresh dialog opens with no refusal in it — the derived
+                  // error would otherwise show the previous attempt's reason
+                  // beside a button that has not been pressed yet.
+                  setSave({ kind: "idle" });
                   setConfirm({
                     title: replacing
                       ? `Replace week ${week?.weekNumber}'s draw and assign ${formatMoney(totals.net)} to ${options.memberName}?`
@@ -377,14 +407,20 @@ export function AssignPayout({
                       </>
                     ),
                     confirmLabel: replacing ? "Replace and assign" : "Assign the payout",
-                  })
-                }
+                  });
+                }}
                 className={buttonCls.primary}
               >
                 Review and assign…
               </button>
             </>
           )}
+
+          {/* Outside the options block on purpose: a successful assignment
+              throws the options away and refetches them, and the confirmation
+              must not vanish with them. Embedded (defaultOpen) the panel stays
+              open, so this is where the message is read. */}
+          <SaveFeedback state={save} />
         </div>
       )}
 
@@ -393,10 +429,10 @@ export function AssignPayout({
         error={dialogError}
         busy={busy}
         onConfirm={(typedPhrase) => void doAssign(typedPhrase)}
-        onCancel={() => {
-          setDialogError(null);
-          setConfirm(null);
-        }}
+        // Cancelling closes the dialog but does NOT erase the refusal: it
+        // stays beside the panel's own controls, which is where the retry
+        // happens.
+        onCancel={() => setConfirm(null)}
       />
     </div>
   );

@@ -87,6 +87,7 @@ function standingFor(p: (typeof cycle.participations)[number], mode: "now" | "ru
         amountDue: p.weeklyAmount,
         storedPaid: payment?.amountPaid ?? 0,
         isDeferred: payment?.isDeferred ?? false,
+        markedLate: payment?.markedLateAt != null,
         isSkipped: w.isSkipped,
       };
     }),

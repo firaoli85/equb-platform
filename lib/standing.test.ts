@@ -20,6 +20,7 @@ function mkWeeks(
       amountDue,
       storedPaid: 0,
       isDeferred: false,
+      markedLate: false,
       ...overrides[n],
     });
   }
@@ -335,6 +336,7 @@ describe("elapsed weeks come from the week rows, not the cycle start date", () =
       amountDue,
       storedPaid: 0,
       isDeferred: false,
+      markedLate: false,
       isSkipped: false,
     }));
 

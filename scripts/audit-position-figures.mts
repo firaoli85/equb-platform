@@ -96,6 +96,7 @@ const flatPayments = cycle.participations.flatMap((p) =>
     weekNumber: pm.week.weekNumber,
     amountPaid: pm.amountPaid,
     isDeferred: pm.isDeferred,
+    markedLate: pm.markedLateAt != null,
     isSkipped: pm.week.isSkipped,
   })),
 );
@@ -123,6 +124,7 @@ const standingFor = (p: (typeof cycle.participations)[number], through: number) 
           amountDue: p.weeklyAmount,
           storedPaid: pay?.amountPaid ?? 0,
           isDeferred: pay?.isDeferred ?? false,
+          markedLate: pay?.markedLateAt != null,
           isSkipped: w.isSkipped,
         };
       }),

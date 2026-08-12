@@ -1,5 +1,6 @@
 import { listMySessions } from "@/app/actions/sessions";
 import { SessionList } from "@/components/session-list";
+import { TruncationNotice } from "@/components/ui/pager";
 import { Alert } from "@/components/ui/primitives";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,11 @@ export default async function AccountSettingsPage() {
       {!sessions.ok ? (
         <Alert kind="err">{sessions.error}</Alert>
       ) : (
-        <SessionList sessions={sessions.data} now={Date.now()} />
+        <>
+          {/* A capped list must say it was cut (lib/paging.ts). */}
+          <TruncationNotice notice={sessions.notice} />
+          <SessionList sessions={sessions.data} now={Date.now()} />
+        </>
       )}
     </div>
   );

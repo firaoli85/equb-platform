@@ -90,6 +90,19 @@ export const PAGE_SIZES = {
   /** The send log: one row per message, each carrying its full text. */
   messageLog: 50,
   /**
+   * The message centre's PEOPLE list. Every person in the directory appears,
+   * not only those with history — the ones never contacted are exactly who he
+   * is looking for — so it grows with the group, never with the sends.
+   */
+  messageThreads: 30,
+  /**
+   * One member's conversation. Each entry carries the full message text, and
+   * this grows with every send for as long as they are in the group. Small
+   * enough to be a screenful, large enough that a cycle's messages to one
+   * person are one page.
+   */
+  memberConversation: 20,
+  /**
    * A member's receipts. One editable row each, and the list grows with every
    * payment for as long as the person is in the group — a fourth-cycle member
    * has hundreds. Small enough that a page is a screenful, large enough that

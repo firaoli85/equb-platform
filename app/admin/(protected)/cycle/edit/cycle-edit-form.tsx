@@ -7,7 +7,8 @@ import { updateCycle } from "@/app/actions/edits";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, NumberInput } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
-import { buttonCls, Field, inputCls } from "@/components/ui/primitives";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
+import { Field, inputCls } from "@/components/ui/primitives";
 import {
   cycleFinishPreview,
   finishLine,
@@ -49,8 +50,9 @@ export function CycleEditForm({
     feePercent: String(cycle.feePercent),
   };
   const [fields, setFields] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  // DERIVED: the dialog's busy state and the button's are the same fact.
+  const busy = save.kind === "saving";
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran. Set it and the dialog stays
@@ -62,11 +64,11 @@ export function CycleEditForm({
   const dirty = JSON.stringify(fields) !== JSON.stringify(initial);
   const set = (key: keyof typeof initial) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setFields((f) => ({ ...f, [key]: e.target.value }));
-    setMsg(null);
+    setSave({ kind: "idle" });
   };
   const setValue = (key: keyof typeof initial) => (value: string) => {
     setFields((f) => ({ ...f, [key]: value }));
-    setMsg(null);
+    setSave({ kind: "idle" });
   };
 
   // Live figures (2.1: real money, not percentages; dates compute themselves).
@@ -102,11 +104,10 @@ export function CycleEditForm({
     liveStart !== null &&
     weekOne.date.getTime() !== liveStart.getTime();
 
-  function save(e: React.FormEvent) {
-    e.preventDefault();
+  function askToSave() {
     const unitAmount = parseDollarsToCents(fields.unitDollars);
     if (unitAmount === null || unitAmount < 1) {
-      return setMsg({ kind: "err", text: "Unit amount must be a valid dollar amount." });
+      return setSave({ kind: "err", message: "Unit amount must be a valid dollar amount." });
     }
     const plannedWeeks = Number.parseInt(fields.plannedWeeks, 10);
     const weeksChanged = plannedWeeks !== cycle.plannedWeeks;
@@ -152,8 +153,7 @@ export function CycleEditForm({
   async function doSave() {
     const unitAmount = parseDollarsToCents(fields.unitDollars)!;
     const plannedWeeks = Number.parseInt(fields.plannedWeeks, 10);
-    setBusy(true);
-    setMsg(null);
+    setSave({ kind: "saving" });
     /** The refusal, if any — the dialog closes only while this stays null. */
     let refused: string | null = null;
     try {
@@ -167,16 +167,17 @@ export function CycleEditForm({
       });
       if (!result.ok) {
         refused = `Not saved: ${result.error}`;
-        setMsg({ kind: "err", text: refused });
-      }
-      else {
-        setMsg({ kind: "ok", text: "✓ Saved." });
+        setSave({ kind: "err", message: refused });
+      } else {
+        setSave({
+          kind: "ok",
+          message: `Saved — ${plannedWeeks} weeks at ${formatMoney(unitAmount)}, ${fields.feePercent}% fee.`,
+        });
         router.refresh();
       }
     } catch {
-      setMsg({ kind: "err", text: "Could not reach the server — nothing confirmed." });
+      setSave({ kind: "err", message: "Could not reach the server — nothing confirmed." });
     } finally {
-      setBusy(false);
       // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
       // refusal was thrown away with the dialog that could have shown it
       // (UI_STANDARDS 6b).
@@ -189,7 +190,14 @@ export function CycleEditForm({
   }
 
   return (
-    <form onSubmit={save} className="max-w-md space-y-4">
+    // Enter still submits from any field; the SaveButton is what it reaches.
+    <form
+      className="max-w-md space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (dirty) askToSave();
+      }}
+    >
       <Field label="Name">
         <input value={fields.name} onChange={set("name")} className={inputCls} />
       </Field>
@@ -242,18 +250,16 @@ export function CycleEditForm({
         </div>
       )}
 
-      {msg && (
-        <p
-          role={msg.kind === "err" ? "alert" : "status"}
-          className={`rounded border px-3 py-2 text-sm ${msg.kind === "err" ? "border-red-400 bg-red-50 text-red-800 dark:text-red-400" : "border-green-500 bg-green-50 text-green-900"}`}
-        >
-          {msg.text}
-        </p>
-      )}
-
-      <button type="submit" disabled={!dirty || busy} className={buttonCls.primary}>
-        {busy ? "Saving…" : "Save cycle"}
-      </button>
+      {/* The fee projection and the per-member table sit between the fields
+          and this; the confirmation stays at the button (rule 6). */}
+      <SaveButton
+        state={save}
+        onSave={askToSave}
+        onStateSettled={() => setSave({ kind: "idle" })}
+        label="Save cycle"
+        dirty={dirty}
+        notDirtyHint="Nothing has changed yet."
+      />
 
       <ConfirmDialog
         spec={confirm}

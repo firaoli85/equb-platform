@@ -24,6 +24,7 @@ function weeks(
       amountDue,
       storedPaid: 0,
       isDeferred: false,
+      markedLate: false,
       isSkipped: false,
       ...overrides[n],
     });

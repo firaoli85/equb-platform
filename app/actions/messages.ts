@@ -23,6 +23,11 @@ import {
   STATEMENTS_DELIVERABLE,
   type SendOutcome,
 } from "@/lib/messaging-engine";
+import {
+  approvedWordingRefusal,
+  APPROVED_TEMPLATES,
+  isApprovedTemplateKey,
+} from "@/lib/whatsapp-templates";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import {
@@ -208,6 +213,21 @@ export async function updateMessageTemplate(input: {
 
     const existing = await prisma.messageTemplate.findUnique({ where: { id: input.id } });
     if (!existing) return { ok: false as const, error: "Template not found." };
+
+    // META OWNS FIVE OF THESE SENTENCES (2.20, 2.11).
+    //
+    // WhatsApp sends the approved keys by ContentSid, so an edited body never
+    // reaches a member — it only becomes what the PREVIEW shows, what the
+    // MESSAGE LOG stores, and what the compose screen quotes. The organizer
+    // would be reading his own wording everywhere while members received
+    // Meta's, which is the precise inversion of "the system never speaks to a
+    // member without the organizer knowing exactly what it said".
+    //
+    // Refused at the ACTION and not only in the editor, because the editor is
+    // one caller and this is the boundary the record is written at.
+    if (isApprovedTemplateKey(existing.key) && body !== APPROVED_TEMPLATES[existing.key].namedBody) {
+      return { ok: false as const, error: approvedWordingRefusal(existing.key) };
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.messageTemplate.update({

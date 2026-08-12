@@ -6,7 +6,8 @@ import { changeDrawSlot, moveDraw } from "@/app/actions/edits";
 import { undoDraw } from "@/app/actions/wheel";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/controls";
-import { Alert, buttonCls } from "@/components/ui/primitives";
+import { buttonCls } from "@/components/ui/primitives";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatMoney } from "@/lib/format";
 import type { UndoDrawConsequences } from "@/lib/undo-draw";
 
@@ -26,8 +27,13 @@ export function DrawEditor({
   const router = useRouter();
   const [targetWeekId, setTargetWeekId] = useState(draw.weekId);
   const [targetSlotId, setTargetSlotId] = useState(draw.slotId);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  /**
+   * ONE STATE FOR THE OUTCOME of whichever of the three buttons was pressed
+   * (rule 6). It renders under the row they sit in, not in a page banner.
+   */
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  // DERIVED: the dialog's busy state and every button's are the same fact.
+  const busy = save.kind === "saving";
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran. Set it and the dialog stays

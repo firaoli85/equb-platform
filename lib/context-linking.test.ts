@@ -145,6 +145,47 @@ describe("every figure on screen is a link to the thing it is about (§8)", () =
   }
 });
 
+// A LINK IS ONLY HALF THE OBLIGATION.
+//
+// Every rule above checks that a link is WRITTEN. All eleven `?week=` links
+// were written, guarded, and passing — and the destination ignored the
+// parameter completely: `PaymentsPage` took no `searchParams`, so clicking
+// week 7 on a chart landed on the unfocused default and the organizer had to
+// find week 7 again by eye. The guard was true and the feature was absent.
+//
+// So a link that carries a parameter now also has to prove the far end reads
+// it. This is the half that was missing.
+describe("a link that carries a parameter is READ at the other end (§8)", () => {
+  it("the payments route reads ?week and hands it to the screen", () => {
+    const src = read("app/admin/(protected)/payments/page.tsx");
+    expect(src, "PaymentsPage takes no searchParams").toMatch(/searchParams/);
+    expect(src, "the week parameter is never read").toMatch(/\(await searchParams\)\.week/);
+    expect(src, "the week never reaches the screen").toMatch(/focusWeek=\{/);
+  });
+
+  it("the grid marks and reaches the week it was pointed at", () => {
+    const src = read("app/admin/(protected)/payments/payments-grid.tsx");
+    // Ringed…
+    expect(src).toMatch(/data-focus-week=/);
+    // …AND scrolled to, because week 17 of 20 is below the fold and a ring
+    // nobody can see is the same as no ring.
+    expect(src).toMatch(/scrollIntoView/);
+  });
+
+  it("the screen says it is showing one week, and offers the way back", () => {
+    const src = read("app/admin/(protected)/payments/payments-screen.tsx");
+    expect(src).toContain("focusNotice");
+    expect(src).toContain("Show every week");
+  });
+
+  // NON-VACUITY. The shapes these look for must not be present by accident:
+  // each is absent from a sibling screen that has no week parameter.
+  it("the scan is not vacuous", () => {
+    const unrelated = read("app/admin/(protected)/collections/page.tsx");
+    expect(/\(await searchParams\)\.week/.test(unrelated)).toBe(false);
+  });
+});
+
 describe("the three cash routes stay reachable after the move (§4.2)", () => {
   // The organizer has these in his history and his bookmarks. A 404 on a money
   // screen he has used for months is not an acceptable way to move it.

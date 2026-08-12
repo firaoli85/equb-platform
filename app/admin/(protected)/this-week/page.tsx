@@ -13,6 +13,12 @@ export const dynamic = "force-dynamic";
 // groups use THE shared status vocabulary, so "deferred" means the same
 // thing here as on the grid, the members list and the member's own page.
 const GROUPS = [
+  // FIRST, because it is the only group here the organizer put someone in by
+  // hand (2.2). The current week's window is still open, so the calendar
+  // cannot produce a LATE on this screen — every name in this group is one he
+  // marked, and burying it under "have not paid" would hide his own decision
+  // from him.
+  { key: "LATE", title: "Marked late" },
   { key: "UNPAID", title: "Have not paid" },
   { key: "PARTIAL", title: "Partially paid" },
   { key: "PAID", title: "Paid" },

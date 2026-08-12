@@ -7,7 +7,8 @@ import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog"
 import { AmountInput, Select } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
-import { Alert, buttonCls, inputCls, Pill } from "@/components/ui/primitives";
+import { buttonCls, inputCls, Pill } from "@/components/ui/primitives";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 
 // THE LIFE OF A CARRIED BALANCE (2.18).
@@ -62,15 +63,24 @@ export function CarriedBalance({
   const [when, setWhen] = useState(todayIso());
   const [note, setNote] = useState("");
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
-   * A refusal from the action the dialog just ran. Set it and the dialog stays
-   * open with the reason inside, beside the button that caused it — never only
-   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   * ONE STATE FOR BOTH MONEY ACTIONS (UI_STANDARDS rule 6).
+   *
+   * This was a `busy` boolean, a `msg` banner at the top of the block and a
+   * `dialogError` string — three names for one fact. The banner sat above the
+   * balance headline while the button pressed was two panels further down, and
+   * a network failure reached the banner but never the dialog. `busy` and the
+   * dialog's refusal are DERIVED from this, so no copy can fall out of step.
    */
-  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
+  const busy = save.kind === "saving";
+  /**
+   * A refusal from the action the dialog just ran. While this is set the
+   * dialog stays open with the reason inside, beside the button that caused
+   * it — never only in a banner elsewhere on the page (UI_STANDARDS 6b).
+   */
+  const dialogError = save.kind === "err" ? save.message : null;
   // The confirm handler carries what the organizer TYPED, so an action with
   // a server-side typed-name check gets the real value rather than a copy of
   // the expected one.
@@ -85,35 +95,29 @@ export function CarriedBalance({
     setReason("");
   }
 
-  async function run(fn: () => Promise<{ ok: boolean; error?: string }>, okText: string) {
-    setBusy(true);
-    setMsg(null);
-    /** The refusal, if any — the dialog closes only while this stays null. */
-    let refused: string | null = null;
+  async function run(fn: () => Promise<{ ok: boolean; error?: string }>, okMessage: string) {
+    setSave({ kind: "saving" });
     try {
       const result = await fn();
       if (!result.ok) {
-        refused = `Not recorded: ${result.error}`;
-        setMsg({ kind: "err", text: refused });
+        // THE DIALOG STAYS OPEN, holding the reason, with the amount still
+        // typed in behind it. There is no `finally` closing it any more: a
+        // refusal thrown away with the dialog is UI_STANDARDS 6b's exact
+        // failure.
+        setSave({ kind: "err", message: `Not recorded: ${result.error}` });
+        return;
       }
-      else {
-        setMsg({ kind: "ok", text: okText });
-        close();
-        router.refresh();
-      }
+      setSave({ kind: "ok", message: okMessage });
+      // CLOSE ONLY ON SUCCESS.
+      setConfirm(null);
+      setOnConfirm(null);
+      close();
+      router.refresh();
     } catch {
-      setMsg({ kind: "err", text: "Could not reach the server — nothing was recorded." });
-    } finally {
-      setBusy(false);
-      // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
-      // refusal was thrown away with the dialog that could have shown it
-      // (UI_STANDARDS 6b).
-      if (refused === null) {
-        setConfirm(null);
-        setOnConfirm(null);
-      } else {
-        setDialogError(refused);
-      }
+      setSave({
+        kind: "err",
+        message: "Could not reach the server — nothing was recorded.",
+      });
     }
   }
 

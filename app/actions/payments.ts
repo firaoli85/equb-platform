@@ -384,6 +384,7 @@ export async function getMemberStanding(participationId: string) {
         amountDue: w.allocation.amountDue,
         storedPaid: w.payment?.amountPaid ?? 0,
         isDeferred: w.isDeferred,
+        markedLate: w.payment?.markedLateAt != null,
         isSkipped: w.allocation.isSkipped,
       })),
       totalPaid: participation.payments.reduce((sum, p) => sum + p.amountPaid, 0),

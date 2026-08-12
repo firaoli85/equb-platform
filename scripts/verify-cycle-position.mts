@@ -66,6 +66,7 @@ const flatPayments = cycle.participations.flatMap((p) =>
     weekNumber: pm.week.weekNumber,
     amountPaid: pm.amountPaid,
     isDeferred: pm.isDeferred,
+    markedLate: pm.markedLateAt != null,
     isSkipped: pm.week.isSkipped,
   })),
 );
@@ -108,6 +109,7 @@ const after = await (async () => {
       weekNumber: pm.week.weekNumber,
       amountPaid: pm.amountPaid,
       isDeferred: pm.isDeferred,
+      markedLate: pm.markedLateAt != null,
       isSkipped: pm.week.isSkipped,
     })),
   );

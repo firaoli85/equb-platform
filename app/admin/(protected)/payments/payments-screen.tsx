@@ -6,6 +6,7 @@ import { SegmentedToggle, usePersistedChoice } from "@/components/ui/view-toggle
 import { consistencyFromStatus } from "@/lib/chart";
 import type { MemberFilter } from "@/lib/members-view";
 import type { PaymentGrid } from "@/lib/payments-view";
+import { focusNotice } from "@/lib/week-focus";
 import { PaymentsGrid } from "./payments-grid";
 import { PaymentsMembers } from "./payments-members";
 import { PatternsView } from "./patterns-view";
@@ -65,6 +66,7 @@ const ICON = {
 
 export function PaymentsScreen({
   data,
+  focusWeek = null,
 }: {
   data: {
     presentation?: boolean;
@@ -73,9 +75,20 @@ export function PaymentsScreen({
     grid: PaymentGrid;
     memberWeekly: Record<string, number>;
   };
+  /** A week arrived at from `?week=N` — a chart, the cash page, a strip. */
+  focusWeek?: number | null;
 }) {
   const [view, setView] = usePersistedChoice<View>("admin-payments-view", VIEWS, "list");
   const [filter, setFilter] = useState<MemberFilter>("all");
+
+  // ARRIVING AT A WEEK LANDS ON THE GRID, whatever view he last chose. The
+  // members list has one row per PERSON; a week is a column there and cannot
+  // be pointed at. The grid has one row per WEEK, which is what he clicked.
+  // DERIVED, so it does not fight the toggle: the moment he presses Members or
+  // Patterns the choice is his again, and the notice below goes with it.
+  const [leftFocus, setLeftFocus] = useState(false);
+  const focused = focusWeek !== null && !leftFocus;
+  const shownView: View = focused ? "grid" : view;
 
   return (
     <div className="space-y-4">
@@ -91,8 +104,12 @@ export function PaymentsScreen({
         </div>
         <SegmentedToggle
           label="View"
-          value={view}
-          onChange={setView}
+          value={shownView}
+          onChange={(v) => {
+            // Choosing a view is choosing to leave the week he arrived at.
+            setLeftFocus(true);
+            setView(v);
+          }}
           options={[
             { value: "list", label: "Members", icon: ICON.list },
             { value: "grid", label: "Grid", icon: ICON.grid },
@@ -101,17 +118,45 @@ export function PaymentsScreen({
         />
       </div>
 
+      {/* A SCREEN POINTED AT ONE WEEK SAYS SO. Without this the grid looks
+          ordinary with one row mysteriously ringed, and the ring reads as a
+          status rather than as "this is what you clicked". */}
+      {focused && (
+        <div
+          data-testid="week-focus-notice"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-indigo-50 px-3 py-2 text-sm dark:bg-indigo-950/40"
+        >
+          <span className="font-bold text-indigo-900 dark:text-indigo-200">
+            {focusNotice(focusWeek)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setLeftFocus(true)}
+            className="ml-auto text-xs font-semibold text-indigo-700 hover:underline dark:text-indigo-300"
+          >
+            Show every week
+          </button>
+        </div>
+      )}
+
       <div className="animate-fade-in-up-1">
-        {view === "list" && (
+        {shownView === "list" && (
           <PaymentsMembers data={data} filter={filter} onFilterChange={setFilter} />
         )}
-        {view === "grid" && <PaymentsGrid data={data} filter={filter} onFilterChange={setFilter} />}
+        {shownView === "grid" && (
+          <PaymentsGrid
+            data={data}
+            filter={filter}
+            onFilterChange={setFilter}
+            focusWeek={focused ? focusWeek : null}
+          />
+        )}
         {/* PATTERNS NOW DOES SOMETHING. It answered "who is slipping" and
             then offered nothing to act on: every dot linked to the week board,
             which is the wrong destination — he has found a PERSON. A dot now
             opens the SAME payment entry the other two views use, with that
             week ticked; dragging across a run ticks the whole run. */}
-        {view === "patterns" && (
+        {shownView === "patterns" && (
           <PatternsView grid={data.grid} strips={stripsFrom(data.grid)} />
         )}
       </div>

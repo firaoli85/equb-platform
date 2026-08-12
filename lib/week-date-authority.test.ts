@@ -202,8 +202,23 @@ describe("no MONEY path derives its clock from cycle.startDate", () => {
 
   it("computeStanding decides elapsed from each week's own date", () => {
     const source = readFileSync("lib/standing.ts", "utf8");
-    expect(source).toMatch(/weekHasElapsed\(\{ weekDate: w\.date, today \}\)/);
+    // `weekCountsAsDue` wraps `weekHasElapsed` and adds ONE other route — the
+    // organizer's own late mark (2.2), which is a stored decision about that
+    // week and not a projection off the cycle clock. The property this guard
+    // protects is unchanged: the week's OWN DATE decides, never `cycleWeek`.
+    expect(source).toMatch(/weekCountsAsDue\(\{\s*\n\s*weekDate: w\.date,\s*\n\s*today,/);
     // The old projected filter must be gone for good.
     expect(source).not.toMatch(/weekNumber <= cycleWeek/);
+  });
+
+  // And the wrapper must not have quietly become a second clock: the only
+  // thing it may add is the stored mark, and deferral takes even that away
+  // (ruling, Aug 2026). Everything else still falls through to the calendar.
+  it("weekCountsAsDue adds the organizer's mark and nothing else", () => {
+    const source = readFileSync("lib/derived.ts", "utf8");
+    expect(source).toMatch(
+      /if \(args\.markedLate && !args\.isDeferred\) return true;\s*\n\s*return weekHasElapsed\(args\);/,
+    );
+    expect(source).not.toMatch(/\bcurrentWeekNumber\b/);
   });
 });

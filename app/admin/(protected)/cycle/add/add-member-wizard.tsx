@@ -11,6 +11,7 @@ import { recordCarryDecision } from "@/app/actions/ledger";
 import { FeeCalculator } from "@/components/admin/fee-calculator";
 import { NumberConflictPanel } from "@/components/admin/number-conflict-panel";
 import { Radio } from "@/components/ui/controls";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import {
   commitmentCap,
   finishLine,
@@ -146,8 +147,12 @@ export function AddMemberWizard({
     setWeeksStr(String(weeksToFinishWithGroup(cycle.plannedWeeks, from)));
   }
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // ONE state for the save, everything else derived from it (rule 6). A second
+  // boolean holding "is it working" is a second copy of the same fact, and the
+  // two drift apart the first time an early `return` remembers only one of
+  // them — which is exactly what the discarded `finally` below used to hide.
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const busy = save.kind === "saving";
   /**
    * The carried-balance decision was refused while the member WAS created.
    * Shown on the success screen: the save is real, this one part is not, and
@@ -273,14 +278,17 @@ export function AddMemberWizard({
   const net = gross !== null && fee !== null ? calculateNet(gross, fee) : null;
 
   function goToStep(next: 1 | 2 | 3 | 4) {
-    setError(null);
+    // A refusal belonged to the attempt that was made, not to the step being
+    // opened, so moving clears it. A save still IN FLIGHT keeps its state:
+    // dropping it back to idle would show the Save button as pressable while
+    // the write is still running.
+    setSave((s) => (s.kind === "saving" ? s : { kind: "idle" }));
     setStep(next);
   }
 
   async function handleSave(onConflict?: "replace") {
     if (!step1Valid || !step2Valid || !step3Valid) return;
-    setError(null);
-    setSaving(true);
+    setSave({ kind: "saving" });
     try {
       const common = {
         cycleId: cycle.id,
@@ -308,9 +316,14 @@ export function AddMemberWizard({
         // free; the panel turns that into the two real options.
         if ("conflict" in result && result.conflict) {
           setConflict(result.conflict);
+          // The panel IS this refusal's feedback — it names who holds the
+          // number and offers the two real answers, right below the button.
+          // Back to idle so the button is pressable again once he has chosen,
+          // and so the same sentence is not printed twice beside it.
+          setSave({ kind: "idle" });
           return;
         }
-        setError(result.error);
+        setSave({ kind: "err", message: `Not saved: ${result.error}` });
         return;
       }
       setConflict(null);
@@ -342,17 +355,37 @@ export function AddMemberWizard({
         setCarryWarning(null);
       }
       setSaved(result.data!);
+      // Beat 3 is the success SCREEN below — see the comment on it. Leaving an
+      // "ok" message here would resurface it beside the Save button of the
+      // NEXT member after "Add another member", naming the person just added.
+      setSave({ kind: "idle" });
       router.refresh();
     } catch {
-      setError(
-        "The save could not be confirmed — check your connection and look at the cycle page before trying again.",
-      );
-    } finally {
-      setSaving(false);
+      // NOT prefixed "Not saved:" like the refusals above, and deliberately:
+      // the request never came back, so the member may well BE in the cycle.
+      // The red box already makes the state unmistakable; asserting "not
+      // saved" over an outcome nobody knows is what gets someone added twice.
+      setSave({
+        kind: "err",
+        message:
+          "The save could not be confirmed — check your connection and look at the cycle page before trying again.",
+      });
     }
+    // NO `finally { setSaving(false) }`: every path above settles the one save
+    // state itself, so a refusal can no longer be wiped by the reset that ran
+    // after it.
   }
 
   // ————— Success screen: unmistakable confirmation (2.10) —————
+  //
+  // BEAT 3 IS THIS SCREEN, not a message beside the button — the one place in
+  // this file where the confirmation is not `SaveButton`'s. It REPLACES the
+  // wizard, where the Save button stood two lines down a short step, so it
+  // cannot land off-screen the way the participation form's did. And it says
+  // WHAT WAS WRITTEN — who, into which cycle, how much a week, which weeks,
+  // the finish date, the lucky numbers — because that is what the organizer
+  // reads a confirmation to check. A one-line "✓ Saved" beside the button
+  // could carry none of it.
   if (saved) {
     return (
       <div
@@ -852,18 +885,16 @@ export function AddMemberWizard({
             <strong>{formatMoney(net!)}</strong>.
           </p>
 
-          {error && (
-            <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800 dark:text-red-400">
-              Not saved: {error}
-            </p>
-          )}
+          {/* The refusal used to be printed here, above the summary and above
+              the conflict panel. It renders AT the Save button now (rule 6b) —
+              `SaveButton` owns it, and there is nowhere else to put it. */}
 
           {/* A number already in use is a choice, not a dead end — the same
               panel the member profile shows, from the same server reply. */}
           {conflict && (
             <NumberConflictPanel
               conflict={conflict}
-              busy={saving}
+              busy={busy}
               onReplace={() => void handleSave("replace")}
               onKeep={(suggested) => {
                 // Write the free number into the field it clashed on, so the
@@ -880,18 +911,21 @@ export function AddMemberWizard({
             />
           )}
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => goToStep(3)} className="rounded border border-gray-400 px-4 py-2 text-sm">
               Back
             </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void handleSave()}
-              className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
+            {/* THE SAVE, AND ITS REFUSAL, IN ONE PLACE. This is the write —
+                participation, lucky numbers and the carried-balance decision —
+                so the reason it did not happen renders beside the button that
+                was pressed, and never auto-clears (rule 6). */}
+            <SaveButton
+              state={save}
+              onSave={() => void handleSave()}
+              label="Save"
+              dirty={step1Valid && step2Valid && step3Valid}
+              notDirtyHint="Go back and finish the earlier steps first."
+            />
           </div>
         </section>
       )}

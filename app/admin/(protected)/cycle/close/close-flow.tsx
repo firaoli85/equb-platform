@@ -6,6 +6,7 @@ import { useState } from "react";
 import { closeCycle, deleteClosedCycle, getDeleteReview } from "@/app/actions/cycle-close";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Alert, buttonCls, Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { StatCard } from "@/components/ui/stat-card";
 import type { MemberFinal } from "@/lib/cycle-close";
 import { formatMoney } from "@/lib/format";
@@ -49,16 +50,22 @@ export function CloseFlow({ review }: { review: Review }) {
    * the top of a long review (UI_STANDARDS 6b).
    */
   const [dialogError, setDialogError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  /**
+   * ONE STATE FOR THE WHOLE OUTCOME (rule 6). The confirmation used to be an
+   * <Alert> at the very top of this page — above the undrawn blocker, the cash
+   * cards, the unfinished list and a 25-row table. Pressing "Close" and reading
+   * the result meant scrolling back up. It renders at the button now.
+   */
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  // DERIVED: the dialog's busy state and the button's are the same fact.
+  const busy = save.kind === "saving";
 
   const needsAck = review.undrawn.length > 0;
   const ackOk = !needsAck || acknowledge.trim().length > 0;
   const tooSoon = review.timing.state === "too-soon";
 
   async function doClose(typedPhrase: string) {
-    setBusy(true);
-    setMsg(null);
+    setSave({ kind: "saving" });
     /** The refusal, if any — the dialog closes only while this stays null. */
     let refused: string | null = null;
     try {
@@ -75,19 +82,18 @@ export function CloseFlow({ review }: { review: Review }) {
       });
       if (!result.ok) {
         refused = `Not closed: ${result.error}`;
-        setMsg({ kind: "err", text: refused });
+        setSave({ kind: "err", message: refused });
       }
       else {
-        setMsg({
+        setSave({
           kind: "ok",
-          text: `✓ ${review.cycleName} is CLOSED — ${result.data.debts} carried debt${result.data.debts === 1 ? "" : "s"} written to the ledger, archive saved.`,
+          message: `${review.cycleName} is CLOSED — ${result.data.debts} carried debt${result.data.debts === 1 ? "" : "s"} written to the members' ledgers, archive saved.`,
         });
         router.refresh();
       }
     } catch {
-      setMsg({ kind: "err", text: "Could not reach the server — nothing was closed." });
+      setSave({ kind: "err", message: "Could not reach the server — nothing was closed." });
     } finally {
-      setBusy(false);
       // CLOSE ONLY ON SUCCESS — a refusal must not be discarded with the
       // dialog that could have shown it (UI_STANDARDS 6b).
       if (refused === null) setConfirm(null);
@@ -97,8 +103,6 @@ export function CloseFlow({ review }: { review: Review }) {
 
   return (
     <div className="space-y-4">
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-
       {/* ————— 2.27: nobody may be quietly missed ————— */}
       {needsAck ? (
         <Card tone="danger">
@@ -293,7 +297,7 @@ export function CloseFlow({ review }: { review: Review }) {
       )}
 
       {/* ————— STEP 2: the close ————— */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={busy || !ackOk || tooSoon}
@@ -344,6 +348,9 @@ export function CloseFlow({ review }: { review: Review }) {
         <span className="text-xs text-gray-600 dark:text-gray-400">
           Typed confirmation required — this writes ledger debts.
         </span>
+        {/* The outcome, AT the button that was pressed — the dialog carries a
+            refusal while it is open, and this is what remains after it closes. */}
+        <SaveFeedback state={save} />
       </div>
 
       <ConfirmDialog
@@ -376,19 +383,19 @@ export function DeleteCycleCard({
    * the top of a long review (UI_STANDARDS 6b).
    */
   const [dialogError, setDialogError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  // DERIVED: the dialog's busy state and the row's button are the same fact.
+  const busy = save.kind === "saving";
 
   // No `refused` local here: this only OPENS the dialog (it fetches the review
   // and calls setConfirm). The destructive action runs in doDelete, which keeps
   // its own refusal.
   async function openDelete() {
-    setBusy(true);
-    setMsg(null);
+    setSave({ kind: "saving" });
     try {
       const review = await getDeleteReview(cycle.id);
       if (!review.ok) {
-        setMsg({ kind: "err", text: review.error });
+        setSave({ kind: "err", message: `Cannot delete ${cycle.name}: ${review.error}` });
         return;
       }
       setConfirm({
@@ -412,16 +419,16 @@ export function DeleteCycleCard({
         confirmLabel: `Delete ${cycle.name}`,
         requirePhrase: cycle.name,
       });
+      // Opening the dialog is not an outcome — nothing has been written yet,
+      // so the control goes back to idle rather than claiming a success.
+      setSave({ kind: "idle" });
     } catch {
-      setMsg({ kind: "err", text: "Could not reach the server." });
-    } finally {
-      setBusy(false);
+      setSave({ kind: "err", message: "Could not reach the server — nothing was deleted." });
     }
   }
 
   async function doDelete(typedPhrase: string) {
-    setBusy(true);
-    setMsg(null);
+    setSave({ kind: "saving" });
     /** The refusal, if any — the dialog closes only while this stays null. */
     let refused: string | null = null;
     try {
@@ -431,16 +438,18 @@ export function DeleteCycleCard({
       const result = await deleteClosedCycle({ cycleId: cycle.id, typedName: typedPhrase });
       if (!result.ok) {
         refused = `Not deleted: ${result.error}`;
-        setMsg({ kind: "err", text: refused });
+        setSave({ kind: "err", message: refused });
       }
       else {
-        setMsg({ kind: "ok", text: `✓ ${cycle.name} deleted — its archive and every ledger remain.` });
+        setSave({
+          kind: "ok",
+          message: `${cycle.name} deleted — its archive and every ledger remain.`,
+        });
         router.refresh();
       }
     } catch {
-      setMsg({ kind: "err", text: "Could not reach the server — nothing was deleted." });
+      setSave({ kind: "err", message: "Could not reach the server — nothing was deleted." });
     } finally {
-      setBusy(false);
       // CLOSE ONLY ON SUCCESS — a refusal must not be discarded with the
       // dialog that could have shown it (UI_STANDARDS 6b).
       if (refused === null) setConfirm(null);
@@ -475,9 +484,11 @@ export function DeleteCycleCard({
           </button>
         </span>
       </div>
-      {msg && (
+      {/* Directly under the row that holds the Delete button — one line up,
+          never a page-level banner (rule 6). */}
+      {(save.kind === "ok" || save.kind === "err") && (
         <div className="px-5 pb-3">
-          <Alert kind={msg.kind}>{msg.text}</Alert>
+          <SaveFeedback state={save} />
         </div>
       )}
       <ConfirmDialog

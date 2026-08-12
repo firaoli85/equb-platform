@@ -124,3 +124,46 @@ export const WHATSAPP_STATEMENTS_BLOCKED_REASON =
 
 export type SettingKey = keyof SettingDefaults;
 export type SettingValue<K extends SettingKey> = SettingDefaults[K];
+
+/**
+ * What each setting is CALLED — the words on the screen that changes it.
+ *
+ * An audit entry reading `adminSessionIdleMinutes: 30 → 5` is a variable name,
+ * not a record. The organizer reads this log months later to answer "when did
+ * sign-in start behaving like that?", and a key he has never seen written down
+ * cannot answer it. These strings match the labels in the settings forms.
+ *
+ * A `Record` rather than an optional lookup on purpose: adding a setting
+ * without naming it is a type error, so the audit trail cannot fall behind the
+ * registry the way the whole thing did before.
+ */
+export const SETTING_LABELS: Record<SettingKey, string> = {
+  pinLoginEnabled: "PIN sign-in",
+  presentationMode: "Presentation mode",
+  defaultPinFromPhone: "Default PIN from phone",
+  pinMaxAttempts: "Attempts before locking",
+  pinLockMinutes: "How long a lock lasts (minutes)",
+  notifyOnLockout: "Notice when a member locks themselves out",
+  whatsappEnabled: "WhatsApp",
+  memberSessionIdleDays: "Member session — idle days",
+  memberSessionMaxDays: "Member session — maximum days",
+  adminSessionIdleMinutes: "Organizer session — idle minutes",
+  adminSessionMaxHours: "Organizer session — maximum hours",
+  closingWaitDays: "Wait before a cycle can be closed (days)",
+};
+
+/** A setting's value as a person reads it — never `true`/`false`. */
+export function settingValueLabel(value: unknown): string {
+  if (typeof value === "boolean") return value ? "on" : "off";
+  return String(value);
+}
+
+/**
+ * "PIN sign-in: on → off" — what changed, from what to what (2.23).
+ *
+ * Pure and here rather than in lib/settings.ts so it can be tested without a
+ * database, and so the audit screen could render it if it ever needs to.
+ */
+export function settingChangeSummary(key: SettingKey, before: unknown, after: unknown): string {
+  return `${SETTING_LABELS[key]}: ${settingValueLabel(before)} → ${settingValueLabel(after)}`;
+}

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { updateClosingWaitDays } from "@/app/actions/settings";
 import { SettingList, SettingNumber } from "@/components/admin/setting-row";
-import { Alert, buttonCls } from "@/components/ui/primitives";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
+import { Alert } from "@/components/ui/primitives";
 
 // THE RULES A CYCLE RUNS BY.
 //
@@ -16,33 +17,29 @@ import { Alert, buttonCls } from "@/components/ui/primitives";
 export function CycleRulesForm({ initial }: { initial: { closingWaitDays: number } }) {
   const router = useRouter();
   const [days, setDays] = useState(String(initial.closingWaitDays));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
 
   const dirty = days !== String(initial.closingWaitDays);
   const parsed = Number(days);
   const zero = Number.isSafeInteger(parsed) && parsed === 0;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSaved(false);
-    setSaving(true);
+  async function handleSubmit() {
+    setSave({ kind: "saving" });
     try {
       const r = await updateClosingWaitDays({ days: parsed });
-      if (!r.ok) return setError(r.error);
-      setSaved(true);
+      if (!r.ok) return setSave({ kind: "err", message: `Not saved: ${r.error}` });
+      setSave({
+        kind: "ok",
+        message: `Saved — a cycle can be closed ${parsed === 0 ? "as soon as its last week passes" : `${parsed} day${parsed === 1 ? "" : "s"} after its last week`}.`,
+      });
       router.refresh();
     } catch {
-      setError("Could not reach the server — nothing was saved.");
-    } finally {
-      setSaving(false);
+      setSave({ kind: "err", message: "Could not reach the server — nothing was saved." });
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-y-4">
       <SettingList>
         <SettingNumber
           label="Wait before a cycle can be closed"
@@ -57,8 +54,7 @@ export function CycleRulesForm({ initial }: { initial: { closingWaitDays: number
           value={days}
           onChange={(v) => {
             setDays(v);
-            setError(null);
-            setSaved(false);
+            setSave({ kind: "idle" });
           }}
           min={0}
           max={90}
@@ -73,17 +69,15 @@ export function CycleRulesForm({ initial }: { initial: { closingWaitDays: number
         </Alert>
       )}
 
-      {error && <Alert kind="err">Not saved: {error}</Alert>}
-      {saved && <Alert kind="ok">✓ Saved. The pre-close review reads this immediately.</Alert>}
-
-      <div className="flex items-center gap-3">
-        <button type="submit" disabled={!dirty || saving} className={buttonCls.primary}>
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-        {!dirty && !saved && (
-          <span className="text-xs text-gray-600 dark:text-gray-400">Nothing changed yet.</span>
-        )}
-      </div>
-    </form>
+      {/* The confirmation belongs to the button, not to the page (rule 6). */}
+      <SaveButton
+        state={save}
+        onSave={() => void handleSubmit()}
+        onStateSettled={() => setSave({ kind: "idle" })}
+        label="Save changes"
+        dirty={dirty}
+        notDirtyHint="Nothing has changed yet."
+      />
+    </div>
   );
 }

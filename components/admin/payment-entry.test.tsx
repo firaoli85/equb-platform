@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PaymentEntry } from "./payment-entry";
@@ -145,6 +147,70 @@ describe("the honest half: when money lands elsewhere", () => {
 
   it("stays silent when nothing is ticked — there is nothing to contradict", () => {
     expect(html()).not.toContain('data-testid="lands-elsewhere"');
+  });
+});
+
+// SWEEPING A RUN CANNOT BE MOUSE-ONLY.
+//
+// The organizer records money at the meeting, on his phone, more often than at
+// a desk — and a `mousedown`/`mouseenter` drag does nothing under a finger.
+// The arithmetic lives in `stepPickable`/`weeksInDrag` (unit-tested); this
+// pins that the grid is actually WIRED for the other two inputs, because
+// reverting to mouse events would leave every one of those tests passing.
+describe("the sweep works with a finger and a keyboard, not just a mouse", () => {
+  const source = readFileSync(join(import.meta.dirname, "payment-entry.tsx"), "utf8");
+
+  it("drives the sweep from pointer events, which fire for touch and mouse alike", () => {
+    expect(source).toMatch(/onPointerDown=/);
+    expect(source).toMatch(/onPointerMove=/);
+    expect(source).toMatch(/onPointerUp=/);
+    // A cancelled gesture — the browser deciding the swipe was a page scroll —
+    // must drop the range, never commit half of it.
+    expect(source).toMatch(/onPointerCancel=/);
+    expect(source).not.toMatch(/onMouseDown=|onMouseEnter=|onMouseUp=/);
+  });
+
+  it("finds the square under the finger, because touch captures the first one", () => {
+    // Implicit pointer capture means `pointerenter` never fires on the
+    // siblings; without this lookup a finger-sweep selects exactly one week.
+    expect(source).toContain("elementFromPoint");
+  });
+
+  it("leaves a downward swipe to the page, so the grid is not a scroll trap", () => {
+    expect(html()).toContain("touch-pan-y");
+  });
+
+  it("moves with the arrow keys and extends with Shift", () => {
+    expect(source).toMatch(/ArrowRight/);
+    expect(source).toMatch(/ArrowLeft/);
+    expect(source).toMatch(/e\.shiftKey/);
+    // Arrows scroll the page by default; the grid has to claim them.
+    expect(source).toMatch(/e\.preventDefault\(\)/);
+  });
+
+  it("is ONE tab stop, not one per week", () => {
+    const out = html();
+    expect([...out.matchAll(/tabindex="0"/g)]).toHaveLength(1);
+    expect([...out.matchAll(/tabindex="-1"/g)].length).toBeGreaterThan(1);
+  });
+
+  it("puts the tab stop on a week that can actually be ticked", () => {
+    // Week 5 is paid here, so the stop belongs on 6 — a grid whose only tab
+    // stop is a disabled square cannot be reached at all.
+    const out = html({ weeks: [week(5, { amountPaid: 50_000 }), week(6), week(7)] });
+    expect(out).toMatch(/tabindex="0"[^>]*data-week="6"/);
+    expect(out).toMatch(/tabindex="-1"[^>]*data-week="5"/);
+  });
+
+  it("says how, in text the keyboard and a screen reader both reach", () => {
+    const out = html();
+    expect(out).toContain('aria-describedby="week-grid-help"');
+    expect(out).toContain('id="week-grid-help"');
+    expect(out).toContain("hold Shift to take the run with you");
+  });
+
+  it("names every square for a screen reader, not just for a hover", () => {
+    expect(html()).toContain('aria-label="Week 5 — $500 still owed"');
   });
 });
 

@@ -19,7 +19,7 @@ import { allocatePayment, type AllocationResult, type AllocationWeek } from "./a
 import {
   amountOutstanding,
   paymentStatus,
-  weekHasElapsed,
+  weekCountsAsDue,
   weeksBehind,
   weeksCredited,
   type PaymentStatusValue,
@@ -45,6 +45,17 @@ export type StandingWeekInput = {
    * this is what deferral used to mean. Never conflate the two.
    */
   isSkipped?: boolean;
+  /**
+   * THE ORGANIZER MARKED THIS WEEK LATE HIMSELF, before its window closed
+   * (2.2). A stored decision, not a derivation — `payments.markedLateAt`.
+   *
+   * It makes the week count as DUE NOW, exactly as a closed window does: the
+   * status reads LATE, the week joins the behind-count, and its money joins
+   * the outstanding balance. Anything less would put a LATE week on screen
+   * that the member's own balance says is not owed, which is the contradiction
+   * this file exists to prevent.
+   */
+  markedLate: boolean;
 };
 
 export type StandingWeek = {
@@ -57,6 +68,8 @@ export type StandingWeek = {
   coveredAtCurrentRate: number;
   isDeferred: boolean;
   isSkipped: boolean;
+  /** The organizer's own late mark, so a screen can offer to undo it. */
+  markedLate: boolean;
   status: PaymentStatusValue;
 };
 
@@ -142,7 +155,22 @@ export function computeStanding(input: {
   // The boundary is the payment window, the same one paymentStatus uses for
   // LATE: a week the screen still shows as UNPAID-and-open can no longer also
   // count as behind.
-  const elapsed = windowWeeks.filter((w) => weekHasElapsed({ weekDate: w.date, today }));
+  //
+  // "Elapsed" now means COUNTS AS DUE NOW: the calendar closed the window, or
+  // the organizer marked the week late himself (2.2). Both routes produce the
+  // same LATE on screen, so both have to produce the same arithmetic — a week
+  // shown as late while the balance says nothing is owed would be the exact
+  // contradiction the paragraph above rules out.
+  const elapsed = windowWeeks.filter((w) =>
+    weekCountsAsDue({
+      weekDate: w.date,
+      today,
+      markedLate: w.markedLate,
+      // Deferral beats the mark (ruling, Aug 2026) — a deferred week is one he
+      // has decided not to chase, so a mark on it does not pull it forward.
+      isDeferred: w.isDeferred,
+    }),
+  );
   // Only SKIPPED weeks are taken off the behind-count. A deferred week the
   // member has not paid makes them behind exactly like any other.
   const skippedElapsed = elapsed.filter((w) => w.isSkipped).length;
@@ -177,11 +205,13 @@ export function computeStanding(input: {
       coveredAtCurrentRate: coveredByWeek.get(w.weekNumber) ?? 0,
       isDeferred: w.isDeferred,
       isSkipped: w.isSkipped ?? false,
+      markedLate: w.markedLate ?? false,
       status: paymentStatus({
         amountPaid: coveredByWeek.get(w.weekNumber) ?? 0,
         amountDue: w.amountDue,
         isDeferred: w.isDeferred,
         isSkipped: w.isSkipped ?? false,
+        markedLate: w.markedLate ?? false,
         weekDate: w.date,
         today,
       }),

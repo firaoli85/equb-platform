@@ -9,7 +9,7 @@ import {
   type GridMemberInput,
   type RosterMember,
 } from "@/lib/payments-view";
-import { PAYMENT_WINDOW_DAYS } from "@/lib/derived";
+import { manualLateAdvice, PAYMENT_WINDOW_DAYS } from "@/lib/derived";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { numbersLabel, redactGrid, redactWeekBoard, PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
@@ -68,6 +68,7 @@ function standingFor(
           amountDue: participation.weeklyAmount,
           storedPaid: payment?.amountPaid ?? 0,
           isDeferred: payment?.isDeferred ?? false,
+          markedLate: payment?.markedLateAt != null,
           isSkipped: w.isSkipped,
         };
       }),
@@ -197,6 +198,18 @@ export async function getCellDetail(input: { participationId: string; weekNumber
         memberName: participation.person.nameEnglishFirst,
         weekNumber: input.weekNumber,
         isDeferred: payment?.isDeferred ?? false,
+        markedLate: payment?.markedLateAt != null,
+        markedLateNote: payment?.markedLateNote ?? "",
+        // WHAT MARKING THIS WEEK LATE WOULD MEAN, decided on the SERVER'S
+        // clock — the same one `setWeekLate` refuses with. Computed here so a
+        // laptop whose date is wrong cannot offer a control the action will
+        // then reject, or hide one it would have accepted.
+        lateAdvice: manualLateAdvice({
+          weekDate: week.date,
+          today: new Date(),
+          weekNumber: input.weekNumber,
+          isDeferred: payment?.isDeferred ?? false,
+        }),
         weekIsSkipped: week.isSkipped,
         note: payment?.notes ?? "",
         receipts: (payment?.allocations ?? []).map((a) => ({
@@ -247,6 +260,7 @@ export async function getCatchUpWeeks(participationId: string) {
           amountDue: participation.weeklyAmount,
           amountAlreadyPaid: payment?.amountPaid ?? 0,
           isDeferred: payment?.isDeferred ?? false,
+          markedLate: payment?.markedLateAt != null,
           isSkipped: w.isSkipped,
         };
       });

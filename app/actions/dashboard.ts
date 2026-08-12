@@ -130,6 +130,7 @@ export async function getDashboard(input?: { weekNumber?: number }) {
         weekNumber: payment.week.weekNumber,
         amountPaid: payment.amountPaid,
         isDeferred: payment.isDeferred,
+        markedLate: payment.markedLateAt != null,
         isSkipped: payment.week.isSkipped,
       })),
     );

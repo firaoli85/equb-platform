@@ -76,6 +76,9 @@ function standingFor(
           // BEFORE: a personal deferral excused the money exactly like a
           // skipped week. AFTER: it only suppresses the chasing.
           isDeferred: mode === "after" ? personallyDeferred : false,
+          // This script compares the OLD and NEW deferral rules; a manual
+          // late mark belongs to neither, so it is off on both sides.
+          markedLate: false,
           isSkipped:
             mode === "after" ? w.isSkipped : personallyDeferred || w.isSkipped,
         };

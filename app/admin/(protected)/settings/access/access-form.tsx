@@ -9,7 +9,7 @@ import {
   updateSessionPolicy,
 } from "@/app/actions/settings";
 import { SettingList, SettingNumber, SettingSwitch } from "@/components/admin/setting-row";
-import { Alert, buttonCls } from "@/components/ui/primitives";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
 
 // WHO CAN GET IN, AND FOR HOW LONG.
 //
@@ -39,13 +39,10 @@ export function AccessForm({ initial }: { initial: AccessInitial }) {
   const [adminIdle, setAdminIdle] = useState(String(initial.adminSessionIdleMinutes));
   const [adminMax, setAdminMax] = useState(String(initial.adminSessionMaxHours));
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
 
   function touched() {
-    setError(null);
-    setSaved(false);
+    setSave({ kind: "idle" });
   }
 
   const dirty =
@@ -58,18 +55,24 @@ export function AccessForm({ initial }: { initial: AccessInitial }) {
     adminIdle !== String(initial.adminSessionIdleMinutes) ||
     adminMax !== String(initial.adminSessionMaxHours);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    touched();
-    setSaving(true);
+  // FOUR WRITES BEHIND ONE BUTTON, and an earlier one can land while a later
+  // one is refused. Each refusal names the group it belongs to, because a bare
+  // "not saved" over a half-applied policy is the message that gets acted on
+  // wrongly — he would re-enter settings that are already in force.
+  async function handleSubmit() {
+    setSave({ kind: "saving" });
     try {
       if (pinLoginEnabled !== initial.pinLoginEnabled) {
         const r = await updatePinLoginEnabled({ enabled: pinLoginEnabled });
-        if (!r.ok) return setError(r.error);
+        if (!r.ok) return setSave({ kind: "err", message: `PIN sign-in not saved: ${r.error}` });
       }
       if (defaultPinFromPhone !== initial.defaultPinFromPhone) {
         const r = await updateDefaultPinFromPhone({ enabled: defaultPinFromPhone });
-        if (!r.ok) return setError(r.error);
+        if (!r.ok)
+          return setSave({
+            kind: "err",
+            message: `The phone-digit default was not saved: ${r.error}`,
+          });
       }
       if (
         maxAttempts !== String(initial.pinMaxAttempts) ||
@@ -79,7 +82,8 @@ export function AccessForm({ initial }: { initial: AccessInitial }) {
           maxAttempts: Number(maxAttempts),
           lockMinutes: Number(lockMinutes),
         });
-        if (!r.ok) return setError(r.error);
+        if (!r.ok)
+          return setSave({ kind: "err", message: `The lockout rule was not saved: ${r.error}` });
       }
       if (
         memberIdle !== String(initial.memberSessionIdleDays) ||
@@ -93,19 +97,18 @@ export function AccessForm({ initial }: { initial: AccessInitial }) {
           adminIdleMinutes: Number(adminIdle),
           adminMaxHours: Number(adminMax),
         });
-        if (!r.ok) return setError(r.error);
+        if (!r.ok)
+          return setSave({ kind: "err", message: `The session windows were not saved: ${r.error}` });
       }
-      setSaved(true);
+      setSave({ kind: "ok", message: "Saved. It applies to the next attempt." });
       router.refresh();
     } catch {
-      setError("Could not reach the server — nothing was saved.");
-    } finally {
-      setSaving(false);
+      setSave({ kind: "err", message: "Could not reach the server — nothing was saved." });
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <div className="space-y-6">
       <section className="space-y-3">
         <div>
           <h2 className="text-base font-bold text-gray-900 dark:text-white">Signing in</h2>
@@ -258,17 +261,16 @@ export function AccessForm({ initial }: { initial: AccessInitial }) {
         </SettingList>
       </section>
 
-      {error && <Alert kind="err">Not saved: {error}</Alert>}
-      {saved && <Alert kind="ok">✓ Saved. It applies to the next attempt.</Alert>}
-
-      <div className="flex items-center gap-3">
-        <button type="submit" disabled={!dirty || saving} className={buttonCls.primary}>
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-        {!dirty && !saved && (
-          <span className="text-xs text-gray-600 dark:text-gray-400">Nothing changed yet.</span>
-        )}
-      </div>
-    </form>
+      {/* Eight controls over two sections sit above this. The confirmation
+          renders AT the button, never at the top of the form (rule 6). */}
+      <SaveButton
+        state={save}
+        onSave={() => void handleSubmit()}
+        onStateSettled={() => setSave({ kind: "idle" })}
+        label="Save changes"
+        dirty={dirty}
+        notDirtyHint="Nothing has changed yet."
+      />
+    </div>
   );
 }

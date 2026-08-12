@@ -122,6 +122,28 @@ dot passed every mechanical check above:
 - [ ] Members view and Grid view show the same totals for the same member.
 - [ ] Recording a partial payment updates the row immediately and the totals with it.
 - [ ] A deferred week reads as deferred, never as unpaid or as overdue.
+- [ ] Arriving from a chart or the cash page — click any week number on `/admin/cash` or on
+      a chart — lands on the **Grid** with that week ringed and scrolled to, and a line
+      saying which week is showing with a way back to all of them.
+
+### Marking a week late by hand (2.2, DOMAIN_RULES rule 5)
+
+- [ ] On a week whose window is still open, the panel offers **Mark late**. On one whose
+      window has closed it does not — that week is already late and the control would do
+      nothing.
+- [ ] Marking a week that has **not started yet** warns that it has not started, states
+      that marking is allowed, and lets you proceed. **It must never be blocked.**
+- [ ] Marking the CURRENT open week is silent — no warning, it is the ordinary case.
+- [ ] Once marked: the week reads LATE, the member appears on the dashboard attention list,
+      their weeks-behind goes up by one, their outstanding balance goes up by that week,
+      and a **late notice becomes sendable to them immediately** (check Messages → People).
+- [ ] Removing the mark returns every one of those figures exactly.
+- [ ] Recording a payment that covers the week clears the mark by itself — no unmarking.
+- [ ] **A DEFERRED week cannot be marked.** The Mark late button is present but dead, and
+      the panel says *"This week is deferred — remove the deferral first if you want to
+      chase it."* Deferral beats the mark; the button must be **disabled, not hidden**.
+- [ ] Deferring a week that was already marked clears the mark. Removing the deferral
+      months later must NOT bring it back.
 - [ ] Grid view at 390px scrolls **inside** the grid — the page itself must not scroll
       sideways.
 - [ ] The week-action panel opens over the grid and closes on `Esc`.
@@ -291,6 +313,33 @@ inventing them from the spec rather than the screen would be guessing.
 - [ ] Every figure in a rendered message equals that member's real standing.
 - [ ] With WhatsApp disabled, no send is offered and the reason is stated.
 - [ ] The message log records failures as well as successes.
+
+### People — the per-member surface (the default view)
+
+- [ ] **Every** person in the directory appears in the left-hand list, including those who
+      have never been messaged — they read "Nothing sent yet". A list built only from the
+      log would hide exactly the people you are looking for.
+- [ ] The conversation runs **oldest first, newest last**, and opens at the recent end.
+      (The Log tab is the opposite, on purpose — a log is newest-first.)
+- [ ] A person whose LAST message failed says so in the list, in red, before you open them.
+- [ ] Searching by Amharic name, English name, or phone all find the same person. A phone
+      typed with spaces or brackets still matches.
+- [ ] A search that matches nobody says how many people exist — it must never read as
+      "there are no members".
+- [ ] Filtering by type or by date shows a line stating **"Showing N of M messages"**. A
+      filtered conversation must never be mistaken for the whole one.
+- [ ] A `to` date includes messages sent ON that day, not up to midnight that morning.
+- [ ] Sending from inside the conversation makes the sent message appear in it immediately.
+- [ ] Types that do not apply are listed with the REASON each does not apply.
+- [ ] The wording of the five Meta-approved templates is **read-only** under Wording, with
+      the reason shown. Only the Meta id is editable.
+
+### The template editor — Wording
+
+- [ ] The five approved templates show a lock and the sentence about Meta owning the
+      wording. There is no text box for them.
+- [ ] Attempting to save a changed body for an approved key is refused by the server, not
+      only hidden by the screen.
 
 ## Audit log — `/admin/audit`
 

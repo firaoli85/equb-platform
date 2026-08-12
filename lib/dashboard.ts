@@ -174,6 +174,13 @@ export type DashboardPayment = {
   isDeferred: boolean;
   /** Cycle-wide: the week did not happen, so nobody owes it. */
   isSkipped: boolean;
+  /**
+   * The ORGANIZER marked this week late himself, before its window closed
+   * (2.2). It makes the week count as due NOW, exactly as a closed window
+   * does — the command centre must not tell him a member is fine on a week he
+   * personally marked late an hour ago.
+   */
+  markedLate: boolean;
 };
 
 export type WeekReceipts = {
@@ -288,15 +295,19 @@ export type WeekMemberStatus = {
   name: string;
   weeklyAmount: number;
   amountPaid: number;
-  status: "PAID" | "PARTIAL" | "UNPAID" | "DEFERRED" | "SKIPPED";
+  status: "PAID" | "PARTIAL" | "UNPAID" | "DEFERRED" | "SKIPPED" | "LATE";
 };
 
 /**
  * Who has paid this week and who has not — in-window members only (2.7).
  *
  * The order matches paymentStatus (2.14): SKIPPED (nobody owed it), then PAID
- * (the money is there — PAID BEATS DEFERRED), then DEFERRED (still owed, just
- * not chased), then PARTIAL/UNPAID.
+ * (the money is there — PAID BEATS EVERYTHING), then DEFERRED (still owed,
+ * just not chased — and it BEATS the organizer's own mark, ruling Aug 2026),
+ * then a week he marked LATE himself (2.2), then PARTIAL/UNPAID.
+ *
+ * The mark is the ONLY route to LATE here: this list is about the CURRENT
+ * week, whose window has not closed, so the calendar cannot produce one.
  */
 export function weekMemberStatus(input: {
   weekNumber: number;
@@ -327,9 +338,11 @@ export function weekMemberStatus(input: {
           ? "PAID"
           : payment?.isDeferred
             ? "DEFERRED"
-            : amountPaid > 0
-              ? "PARTIAL"
-              : "UNPAID",
+            : payment?.markedLate
+              ? "LATE"
+              : amountPaid > 0
+                ? "PARTIAL"
+                : "UNPAID",
     });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
@@ -376,30 +389,47 @@ export function memberAttention(input: {
     // came back, and they can be behind like anybody else.
     if ((participation.breaks ?? []).some((b) => b.toWeek === null)) continue;
     const finishWeek = calculateFinishWeek(participation.startWeek, participation.weeksCommitted);
-    const elapsedCount = Math.min(
-      Math.max(0, input.elapsedThroughWeek - participation.startWeek + 1),
-      participation.weeksCommitted,
-    );
-    const totalPaid = rows.reduce((sum, r) => sum + r.amountPaid, 0);
-    const credited = weeksCredited(totalPaid, participation.weeklyAmount);
-    const elapsedRows = rows.filter(
-      (r) =>
-        r.weekNumber >= participation.startWeek &&
-        r.weekNumber <= Math.min(input.elapsedThroughWeek, finishWeek),
-    );
-    const skippedCount = elapsedRows.filter((r) => r.isSkipped).length;
-    const behind = weeksBehind(elapsedCount, credited, skippedCount);
-    if (behind === 0) continue;
 
-    // Owed now: netted over elapsed weeks (2.14 — money is fungible). Weeks
-    // without a stored row still owe their weekly amount.
-    const rowsByWeek = new Map(elapsedRows.map((r) => [r.weekNumber, r]));
-    const elapsedWindow = [];
+    // WHICH WEEKS COUNT AS DUE NOW — the calendar's, plus the organizer's own.
+    //
+    // This used to be a plain range `startWeek … elapsedThroughWeek`, which is
+    // right while the calendar is the only route to LATE. It stopped being the
+    // whole answer when the organizer gained a mark of his own (2.2): a week
+    // he marked late this morning is due, whatever the cycle clock says, and
+    // this list's own promise is that it "cannot disagree with computeStanding
+    // or with the LATE markers beside it". A set, because a marked week may
+    // fall inside the range as well as beyond it and must not be counted twice.
+    const dueWeeks = new Set<number>();
     for (
       let n = participation.startWeek;
       n <= Math.min(input.elapsedThroughWeek, finishWeek);
       n++
     ) {
+      dueWeeks.add(n);
+    }
+    for (const r of rows) {
+      // DEFERRAL BEATS THE MARK (ruling, Aug 2026) — the same test
+      // `weekCountsAsDue` makes, kept identical here so the attention list and
+      // computeStanding cannot disagree about who is behind.
+      if (r.markedLate && r.isDeferred) continue;
+      if (r.markedLate && r.weekNumber >= participation.startWeek && r.weekNumber <= finishWeek) {
+        dueWeeks.add(r.weekNumber);
+      }
+    }
+
+    const elapsedCount = dueWeeks.size;
+    const totalPaid = rows.reduce((sum, r) => sum + r.amountPaid, 0);
+    const credited = weeksCredited(totalPaid, participation.weeklyAmount);
+    const elapsedRows = rows.filter((r) => dueWeeks.has(r.weekNumber));
+    const skippedCount = elapsedRows.filter((r) => r.isSkipped).length;
+    const behind = weeksBehind(elapsedCount, credited, skippedCount);
+    if (behind === 0) continue;
+
+    // Owed now: netted over the due weeks (2.14 — money is fungible). Weeks
+    // without a stored row still owe their weekly amount.
+    const rowsByWeek = new Map(elapsedRows.map((r) => [r.weekNumber, r]));
+    const elapsedWindow = [];
+    for (const n of [...dueWeeks].sort((a, b) => a - b)) {
       const row = rowsByWeek.get(n);
       elapsedWindow.push({
         amountDue: participation.weeklyAmount,

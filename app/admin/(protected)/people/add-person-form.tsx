@@ -3,25 +3,21 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createPerson } from "@/app/actions/people";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
 
 const INITIAL = { nameAmharic: "", nameEnglishFirst: "", nameEnglishLast: "", phone: "" };
 
 export function AddPersonForm() {
   const router = useRouter();
   const [fields, setFields] = useState(INITIAL);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [savedName, setSavedName] = useState<string | null>(null);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
 
   const dirty = Object.entries(INITIAL).some(
     ([key, value]) => fields[key as keyof typeof INITIAL] !== value,
   );
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSavedName(null);
-    setSaving(true);
+  async function handleSubmit() {
+    setSave({ kind: "saving" });
     try {
       const result = await createPerson({
         nameAmharic: fields.nameAmharic,
@@ -30,25 +26,33 @@ export function AddPersonForm() {
         phone: fields.phone || undefined,
       });
       if (!result.ok) {
-        setError(result.error);
+        setSave({ kind: "err", message: `Not saved: ${result.error}` });
         return;
       }
-      setSavedName(
-        `${result.data.nameEnglishFirst} ${result.data.nameEnglishLast ?? ""}`.trim(),
-      );
+      const name = `${result.data.nameEnglishFirst} ${result.data.nameEnglishLast ?? ""}`.trim();
+      setSave({ kind: "ok", message: `Added ${name} to the directory.` });
       setFields(INITIAL);
       router.refresh();
     } catch {
-      setError(
-        "The save could not be confirmed — check your connection and the directory before trying again.",
-      );
-    } finally {
-      setSaving(false);
+      setSave({
+        kind: "err",
+        message:
+          "The save could not be confirmed — check your connection and the directory before trying again.",
+      });
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    // Still a form: four text fields, and Enter is how anyone finishes typing
+    // a name. The SUBMIT is the SaveButton's own press — the form element only
+    // keeps the keyboard's habit working.
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (dirty) void handleSubmit();
+      }}
+    >
       {(
         [
           ["nameAmharic", "Amharic name *"],
@@ -64,32 +68,24 @@ export function AddPersonForm() {
             value={fields[key]}
             onChange={(e) => {
               setFields((f) => ({ ...f, [key]: e.target.value }));
-              setError(null);
-              setSavedName(null);
+              setSave({ kind: "idle" });
             }}
             className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
           />
         </label>
       ))}
 
-      {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
-          Not saved: {error}
-        </p>
-      )}
-      {savedName && (
-        <p role="status" className="rounded border border-green-500 bg-green-50 px-3 py-2 text-sm text-green-900">
-          ✓ Added {savedName} to the directory.
-        </p>
-      )}
-
-      <button
-        type="submit"
-        disabled={!dirty || saving}
-        className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-      >
-        {saving ? "Saving…" : "Add person"}
-      </button>
+      {/* The form clears itself on success, so the confirmation is the ONLY
+          evidence the person was added — it belongs at the button. */}
+      <SaveButton
+        state={save}
+        onSave={() => void handleSubmit()}
+        onStateSettled={() => setSave({ kind: "idle" })}
+        label="Add person"
+        savingLabel="Adding…"
+        dirty={dirty}
+        notDirtyHint="Fill in at least the Amharic and English first names."
+      />
     </form>
   );
 }

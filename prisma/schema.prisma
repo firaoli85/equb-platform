@@ -279,6 +279,19 @@ model Payment {
   participationId String
   amountPaid      Int      @default(0)
   isDeferred      Boolean  @default(false)
+  // THE ORGANIZER'S OWN LATE MARK (2.2 — his discretion; 2.14 — a STORED
+  // decision, not a derived value).
+  //
+  // LATE is otherwise pure calendar: unpaid AND the window has closed. That
+  // makes the organizer wait until Thursday to record something he was told on
+  // Monday. This is the fact that he decided, and WHEN — a boolean would say
+  // the decision exists without saying when it was made, and this is a
+  // financial record.
+  //
+  // Money still wins: a week that gets paid reads PAID whatever this says, and
+  // the payment path clears it. Cleared by unmarking too — it is reversible.
+  markedLateAt    DateTime?
+  markedLateNote  String?
   method          PaymentMethod?
   paidAt          DateTime?
   notes           String?

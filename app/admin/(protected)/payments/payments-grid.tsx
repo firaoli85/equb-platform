@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "motion/react";
 import { WeekActionPanel, type WeekTarget } from "@/components/admin/week-action-panel";
 import { Alert } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney } from "@/lib/format";
@@ -23,6 +24,7 @@ export function PaymentsGrid({
   data,
   filter,
   onFilterChange,
+  focusWeek = null,
 }: {
   data: {
     presentation?: boolean;
@@ -33,9 +35,23 @@ export function PaymentsGrid({
   };
   filter: MemberFilter;
   onFilterChange: (f: MemberFilter) => void;
+  /** A week arrived at from `?week=N` — ringed and scrolled to (§8). */
+  focusWeek?: number | null;
 }) {
   const { grid } = data;
   const router = useRouter();
+
+  // A 20-WEEK GRID DOES NOT FIT ON A SCREEN, so ringing the row is not enough
+  // on its own — week 17 is below the fold and the organizer sees an ordinary
+  // grid. `scrollIntoView` on mount is the other half of honouring the link.
+  const focusRef = useRef<HTMLTableRowElement>(null);
+  const reduce = useReducedMotion();
+  useEffect(() => {
+    focusRef.current?.scrollIntoView({
+      block: "center",
+      behavior: reduce ? "auto" : "smooth",
+    });
+  }, [focusWeek, reduce]);
   // Presentation mode (2.4): the server sent numbers instead of names and no
   // amounts — the grid is a pure map: statuses visible, nothing clickable.
   const presentation = data.presentation === true;
@@ -180,8 +196,21 @@ export function PaymentsGrid({
           <tbody>
             {grid.rows.map((row) => {
               const isNow = row.weekNumber === data.currentCycleWeek;
+              const isFocused = row.weekNumber === focusWeek;
               return (
-                <tr key={row.weekNumber}>
+                <tr
+                  key={row.weekNumber}
+                  // The row he arrived at from a chart or the cash page.
+                  // `scroll-mt-24` keeps it clear of the sticky header once
+                  // `focusRef` brings it into view.
+                  ref={isFocused ? focusRef : undefined}
+                  data-focus-week={isFocused ? row.weekNumber : undefined}
+                  className={
+                    isFocused
+                      ? "scroll-mt-24 outline outline-2 -outline-offset-2 outline-indigo-500 dark:outline-indigo-400"
+                      : undefined
+                  }
+                >
                   <th
                     className={`sticky left-0 z-10 whitespace-nowrap border-r-2 border-gray-200 dark:border-gray-800 px-3 py-1.5 text-left font-semibold text-gray-800 dark:text-gray-200 ${
                       isNow

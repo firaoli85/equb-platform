@@ -42,6 +42,7 @@ function mkWeeks(
       amountDue,
       storedPaid: 0,
       isDeferred: false,
+      markedLate: false,
       ...overrides[n],
     });
   }

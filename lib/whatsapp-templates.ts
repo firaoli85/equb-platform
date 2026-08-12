@@ -275,6 +275,39 @@ export function driftMessage(key: string, where: string): string {
 }
 
 /**
+ * Why the organizer cannot edit this wording — in HIS words, not a test's.
+ *
+ * `driftMessage` above is for whoever reads a failing build: it names files
+ * and a sync script. This is for the person holding the editor, and it has to
+ * answer the only two questions he actually has — why the box will not save,
+ * and what he would have to do to change the sentence.
+ *
+ * IT IS NOT A WARNING. The editor used to accept any wording for these five
+ * keys and save it, and the app then showed one sentence while members
+ * received another — the previews, the message log and the compose screen all
+ * quoting text Twilio never sent. 2.20 exists so "the system never speaks to a
+ * member without the organizer knowing exactly what it said", and a saved edit
+ * that changes nothing is the exact opposite of that. So it is refused.
+ */
+export function approvedWordingRefusal(key: ApprovedTemplateKey): string {
+  return (
+    `This wording belongs to Meta, not to the app. WhatsApp sends ${key} by its approved ` +
+    `template, so changing the text here would not change one word of what members receive — ` +
+    `it would only make this screen disagree with what was actually sent. ` +
+    `To change it, the new wording has to be submitted to Meta and approved first.`
+  );
+}
+
+/**
+ * The line the editor shows ON a locked template, before he tries to edit it.
+ *
+ * Shorter than the refusal because it is read every time, not once.
+ */
+export const APPROVED_WORDING_NOTE =
+  "Meta owns this wording. It is what members receive, word for word, and it can only be " +
+  "changed by submitting new wording to Meta for approval.";
+
+/**
  * The ContentVariables Twilio needs, keyed "1", "2", … in variableOrder order.
  *
  * WHY THIS REFUSES INSTEAD OF FILLING GAPS. Twilio does not fail on a missing

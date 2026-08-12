@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { updateNotifyOnLockout, updateWhatsappEnabled } from "@/app/actions/settings";
 import { SettingList, SettingSwitch } from "@/components/admin/setting-row";
-import { Alert, buttonCls } from "@/components/ui/primitives";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
+import { Alert } from "@/components/ui/primitives";
 // From setting-defaults, NOT lib/settings: the latter imports Prisma, which
 // imports `pg`, which imports node:dns — pulling that into a client bundle is
 // a hard build failure that takes this whole page down with it.
@@ -21,42 +22,42 @@ export function MessagingForm({
   const router = useRouter();
   const [whatsappEnabled, setWhatsappEnabled] = useState(initial.whatsappEnabled);
   const [notifyOnLockout, setNotifyOnLockout] = useState(initial.notifyOnLockout);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
 
   function touched() {
-    setError(null);
-    setSaved(false);
+    setSave({ kind: "idle" });
   }
 
   const dirty =
     whatsappEnabled !== initial.whatsappEnabled || notifyOnLockout !== initial.notifyOnLockout;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    touched();
-    setSaving(true);
+  async function handleSubmit() {
+    setSave({ kind: "saving" });
     try {
+      // TWO SWITCHES, TWO WRITES. The first can succeed and the second fail,
+      // so the refusal names which one landed — "nothing was saved" would be
+      // a lie the organizer would act on.
       if (whatsappEnabled !== initial.whatsappEnabled) {
         const r = await updateWhatsappEnabled({ enabled: whatsappEnabled });
-        if (!r.ok) return setError(r.error);
+        if (!r.ok) return setSave({ kind: "err", message: `WhatsApp not saved: ${r.error}` });
       }
       if (notifyOnLockout !== initial.notifyOnLockout) {
         const r = await updateNotifyOnLockout({ enabled: notifyOnLockout });
-        if (!r.ok) return setError(r.error);
+        if (!r.ok)
+          return setSave({ kind: "err", message: `The lockout notice was not saved: ${r.error}` });
       }
-      setSaved(true);
+      setSave({
+        kind: "ok",
+        message: `Saved — sign-in codes are ${whatsappEnabled ? "ON" : "OFF"}, lockout notices are ${notifyOnLockout ? "ON" : "OFF"}.`,
+      });
       router.refresh();
     } catch {
-      setError("Could not reach the server — nothing was saved.");
-    } finally {
-      setSaving(false);
+      setSave({ kind: "err", message: "Could not reach the server — nothing was saved." });
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <div className="space-y-6">
       <SettingList>
         <SettingSwitch
           label="WhatsApp"
@@ -126,17 +127,16 @@ export function MessagingForm({
         </Alert>
       )}
 
-      {error && <Alert kind="err">Not saved: {error}</Alert>}
-      {saved && <Alert kind="ok">✓ Saved.</Alert>}
-
-      <div className="flex items-center gap-3">
-        <button type="submit" disabled={!dirty || saving} className={buttonCls.primary}>
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-        {!dirty && !saved && (
-          <span className="text-xs text-gray-600 dark:text-gray-400">Nothing changed yet.</span>
-        )}
-      </div>
-    </form>
+      {/* Both switches are a long scroll above this; the confirmation stays
+          with the button that was pressed (rule 6). */}
+      <SaveButton
+        state={save}
+        onSave={() => void handleSubmit()}
+        onStateSettled={() => setSave({ kind: "idle" })}
+        label="Save changes"
+        dirty={dirty}
+        notDirtyHint="Nothing has changed yet."
+      />
+    </div>
   );
 }

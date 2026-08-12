@@ -118,6 +118,7 @@ export default async function CollectionsPage() {
               amountDue: participation.weeklyAmount,
               storedPaid: payment?.amountPaid ?? 0,
               isDeferred: payment?.isDeferred ?? false,
+              markedLate: payment?.markedLateAt != null,
               isSkipped: w.isSkipped,
             };
           }),

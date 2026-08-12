@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { deletePerson, updatePerson } from "@/app/actions/edits";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { buttonCls } from "@/components/ui/primitives";
 import {
   canRemovePerson,
@@ -42,9 +43,10 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
     phone: person.phone ?? "",
   };
   const [fields, setFields] = useState(initial);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  // DERIVED, not a second flag: two booleans for one condition drift apart,
+  // and this one gates the dialog's busy state as well as the buttons.
+  const saving = save.kind === "saving";
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran. Set it and the dialog stays
@@ -81,9 +83,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
   });
 
   async function doSave() {
-    setError(null);
-    setSaved(false);
-    setSaving(true);
+    setSave({ kind: "saving" });
     /** The refusal, if any — the dialog closes only while this stays null. */
     let refused: string | null = null;
     try {
@@ -96,15 +96,14 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       });
       if (!result.ok) {
         refused = result.error;
-        setError(result.error);
+        setSave({ kind: "err", message: `Not saved: ${result.error}` });
         return;
       }
-      setSaved(true);
+      setSave({ kind: "ok", message: `Saved ${fields.nameEnglishFirst}'s details.` });
       router.refresh();
     } catch {
-      setError("Could not reach the server — not saved.");
+      setSave({ kind: "err", message: "Could not reach the server — not saved." });
     } finally {
-      setSaving(false);
       // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
       // refusal was thrown away with the dialog that could have shown it
       // (UI_STANDARDS 6b).
@@ -117,8 +116,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
     }
   }
 
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  function handleSave() {
     // A name correction is an ordinary save. A phone change is a credential
     // change, so it gets the same confirmation any other credential change
     // would — and it names the new PIN rather than hinting at one.
@@ -151,8 +149,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
   }
 
   async function doDelete(typedPhrase: string) {
-    setSaving(true);
-    setError(null);
+    setSave({ kind: "saving" });
     /** The refusal, if any — the dialog closes only while this stays null. */
     let refused: string | null = null;
     try {
@@ -162,15 +159,14 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       const result = await deletePerson({ personId: person.id, typedName: typedPhrase });
       if (!result.ok) {
         refused = result.error;
-        setError(result.error);
+        setSave({ kind: "err", message: `Not removed: ${result.error}` });
         return;
       }
       router.push("/admin/people");
       router.refresh();
     } catch {
-      setError("Could not reach the server — not removed.");
+      setSave({ kind: "err", message: "Could not reach the server — not removed." });
     } finally {
-      setSaving(false);
       // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
       // refusal was thrown away with the dialog that could have shown it
       // (UI_STANDARDS 6b).
@@ -243,7 +239,15 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
   }
 
   return (
-    <form onSubmit={handleSave} className="max-w-md space-y-3">
+    // Still a form so Enter finishes a typed correction; the SaveButton is
+    // the submit.
+    <form
+      className="max-w-md space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (dirty) handleSave();
+      }}
+    >
       {(
         [
           ["nameAmharic", "Amharic name *"],
@@ -259,8 +263,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
             value={fields[key]}
             onChange={(e) => {
               setFields((f) => ({ ...f, [key]: e.target.value }));
-              setError(null);
-              setSaved(false);
+              setSave({ kind: "idle" });
             }}
             className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
           />
@@ -279,27 +282,23 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
         </label>
       ))}
 
-      {error && (
-        <p role="alert" className="rounded-xl border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-400">
-          Not saved: {error}
-        </p>
-      )}
-      {saved && (
-        <p role="status" className="rounded border border-green-500 bg-green-50 px-3 py-2 text-sm text-green-900">
-          ✓ Saved.
-        </p>
-      )}
+      <SaveButton
+        state={save}
+        onSave={handleSave}
+        onStateSettled={() => setSave({ kind: "idle" })}
+        label="Save changes"
+        dirty={dirty}
+        disabled={saving}
+        notDirtyHint="Nothing has changed yet."
+      />
 
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={!dirty || saving}
-          className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-        {/* NOT disabled when blocked. A dead button teaches nothing; pressing
-            it now explains every blocker and offers the thing they meant. */}
+      {/* REMOVING SOMEONE IS NOT THE NEIGHBOUR OF SAVING. It used to sit in
+          the same row as Save, one mis-aimed click away from a correction.
+          It keeps its own line, below a rule, where nothing is reached by
+          accident.
+          NOT disabled when blocked: a dead button teaches nothing; pressing
+          it explains every blocker and offers the thing they meant. */}
+      <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
         <button
           type="button"
           onClick={handleDelete}

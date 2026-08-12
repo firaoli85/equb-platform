@@ -1,6 +1,6 @@
 "use server";
 
-import { CAPS } from "@/lib/paging";
+import { CAPS, truncationNotice } from "@/lib/paging";
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { getCurrentUser, isAdminClaims, requireAdmin } from "@/lib/auth";
@@ -59,7 +59,8 @@ async function limitsFor(role: SessionRole) {
  * be a lie the member could act on.
  */
 export async function listMySessions(): Promise<
-  { ok: true; data: SessionView[] } | { ok: false; error: string }
+  | { ok: true; data: SessionView[]; notice: string | null }
+  | { ok: false; error: string }
 > {
   try {
     const claims = await getCurrentUser();
@@ -70,6 +71,11 @@ export async function listMySessions(): Promise<
     const now = new Date();
     const currentId = await currentSessionId();
 
+    // THE CAP HAS TO ANNOUNCE ITSELF. `take` alone is a silent truncation, and
+    // this is the list a member reads to answer "is anything signed in that
+    // should not be?" — a quietly-cut answer to that question is the worst
+    // kind. `lib/query-bounds.test.ts` found this one: every other cap in the
+    // platform was paired with a notice, and this was not.
     const rows = await prisma.signInSession.findMany({
       where: { authUserId: claims.sub, revokedAt: null },
       orderBy: { lastSeenAt: "desc" },
@@ -89,6 +95,12 @@ export async function listMySessions(): Promise<
 
     return {
       ok: true as const,
+      /** Null when nothing was cut — a list that fits says nothing at all. */
+      notice: truncationNotice({
+        shown: rows.length,
+        cap: CAPS.ownSessions,
+        noun: "signed-in devices",
+      }),
       data: live.map((r) => ({
         id: r.id,
         label: `${r.browser} on ${r.os}`,

@@ -103,11 +103,11 @@ describe("agreement with the dashboard — one derivation, not two", () => {
     { id: "p2", weeklyAmount: 100_000, startWeek: 1, weeksCommitted: 3 },
   ];
   const payments = [
-    { participationId: "p1", weekNumber: 1, amountPaid: 100_000, isDeferred: false, isSkipped: false },
-    { participationId: "p2", weekNumber: 1, amountPaid: 100_000, isDeferred: false, isSkipped: false },
-    { participationId: "p1", weekNumber: 2, amountPaid: 100_000, isDeferred: false, isSkipped: false },
+    { participationId: "p1", weekNumber: 1, amountPaid: 100_000, isDeferred: false, markedLate: false, isSkipped: false },
+    { participationId: "p2", weekNumber: 1, amountPaid: 100_000, isDeferred: false, markedLate: false, isSkipped: false },
+    { participationId: "p1", weekNumber: 2, amountPaid: 100_000, isDeferred: false, markedLate: false, isSkipped: false },
     // p2 has not paid week 2; p1 has already paid week 3 (not elapsed).
-    { participationId: "p1", weekNumber: 3, amountPaid: 100_000, isDeferred: false, isSkipped: false },
+    { participationId: "p1", weekNumber: 3, amountPaid: 100_000, isDeferred: false, markedLate: false, isSkipped: false },
   ];
 
   it("reads elapsed-ness from the dashboard series, never its own rule", () => {

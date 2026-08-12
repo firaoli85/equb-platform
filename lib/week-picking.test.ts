@@ -6,6 +6,7 @@ import {
   isPickable,
   quickAmounts,
   remainingOn,
+  stepPickable,
   weeksInDrag,
   weeksTouchedBy,
   type PickableWeek,
@@ -184,6 +185,48 @@ describe("dragging across the squares", () => {
   it("skips weeks that cannot be ticked, without breaking the sweep", () => {
     const weeks = [week(5), week(6, { amountPaid: 50_000 }), week(7, { isSkipped: true }), week(8)];
     expect(weeksInDrag(weeks, 5, 8)).toEqual([5, 8]);
+  });
+});
+
+// THE KEYBOARD'S DRAG. Sweeping a run was mouse-only, which loses the feature
+// on the phone he actually records money on. `stepPickable` is the movement
+// half; `weeksInDrag` above is the selection half, shared with the pointer.
+describe("stepping between squares", () => {
+  it("moves to the next week forward", () => {
+    expect(stepPickable(owing, 7, 1)).toBe(8);
+  });
+
+  it("moves to the previous week backward", () => {
+    expect(stepPickable(owing, 7, -1)).toBe(6);
+  });
+
+  // The same reason the sweep passes over them: a square he cannot tick is
+  // not a place to land, and stopping on one would strand the focus.
+  it("steps OVER a paid or skipped week rather than landing on it", () => {
+    const weeks = [week(5), week(6, { amountPaid: 50_000 }), week(7, { isSkipped: true }), week(8)];
+    expect(stepPickable(weeks, 5, 1)).toBe(8);
+    expect(stepPickable(weeks, 8, -1)).toBe(5);
+  });
+
+  it("returns null at either end, so focus never wraps into a surprise", () => {
+    expect(stepPickable(owing, 12, 1)).toBeNull();
+    expect(stepPickable(owing, 5, -1)).toBeNull();
+  });
+
+  it("returns null when nothing at all can be ticked", () => {
+    expect(stepPickable([week(5, { amountPaid: 50_000 })], 5, 1)).toBeNull();
+  });
+
+  // Starting from a week that is itself unpickable still has to work — that is
+  // exactly where focus sits when a square is paid off while he is on it.
+  it("steps from a week that cannot itself be ticked", () => {
+    const weeks = [week(5), week(6, { isSkipped: true }), week(7)];
+    expect(stepPickable(weeks, 6, 1)).toBe(7);
+    expect(stepPickable(weeks, 6, -1)).toBe(5);
+  });
+
+  it("does not depend on the weeks arriving in order", () => {
+    expect(stepPickable([week(9), week(5), week(7)], 5, 1)).toBe(7);
   });
 });
 

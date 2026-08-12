@@ -190,6 +190,32 @@ export function weeksInDrag(
     .sort((a, b) => a - b);
 }
 
+/**
+ * The next PICKABLE week in the direction of travel, or null at the end.
+ *
+ * THE KEYBOARD'S DRAG. Arrow keys step across the run the way the mouse
+ * sweeps it, and Shift held down takes the run along — so a phone, a mouse and
+ * a keyboard all reach the same selection. A drag that only a mouse can
+ * perform is a feature the organizer loses the moment he is on his phone at
+ * the meeting, which is exactly when he is recording money.
+ *
+ * Steps OVER a paid or skipped square rather than stopping on one, for the
+ * same reason `weeksInDrag` passes over them: a square he cannot tick is not
+ * a place to land.
+ */
+export function stepPickable(
+  weeks: readonly PickableWeek[],
+  from: number,
+  direction: 1 | -1,
+): number | null {
+  const ordered = [...weeks].filter(isPickable).sort((a, b) => a.weekNumber - b.weekNumber);
+  const forward = direction === 1;
+  const candidates = forward
+    ? ordered.filter((w) => w.weekNumber > from)
+    : ordered.filter((w) => w.weekNumber < from).reverse();
+  return candidates[0]?.weekNumber ?? null;
+}
+
 // ————————————————— What the entry says —————————————————
 
 /**

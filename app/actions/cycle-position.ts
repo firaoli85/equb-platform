@@ -148,6 +148,7 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
         weekNumber: payment.week.weekNumber,
         amountPaid: payment.amountPaid,
         isDeferred: payment.isDeferred,
+        markedLate: payment.markedLateAt != null,
         isSkipped: payment.week.isSkipped,
       })),
     );
@@ -183,6 +184,7 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
               amountDue: p.weeklyAmount,
               storedPaid: payment?.amountPaid ?? 0,
               isDeferred: payment?.isDeferred ?? false,
+              markedLate: payment?.markedLateAt != null,
               isSkipped: w.isSkipped,
             };
           }),

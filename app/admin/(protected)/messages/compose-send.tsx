@@ -84,10 +84,16 @@ export function ComposeSend() {
     setConfirm({
       title: `Send ${checkedRows.length} WhatsApp message${checkedRows.length === 1 ? "" : "s"} now?`,
       destructive: false,
+      // THIS USED TO SAY "exactly the text previewed on their row", and it
+      // stopped being true the day WhatsApp moved to Meta's Content templates:
+      // the SENTENCE is Meta's, fixed word for word, and only the figures in
+      // it come from the preview. Promising more than that is how the
+      // organizer ends up certain he sent something he did not.
       body: (
         <p>
-          Each member receives exactly the text previewed on their row. The server re-checks
-          opt-outs and hardship at send time, and every send lands in the message log (2.20).
+          Each member receives Meta&apos;s approved wording for this message type, carrying
+          the figures previewed on their row. The server re-checks opt-outs and hardship at
+          send time, and every send lands in the message log (2.20).
         </p>
       ),
       confirmLabel: `Send ${checkedRows.length} message${checkedRows.length === 1 ? "" : "s"}`,

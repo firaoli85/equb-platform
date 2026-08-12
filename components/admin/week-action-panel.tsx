@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { deletePaymentEvent, setWeekDeferral, setWeekNote } from "@/app/actions/edits";
+import { deletePaymentEvent, setWeekDeferral, setWeekLate, setWeekNote } from "@/app/actions/edits";
+import type { ManualLateAdvice } from "@/lib/derived";
 import { getCatchUpWeeks, getCellDetail } from "@/app/actions/payments-view";
 import { PaymentEntry } from "@/components/admin/payment-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
@@ -35,6 +36,11 @@ export type WeekTarget = {
 
 type Detail = {
   isDeferred: boolean;
+  /** The organizer marked this week late himself (2.2). */
+  markedLate: boolean;
+  markedLateNote: string;
+  /** Whether marking is possible now, and what to say about it first. */
+  lateAdvice: ManualLateAdvice;
   weekIsSkipped: boolean;
   note: string;
   receipts: {
@@ -165,6 +171,74 @@ export function WeekActionPanel({
     });
   }
 
+  // MARK THIS WEEK LATE — the organizer's own call (2.2).
+  //
+  // LATE is otherwise pure calendar, which made him wait until Thursday to
+  // record what a member told him on Monday. The three shapes of this control
+  // are decided by `manualLateAdvice` on the SERVER's clock:
+  //
+  //   already-late — the button is not offered at all. The week reads LATE by
+  //                  itself; a control that changes nothing is worse than none.
+  //   current      — the ordinary case. Confirmed like any money-adjacent
+  //                  change, with no warning, because there is nothing unusual
+  //                  to warn about.
+  //   future       — the week has not started. It WARNS and proceeds. Never
+  //                  blocked: he has reasons the system does not know.
+  function toggleMarkedLate() {
+    if (!detail) return;
+    const next = !detail.markedLate;
+    const advice = detail.lateAdvice;
+    ask(
+      {
+        title: next
+          ? `Mark week ${target.weekNumber} late for ${target.memberName}?`
+          : `Remove the late mark on week ${target.weekNumber}?`,
+        destructive: false,
+        // A week that has not started is the one case worth stopping on. The
+        // dialog's own `consequence` slot is where an unusual choice is stated
+        // plainly, and it still confirms rather than refusing.
+        consequence: next && advice.kind === "future" ? advice.message : undefined,
+        body: next ? (
+          <>
+            <p>
+              Week {target.weekNumber} will read <strong>LATE</strong> from now, without waiting
+              for its payment window to close. {target.memberName} joins the chasing list and a
+              late notice becomes sendable to them immediately.
+            </p>
+            <p>
+              The {formatMoney(target.amountDue)} was always owed — this changes WHEN the system
+              agrees it is late, nothing about the money. Recording a payment for this week
+              clears the mark by itself, and you can remove it here at any time.
+            </p>
+          </>
+        ) : (
+          <>
+            <p>
+              Week {target.weekNumber} goes back to the calendar&apos;s rule: late only once its
+              payment window has closed. {target.memberName} leaves the chasing list unless they
+              are behind on some other week.
+            </p>
+            <p>An audit entry records the decision.</p>
+          </>
+        ),
+        confirmLabel: next ? `Mark week ${target.weekNumber} late` : "Remove the mark",
+      },
+      async () => {
+        const result = await setWeekLate({
+          participationId: target.participationId,
+          weekNumber: target.weekNumber,
+          late: next,
+        });
+        if (!result.ok) return result.error;
+        onSaved(
+          next
+            ? `✓ Week ${target.weekNumber} marked late for ${target.memberName} — a late notice can be sent now.`
+            : `✓ The late mark on week ${target.weekNumber} was removed.`,
+        );
+      },
+    );
+  }
+
   function toggleDeferral() {
     if (!detail) return;
     const next = !detail.isDeferred;
@@ -224,12 +298,42 @@ export function WeekActionPanel({
         ) : remaining > 0 ? (
           <>
             <Pill tone="attention">{formatMoney(remaining)} still due</Pill>
+            {detail?.markedLate && <Pill tone="attention">Marked late by you</Pill>}
             {detail?.isDeferred && <Pill tone="attention">{DEFERRED_PHRASE}</Pill>}
           </>
         ) : (
           <Pill tone="good">Settled</Pill>
         )}
-        <span className="ml-auto flex gap-2">
+        <span className="ml-auto flex flex-wrap gap-2">
+          {/* NOT OFFERED WHEN IT WOULD DO NOTHING. A week whose window has
+              closed already reads LATE; the only reason to show the control
+              then is to let him UNDO a mark he made earlier. */}
+          {detail && !detail.weekIsSkipped &&
+            (detail.markedLate || detail.lateAdvice.kind !== "already-late") && (
+              <button
+                type="button"
+                onClick={toggleMarkedLate}
+                // DEFERRED IS DISABLED, NOT HIDDEN, and it says why.
+                //
+                // Hiding it would leave the organizer looking for a control he
+                // used yesterday with no explanation. Deferral beats the mark
+                // (ruling, Aug 2026), so the button stays where he expects it,
+                // dead, carrying the sentence that names the way out — the
+                // same rule as every other refusal: at the control that was
+                // pressed (UI_STANDARDS 6b).
+                disabled={busy !== null || (!detail.markedLate && detail.lateAdvice.kind === "deferred")}
+                data-testid="mark-late"
+                title={
+                  detail.markedLate
+                    ? "Go back to the calendar's rule for this week"
+                    : (detail.lateAdvice.message ??
+                      "Mark this week late now, without waiting for its window to close")
+                }
+                className={buttonCls.secondary + " !px-3 !py-1.5 !text-xs"}
+              >
+                {detail.markedLate ? "Remove late mark" : "Mark late"}
+              </button>
+            )}
           <button
             type="button"
             onClick={toggleDeferral}
@@ -248,6 +352,19 @@ export function WeekActionPanel({
           </button>
         </span>
       </div>
+
+      {/* THE DEAD BUTTON'S REASON, VISIBLE. A `title` is a hover, and the
+          organizer reaching for "Mark late" on a deferred week needs the
+          sentence whether or not he hovers — it names the one thing that makes
+          the control work again. */}
+      {detail?.lateAdvice.kind === "deferred" && !detail.markedLate && (
+        <p
+          data-testid="deferred-beats-mark"
+          className="rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:bg-white/5 dark:text-gray-300"
+        >
+          {detail.lateAdvice.message}
+        </p>
+      )}
 
       {error && <Alert kind="err">Not recorded: {error}</Alert>}
       {/* THE CONFIRMATION FOR THIS PANEL, INSIDE IT (§2.10, rule 6 beat 3).

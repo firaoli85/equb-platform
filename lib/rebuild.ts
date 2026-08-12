@@ -44,6 +44,7 @@ export async function rebuildParticipationPayments(
         paymentId: payment?.id ?? null,
         paid: 0,
         isDeferred: payment?.isDeferred ?? false,
+        markedLate: payment?.markedLateAt != null,
         isSkipped: week.isSkipped,
       };
     });
@@ -121,5 +122,30 @@ export async function rebuildParticipationPayments(
       const s = state.find((x) => x.week.weekNumber === a.weekNumber)!;
       await applyToWeek(s, a.applied, event);
     }
+  }
+
+  // MONEY CLEARS THE ORGANIZER'S LATE MARK (2.14, 2.2).
+  //
+  // He marks week 15 late on Monday because a member said they could not pay;
+  // on Wednesday they pay. The week is covered, so the mark has nothing left
+  // to describe and must not sit in the record contradicting the receipts.
+  //
+  // HERE, at the end of the one rebuild, because this is the only place money
+  // lands on weeks — the recording path, an edited receipt, a deleted one, a
+  // changed commitment and a settlement all run through it. Clearing it in the
+  // record action instead would leave every other route to fully-paid still
+  // carrying a stale mark.
+  //
+  // `paymentStatus` puts PAID above the mark for the same reason, so a mark
+  // that somehow survives still cannot show a covered week as late. This makes
+  // the STORED fact agree with the derived one rather than relying on it.
+  const covered = state
+    .filter((s) => s.markedLate && s.paid >= participation.weeklyAmount && s.paymentId)
+    .map((s) => s.paymentId!);
+  if (covered.length > 0) {
+    await tx.payment.updateMany({
+      where: { id: { in: covered } },
+      data: { markedLateAt: null, markedLateNote: null },
+    });
   }
 }

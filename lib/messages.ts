@@ -277,6 +277,19 @@ const TEMPLATE_NAMES: Record<ApprovedTemplateKey, string> = {
   CYCLE_CLOSING_STATEMENT: "Cycle closing statement",
 };
 
+/**
+ * What each message type is CALLED, for every screen that shows one.
+ *
+ * The template NAMES above cover the five Meta owns; a log row can carry any
+ * key, including LOCKOUT_NOTICE, so this covers all of them and is the single
+ * place a type's display name lives. Two screens naming the same message type
+ * differently is how a log stops being searchable.
+ */
+export const LABELS_BY_KEY: Record<MessageKey, string> = {
+  ...TEMPLATE_NAMES,
+  LOCKOUT_NOTICE: "Lockout notice",
+};
+
 const APPROVED_DEFAULTS = Object.fromEntries(
   APPROVED_TEMPLATE_KEYS.map((key) => [
     key,

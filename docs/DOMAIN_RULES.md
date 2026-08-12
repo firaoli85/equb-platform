@@ -241,14 +241,44 @@ Two different facts that a single "excused" flag would destroy.
 - Owed: `19 × $500 = $9,500`. The deferred week is **in** that figure.
 - Chasing messages: exclude weeks 11 and 14.
 
-**Status precedence:** `SKIPPED → PAID → DEFERRED → LATE → PARTIAL/UNPAID`. A deferred
-week that was later paid shows **PAID** — money outranks an intention.
+**Status precedence:** `SKIPPED → PAID → DEFERRED → LATE (marked) → LATE (calendar) →
+PARTIAL/UNPAID`. A deferred week that was later paid shows **PAID** — money outranks an
+intention.
+
+### Deferral beats the organizer's own late mark
+
+LATE has two routes now: the calendar closing a payment window, and the organizer
+marking a week late himself before that (rule 2.2 — he knows things the calendar does
+not). **Deferral outranks both**, and that precedence is the ruling, not an accident of
+ordering.
+
+The reason is what deferral is FOR. It exists to stop a chase reaching someone the
+organizer has decided not to pursue. A late mark on a deferred week would have the
+platform asserting two opposite things about the same week — *chase them* and *do not
+chase them* — and whichever won, one of his own decisions would be silently discarded.
+
+So the mark does not apply to a deferred week at all:
+
+- **Status:** the week reads `DEFERRED`, never `LATE`.
+- **Arithmetic:** the mark cannot pull a not-yet-due deferred week forward. (An *elapsed*
+  deferred week still counts as owed, exactly as it always has — deferral has never
+  excused the money.)
+- **Messages:** the week never enters `lateWeeks`, so `LATE_NOTICE` cannot name it.
+- **The control:** disabled, with the reason on screen — *"This week is deferred — remove
+  the deferral first if you want to chase it."* Disabled rather than hidden, because a
+  control that vanishes leaves him hunting for something he used yesterday.
+- **Deferring clears an existing mark**, so removing the deferral months later cannot
+  spring a forgotten mark back.
 
 **Pinned by:** `lib/derived.test.ts` → *"weeksBehind (never below zero; only SKIPPED weeks
 are excused)"*, *"paymentStatus (derived from money and the calendar only)"*;
 `lib/standing.test.ts` → *"computeStanding — SKIPPED weeks stay fully excused"*;
 `lib/messages.test.ts` → *"deferral leaves a member out of the chasing, not out of the
-books"*.
+books"*; `lib/manual-late.test.ts` → *"DEFERRED beats the mark"*, *"refuses a deferred
+week, and names the way out"*, *"a mark on a deferred week does not pull it forward"*,
+*"an elapsed deferred week still counts as due, with or without a mark"*, *"a mark on a
+deferred week keeps them off the attention list"*, *"deferring a week clears any mark on
+it"*, *"a deferred week disables the control and shows why, in words"*.
 
 ---
 
@@ -355,7 +385,7 @@ surface (wizard, participation editor, member page, portal).
 **Pinned by:** `lib/commitment.test.ts` → *"commitmentCap — 2.22's cap and its override
 are UNCHANGED"*, *"weeksToFinishWithGroup — 2.22's default, unchanged"*, *"the finish line
 — one sentence, identical on every surface"*, *"finishPreview — the finish is always
-derivable, never typed"*; `lib/money.test.ts` → *"remainingWeeksInCycle (2.22 / D-31)"*.
+derivable, never typed"*; `lib/money.test.ts` → *"remainingWeeksInCycle (2.22 / D-31: late joiners capped to the cycle end)"*.
 
 ---
 

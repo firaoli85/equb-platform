@@ -10,6 +10,29 @@ import {
 } from "@/app/actions/auth";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/controls";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
+
+// FOUR CREDENTIAL CONTROLS, FOUR CONFIRMATIONS — each beside its own control
+// (§2.10, UI_STANDARDS rule 6).
+//
+// Every one of these changes how a member gets in, so "did that work?" is not
+// a curiosity here: an unlock he thinks failed gets done again, and a PIN he
+// thinks failed gets typed again as something else. All four used to share ONE
+// `error` and ONE `success` paragraph at the very BOTTOM of this panel — so
+// pressing "Unlock account", which sits in the lock strip at the TOP, drew its
+// answer past the PIN form, the reset button and the permission select.
+//
+// The confirmation now belongs to the control that was pressed:
+//   Unlock / Reset PIN — a dialog does the saving, so `SaveFeedback` sits
+//                        where the trigger is, and the dialog keeps refusals.
+//   Set / Replace PIN  — its own button, so `SaveButton` owns all four beats.
+//   PIN sign-in select — not a button at all, so `SaveFeedback` again.
+//
+// TWO OF THEM DELETE THEIR OWN TRIGGER, and that decides where the message
+// goes. A successful unlock clears the lock and the counter, and a successful
+// reset clears `pinSet` — so the refresh that PROVES it worked unmounts the
+// button. Both confirmations are rendered OUTSIDE the condition that draws
+// their button, or success would erase its own receipt.
 
 export function PinControls({
   personId,
@@ -37,9 +60,25 @@ export function PinControls({
   );
   const initialAllowed =
     pinLoginAllowed === null ? "global" : pinLoginAllowed ? "always" : "never";
-  const [saving, setSaving] = useState<"pin" | "allowed" | "unlock" | "reset" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  // ONE SaveState PER CONTROL — these are four independent facts, not one.
+  // A single (saving, error, success) triple could only ever say "something
+  // happened somewhere on this panel", which is why its message had nowhere to
+  // live but the bottom.
+  const [pinSave, setPinSave] = useState<SaveState>({ kind: "idle" });
+  const [allowedSave, setAllowedSave] = useState<SaveState>({ kind: "idle" });
+  const [unlockSave, setUnlockSave] = useState<SaveState>({ kind: "idle" });
+  const [resetSave, setResetSave] = useState<SaveState>({ kind: "idle" });
+
+  // DERIVED, never a second flag. `saving` was its own state holding WHICH
+  // action was running — the same fact as `kind === "saving"` on these four,
+  // kept twice, which is how the button that says "Resetting…" and the one
+  // that is actually resetting stop being the same button.
+  const busy =
+    pinSave.kind === "saving" ||
+    allowedSave.kind === "saving" ||
+    unlockSave.kind === "saving" ||
+    resetSave.kind === "saving";
+
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran. Set it and the dialog stays
@@ -49,32 +88,54 @@ export function PinControls({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
-  function ask(spec: ConfirmSpec, fn: () => Promise<void>) {
+  /** `fn` returns its refusal, or nothing on success (UI_STANDARDS 6b). */
+  function ask(spec: ConfirmSpec, fn: () => Promise<string | null | void>) {
     setConfirm(spec);
+    setDialogError(null);
     setOnConfirm(() => () => {
-      void fn().finally(() => {
-        setConfirm(null);
-        setOnConfirm(null);
-      });
+      void (async () => {
+        const reported = await fn();
+        const refused = typeof reported === "string" && reported.length > 0 ? reported : null;
+        // CLOSE ONLY ON SUCCESS. This closed in a `finally`, whatever
+        // happened — so a server refusal from "Unlock account" or "Reset PIN"
+        // was thrown away with the dialog that could have shown it, and
+        // `dialogError` was wired to the dialog below but set by nothing at
+        // all. Pressing the button and watching the dialog vanish is
+        // indistinguishable from success (UI_STANDARDS 6b).
+        if (refused === null) {
+          setConfirm(null);
+          setOnConfirm(null);
+        } else {
+          setDialogError(refused);
+        }
+      })();
     });
   }
 
-  async function doUnlock() {
-    setError(null);
-    setSuccess(null);
-    setSaving("unlock");
+  async function doUnlock(): Promise<string | null> {
+    setUnlockSave({ kind: "saving" });
     try {
       const result = await unlockMemberPin({ personId });
       if (!result.ok) {
-        setError(result.error);
-        return;
+        // BOTH: the dialog holds it open where he pressed, and the panel keeps
+        // it after he cancels out. Neither alone survives the whole gesture.
+        setUnlockSave({ kind: "err", message: `Not unlocked: ${result.error}` });
+        return result.error;
       }
-      setSuccess("✓ Unlocked — they can sign in again right now.");
+      setUnlockSave({
+        kind: "ok",
+        message:
+          `Unlocked — ${personName} can try their PIN right now` +
+          (pinFailedAttempts > 0
+            ? `; ${pinFailedAttempts} failed attempt${pinFailedAttempts === 1 ? "" : "s"} cleared.`
+            : "."),
+      });
       router.refresh();
+      return null;
     } catch {
-      setError("Could not reach the server — the unlock was not confirmed.");
-    } finally {
-      setSaving(null);
+      const reason = "Could not reach the server — the unlock was not confirmed.";
+      setUnlockSave({ kind: "err", message: reason });
+      return reason;
     }
   }
 
@@ -95,22 +156,24 @@ export function PinControls({
     );
   }
 
-  async function doReset() {
-    setError(null);
-    setSuccess(null);
-    setSaving("reset");
+  async function doReset(): Promise<string | null> {
+    setResetSave({ kind: "saving" });
     try {
       const result = await resetMemberPin({ personId });
       if (!result.ok) {
-        setError(result.error);
-        return;
+        setResetSave({ kind: "err", message: `PIN not reset: ${result.error}` });
+        return result.error;
       }
-      setSuccess("✓ PIN reset — they are back on the phone-digit default.");
+      setResetSave({
+        kind: "ok",
+        message: `PIN reset — ${personName}'s old PIN stopped working; they are back on the last 4 digits of their phone and can set a new one themselves.`,
+      });
       router.refresh();
+      return null;
     } catch {
-      setError("Could not reach the server — the reset was not confirmed.");
-    } finally {
-      setSaving(null);
+      const reason = "Could not reach the server — the reset was not confirmed.";
+      setResetSave({ kind: "err", message: reason });
+      return reason;
     }
   }
 

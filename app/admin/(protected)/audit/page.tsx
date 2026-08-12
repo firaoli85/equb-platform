@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { auditPeopleOptions, listAuditLog } from "@/app/actions/audit";
 import { PresentationHidden } from "@/components/presentation-hidden";
+import { auditEntityHint, auditEntityHref } from "@/lib/audit-links";
 import { getSetting } from "@/lib/settings";
 import { AuditFilters, AuditPager } from "./audit-filters";
 
@@ -91,7 +93,25 @@ export default async function AuditPage({
                     <td className="whitespace-nowrap py-2 pr-4 tabular-nums text-gray-600 dark:text-gray-400">
                       {new Date(entry.createdAt).toLocaleString("en-US")}
                     </td>
-                    <td className="py-2 pr-4">{entry.entity}</td>
+                    {/* §8: the entity leads to the record it changed. Text
+                        when there is nowhere honest to go — a deletion, or a
+                        row with no screen of its own (lib/audit-links.ts). */}
+                    <td className="py-2 pr-4">
+                      {(() => {
+                        const href = auditEntityHref(entry);
+                        return href === null ? (
+                          entry.entity
+                        ) : (
+                          <Link
+                            href={href}
+                            title={auditEntityHint(entry.entity)}
+                            className="font-medium text-indigo-700 underline-offset-2 hover:underline dark:text-indigo-400"
+                          >
+                            {entry.entity}
+                          </Link>
+                        );
+                      })()}
+                    </td>
                     <td className="py-2 pr-4">{entry.action}</td>
                     <td className="py-2">
                       {entry.summary}

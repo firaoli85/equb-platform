@@ -11,6 +11,7 @@ import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { refuseIfCycleClosed } from "@/lib/cycle-guard";
+import { manualLateAdvice } from "@/lib/derived";
 import { deleteDrawIfEmpty, freedWeekClause, purgeEmptyWinnerPlans } from "@/lib/draw-cascade";
 import {
   SETTLEMENT_EVENT_WHERE,
@@ -1360,7 +1361,13 @@ export async function setWeekDeferral(input: {
           amountPaid: 0,
           isDeferred: input.deferred,
         },
-        update: { isDeferred: input.deferred },
+        // DEFERRING CLEARS A MANUAL LATE MARK (ruling, Aug 2026). He has just
+        // decided not to chase this week; leaving the mark underneath would
+        // park a contradiction in the record and spring it back the moment the
+        // deferral came off, weeks later, with no one expecting it.
+        update: input.deferred
+          ? { isDeferred: true, markedLateAt: null, markedLateNote: null }
+          : { isDeferred: false },
       });
       await rebuildParticipationPayments(tx, input.participationId);
       await logAudit(tx, {
@@ -1380,6 +1387,151 @@ export async function setWeekDeferral(input: {
     return { ok: true as const, data };
   } catch (e) {
     console.error("setWeekDeferral failed:", e);
+    return { ok: false as const, error: `Could not save. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * MARK A WEEK LATE — OR TAKE THE MARK BACK (2.2, 2.14).
+ *
+ * LATE has been pure calendar: unpaid AND the payment window closed. That made
+ * the organizer wait until Thursday to record something a member told him on
+ * Monday. This is his own decision, stored as the fact that he made it and
+ * when — and it is fully reversible.
+ *
+ * THREE RULES THIS ENFORCES, none of them a matter of taste:
+ *
+ *   ALREADY LATE IS REFUSED. A week whose window has closed reads LATE with no
+ *   help, so marking it would change nothing. An action that changes nothing
+ *   but reports success is how a screen stops being believed.
+ *
+ *   A FUTURE WEEK IS ALLOWED. Unusual and legitimate — a member who says now
+ *   that next month is impossible is telling him something true. The screen
+ *   WARNS; nothing here blocks it. He has reasons the system does not know.
+ *
+ *   THE WEEK MUST BE THEIRS. Same window check every other per-week write does,
+ *   for the same reason: a row outside the member's own window is invisible to
+ *   the grid that made it and survives every rebuild.
+ *
+ * No `rebuildParticipationPayments` call, and that is deliberate — unlike
+ * deferral this does not change how money ALLOCATES, only which weeks count as
+ * due now. The receipts land exactly where they landed before.
+ */
+export async function setWeekLate(input: {
+  participationId: string;
+  weekNumber: number;
+  late: boolean;
+  note?: string;
+}) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (typeof input.late !== "boolean") {
+      return { ok: false as const, error: "Invalid value." };
+    }
+    const note = input.note?.trim() || null;
+    if (note !== null && note.length > 500) {
+      return { ok: false as const, error: "The note is too long (500 characters max)." };
+    }
+    const data = await serializableTransaction(async (tx) => {
+      const participation = await tx.participation.findUniqueOrThrow({
+        where: { id: input.participationId },
+        include: { person: true, cycle: true },
+      });
+      // A closed cycle's shortfalls are already written to the carried ledger
+      // (2.9/2.14). Changing which weeks count as due afterwards would leave
+      // two different debts for the same money.
+      const frozen = frozenCycleRefusal(participation.cycle);
+      if (frozen) throw new Error(frozen);
+
+      const outside = weekInWindowRefusal({
+        memberName: participation.person.nameEnglishFirst,
+        weekNumber: input.weekNumber,
+        startWeek: participation.startWeek,
+        weeksCommitted: participation.weeksCommitted,
+        what: "marking a week late",
+      });
+      if (outside) throw new Error(outside);
+
+      const week = await tx.week.findUnique({
+        where: {
+          cycleId_weekNumber: { cycleId: participation.cycleId, weekNumber: input.weekNumber },
+        },
+      });
+      if (!week) throw new Error(`Week ${input.weekNumber} does not exist in this cycle.`);
+
+      const before = await tx.payment.findUnique({
+        where: {
+          weekId_participationId: { weekId: week.id, participationId: input.participationId },
+        },
+      });
+
+      if (input.late) {
+        // NOTHING TO MARK, or NOTHING THIS MARK MAY SAY. Checked on the
+        // server, not only in the UI: the screen is one caller, and a stale
+        // page is exactly the caller that would send this.
+        //
+        // `deferred` is the ruling of Aug 2026 — deferral means "not chased,
+        // still owed", and a mark on a deferred week asserts the opposite
+        // about the same week. The refusal names the way out.
+        const advice = manualLateAdvice({
+          weekDate: week.date,
+          today: new Date(),
+          weekNumber: input.weekNumber,
+          isDeferred: before?.isDeferred ?? false,
+        });
+        if (advice.kind === "already-late" || advice.kind === "deferred") {
+          throw new Error(advice.message);
+        }
+
+        // MONEY IS STILL THE TRUTH (2.14). A week already covered cannot be
+        // marked late — the mark would be dead on arrival, since PAID beats it
+        // in `paymentStatus`, and it would sit in the record saying otherwise.
+        if ((before?.amountPaid ?? 0) >= participation.weeklyAmount) {
+          throw new Error(
+            `Week ${input.weekNumber} is already paid in full. Money is the truth — there is nothing to mark late.`,
+          );
+        }
+      }
+
+      const markedLateAt = input.late ? new Date() : null;
+      await tx.payment.upsert({
+        where: {
+          weekId_participationId: { weekId: week.id, participationId: input.participationId },
+        },
+        create: {
+          weekId: week.id,
+          participationId: input.participationId,
+          amountPaid: 0,
+          isDeferred: false,
+          markedLateAt,
+          markedLateNote: input.late ? note : null,
+        },
+        update: { markedLateAt, markedLateNote: input.late ? note : null },
+      });
+
+      await logAudit(tx, {
+        entity: "Payment",
+        entityId: before?.id ?? `${week.id}/${input.participationId}`,
+        action: "update",
+        summary: input.late
+          ? `Week ${input.weekNumber} for ${participation.person.nameEnglishFirst} marked LATE by hand${note ? ` — ${note}` : ""}`
+          : `Week ${input.weekNumber} for ${participation.person.nameEnglishFirst}: the manual late mark was removed`,
+        before: {
+          markedLateAt: before?.markedLateAt ?? null,
+          markedLateNote: before?.markedLateNote ?? null,
+        },
+        after: { markedLateAt, markedLateNote: input.late ? note : null },
+      });
+
+      return { weekNumber: input.weekNumber, late: input.late, note };
+    });
+    revalidateAdmin();
+    revalidatePath("/admin/payments");
+    revalidatePath("/admin/messages");
+    return { ok: true as const, data };
+  } catch (e) {
+    console.error("setWeekLate failed:", e);
     return { ok: false as const, error: `Could not save. ${errorMessage(e)}` };
   }
 }

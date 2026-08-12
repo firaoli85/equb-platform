@@ -58,6 +58,7 @@ const paidThrough = (id: string, n: number) =>
     weekNumber: i + 1,
     amountPaid: 100_000,
     isDeferred: false,
+    markedLate: false,
     isSkipped: false,
   }));
 

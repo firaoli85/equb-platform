@@ -247,6 +247,7 @@ export async function getMyPortal() {
             amountDue: participation.weeklyAmount,
             storedPaid: payment?.amountPaid ?? 0,
             isDeferred: payment?.isDeferred ?? false,
+            markedLate: payment?.markedLateAt != null,
             isSkipped: w.isSkipped,
           };
         }),
