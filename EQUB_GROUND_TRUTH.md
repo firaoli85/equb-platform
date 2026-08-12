@@ -567,6 +567,8 @@ then Claude Code implements it. Connect at the design phase, not before.
 | D-28 | Messages are statements carrying derived state (last payment, weeks behind, amount owed), not bare labels | **SETTLED** |
 | D-29 | Equb is outbound-only. Inbound SMS ("READY" for will-call) recorded as a Nexo idea, not built here | **SETTLED** |
 | D-37 | Messaging: WhatsApp Business (Meta-approved, already wired) for per-member messages; Telegram for the weekly group broadcast; US SMS is closed — TCR rejection is carrier-level and follows every provider | **SETTLED** |
+| D-38 | `WINNER_ANNOUNCEMENT` states the finish **WEEK**, not the finish **DATE** — a deliberate divergence from 2.22 ("every member sees their own finish date"). Accepted because the member portal carries the full date, the template arrived with Meta’s approval in hand, and re-submitting to add a date variable would restore the sixth variable that was cut to reduce 21656 (invalid-ContentVariables) risk. The divergence is pinned by test so it stays a decision rather than becoming a bug. | **SETTLED** |
+| D-39 | Every approved template declares `requiredExtras`, and `deliver()` refuses at the **extras boundary** — before rendering — when a caller has not supplied them. Enforced at **runtime**, because `MessageExtras` fields are all optional. Making `extras` a discriminated union keyed on template would move this to compile time; it touches every call site and is its own decision, not something folded into a bug fix. | **SETTLED (runtime); compile-time enforcement OPEN** |
 | D-36 | Lucky numbers leave the wheel pool automatically when drawn or when the owner's window ends; the system must warn in advance if a window is closing undrawn | **SETTLED** |
 | D-33 | Tests accompany every change touching money, allocation, derived state, or integrity — unit tests plus behavioural verification against the live DB | **SETTLED** |
 | D-34 | UI design is a deliberate later pass, done once, after the logic is proven | **SETTLED** |
@@ -623,7 +625,8 @@ themselves.
 | Audit log — paged, filtered, append-only by DB trigger | Done |
 | Design pass — IA, charts, motion, glass surfaces, portalled overlays | Substantially done |
 | WhatsApp login codes | **Working** |
-| WhatsApp statements | **Blocked — needs Meta-approved templates** |
+| WhatsApp statements | **Working** — five Meta-approved templates (7 Aug 2026), live send by ContentSid |
+| Lockout notice over WhatsApp | **No approved template** — skips silently. The `notifyOnLockout` setting has nothing behind it: it must be disabled in the UI, or given a Twilio Verify-based channel. |
 | SMS login | **Failing locally — parked** |
 
 ### 4.2 THE STATE-CONSISTENCY AUDIT
@@ -737,6 +740,42 @@ violation, nothing malformed to point at.
 
 ### 5.15 A REASON STRING THAT OUTLIVES ITS CAUSE IS A LIE
 
+### 5.16 A SENTINEL LEGITIMATE FOR ONE PLACEHOLDER IS A DEFECT FOR ANOTHER
+
+`"—"` is the honest answer for `lastPaymentWeek` when a member has never paid, and
+catastrophic for `payoutAmount`. A blanket "empty is fine" rule made the guard **vacuous
+for 16 of 17 placeholders**: `placeholderValues` never returns `undefined` or `""`, so the
+refusal could only ever have fired on an empty `name`. It was written to stop invented
+figures reaching a member and could not have stopped them.
+
+### 5.17 A GUARD PLACED AFTER A FALLBACK CANNOT SEE WHAT THE FALLBACK DESTROYED
+
+A missing `drawnWeek` did not produce a blank for a later check to catch — it silently
+became the member’s **current** week, a valid string no output-scanning guard could flag.
+"Week 12" read as correct because the draw happened to be for week 12. The check had to
+move to the extras boundary, before the information was lost.
+
+### 5.18 DERIVED VALUES ALWAYS PRODUCE A FIGURE; SUPPLIED VALUES CAN BE FORGOTTEN
+
+Every defect-producing placeholder was fed from caller-supplied `extras`; every legitimate
+sentinel was fed from derived `standing`. That split is not a coincidence and it predicts
+where the next one will be — look at what a caller has to remember, not at what the
+function computes.
+
+### 5.19 A GUARD CANNOT SCAN OUTPUT FOR A SENTINEL THAT APPEARS IN APPROVED COPY
+
+`PAYMENT_CONFIRMED`’s em dash and the `NO_VALUE` sentinel are the **same codepoint**
+(U+2014). Scanning rendered output for it would refuse every correct payment confirmation.
+Detection has to happen per-variable, before substitution, where the sentinel is
+distinguishable from the template’s own punctuation.
+
+### 5.20 A VACUOUS TEST IN THE FAILURE DIRECTION IS WORSE THAN IN THE SUCCESS DIRECTION
+
+Four `if (r.ok)` blocks lacked `expect(r.ok).toBe(true)` and would pass with zero
+assertions on a refusal. Seven `if (!r.ok)` blocks were worse: they pass silently if a send
+that **should fail starts succeeding** — which for a messaging system is the direction that
+reaches a member.
+
 ---
 
 ## 6. KNOWN ISSUES AND PARKED WORK
@@ -755,23 +794,36 @@ Three real causes were found and fixed along the way (§5.14, plus `connect-src`
 
 Priority is low: the default PIN signs every member in directly.
 
-### 6.2 WHATSAPP — LOGIN WORKS, STATEMENTS DO NOT
+### 6.2 WHATSAPP — RESOLVED 7–8 AUGUST 2026
 
-**Login codes work today** — Twilio Verify sends Meta-approved templates, no service
-window needed. Verified delivered.
+**Both halves now work.** Login codes go through Twilio Verify; statements go through five
+Meta-approved Content templates, approved 7 August 2026 under category UTILITY.
 
-**Statements cannot send as built.** They are freeform bodies, and freeform requires the
-member to have messaged the business within 24 hours. **The account has one inbound
-message ever (19 May 2026)**, so no window is open for anyone.
+**Why freeform could never have worked.** A freeform body requires the member to have
+messaged the business within 24 hours, and the account has **one inbound message in its
+entire history (19 May 2026)** — so no window is open for anyone, ever. A template needs no
+window, which is the whole reason this became possible.
 
 The earlier "Meta disabled the WABA" reading was wrong — 63112 was a temporary block that
 cleared. The sender is ONLINE, quality HIGH.
 
-**Next step:** submit four Content templates (`PAYMENT_CONFIRMED`, `BEHIND_NOTICE`,
-`LATE_NOTICE`, `WINNER_ANNOUNCEMENT`, `CYCLE_CLOSING_STATEMENT` — five drafted,
-`LOCKOUT_NOTICE` dropped). Drafts are in `docs/WHATSAPP_TEMPLATES.md`, reviewed and
-approved by the organizer. Then record each `ContentSid`, switch `sendWhatsAppMessage`
-from `Body` to `ContentSid` + `ContentVariables`, and flip `STATEMENTS_DELIVERABLE`.
+**What the work actually was.** `sendWhatsAppMessage` was a **refusing stub** — it returned
+a permanent failure and never called Twilio at all. So this was *writing* the send path,
+not switching an existing one from `Body` to `ContentSid`. There was no `Body` path to
+migrate away from, and the plan that said otherwise was wrong about its own codebase.
+
+**Delivery is by ContentSid, and that has a consequence worth stating plainly.** Twilio
+sends the sentence Meta approved, keyed by SID. Editing a template's text in the app
+therefore changes **the audit log and nothing else** — the member still receives Meta's
+wording. An organizer could read one thing in the app while members received another, and
+believe the log. That asymmetry is the entire reason the drift guard exists
+(`lib/whatsapp-templates.test.ts`, plus a live-database check): the registry is the source
+of truth, the database mirrors it, and divergence fails the build.
+
+**`LOCKOUT_NOTICE` has no approved template and must not gain one by accident.** It is a
+security message; Meta's UTILITY category covers transactional account activity, and
+submitting "your account is locked" invites a rejection that risks the whole sender.
+Twilio Verify is its channel. Until then it renders and goes nowhere — see §4.1.
 
 **Meta rule that reshaped every template:** a body may not begin or end with a variable.
 All originals opened with `{name},` and would have been rejected. Names *are* allowed in
@@ -803,14 +855,13 @@ written against defects that actually occurred. **The organizer runs it.**
 
 ## 7. WHAT IS NEXT
 
-1. **Submit the WhatsApp templates** — Meta review takes hours to a day, so start early.
-2. **Run `docs/MANUAL_QA_CHECKLIST.md`** — the organizer's eyes, in short sittings.
-3. **Deploy** — Vercel, environment variables, the production domain into Firebase
+1. **Run `docs/MANUAL_QA_CHECKLIST.md`** — the organizer's eyes, in short sittings.
+2. **Deploy** — Vercel, environment variables, the production domain into Firebase
    authorized domains, the keep-alive scheduler for the idle gap, CI gating typecheck and
    tests.
-4. **Parallel run** — record payments in both systems for the remaining weeks and compare.
+3. **Parallel run** — record payments in both systems for the remaining weeks and compare.
    The old app stays live for members until this proves out.
-5. **Cycle close on 27 September**, then Cycle 2 on the new platform.
+4. **Cycle close on 27 September**, then Cycle 2 on the new platform.
 
 ---
 
