@@ -127,7 +127,7 @@ export default async function CyclePositionPage({
       {/* ————— PAID AHEAD — the piece he could not see ————— */}
       {section === "ahead" && (
         <>
-          <SectionHeading title="Money paid toward weeks that have not happened">
+          <SectionHeading title="Money paid toward weeks after this one">
             It is in your hands and it is not yours to spend. Kept separate from collection
             for exactly that reason.
           </SectionHeading>
@@ -139,15 +139,28 @@ export default async function CyclePositionPage({
               <Pill tone={c.paidAhead > 0 ? "attention" : "neutral"}>for weeks not yet reached</Pill>
             </span>
           }
-          sub="Money received for weeks that have NOT happened yet. It is in your hands, but it belongs to those weeks — spending it is spending someone else's money."
+          sub="Money received for weeks AFTER this one. It is in your hands, but it belongs to those weeks — spending it is spending someone else's money. This week's own money is not here; a week whose payment window is still open has still happened."
         />
         <div className="px-5 pb-4">
           <p className="text-2xl font-black tabular-nums text-gray-900 dark:text-white">
             {formatMoney(c.paidAhead)}
           </p>
+          {/* THE WEEK THAT IS HAPPENING NOW, stated before the ahead list.
+              Its money used to be swept in here: a week's payment window stays
+              open for five days after it arrives, and the split was made on
+              "has the window closed" rather than "has the week happened". On
+              the live cycle mid-week 13 that put $9,375 of ordinary on-time
+              money — and 13 members — on this list. */}
+          <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+            Week {c.currentWeek} is still open:{" "}
+            <strong className="tabular-nums">{formatMoney(c.collectedThisWeek)}</strong> of{" "}
+            <strong className="tabular-nums">{formatMoney(c.expectedThisWeek)}</strong> is in. That
+            is this week&apos;s ordinary money — not paid ahead, and nobody is short for it until
+            the week closes.
+          </p>
           {c.aheadBy.length === 0 ? (
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              Nobody has paid ahead. Everything received belongs to weeks that have happened.
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              Nobody has paid ahead. Everything received belongs to this week or an earlier one.
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-800/60 border-t border-gray-100 dark:border-gray-800/60">

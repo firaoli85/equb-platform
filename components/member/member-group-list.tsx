@@ -92,7 +92,7 @@ export function MemberGroupList({
             The group
           </h1>
           <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 tabular-nums">
-            {totalMembers} members · Week {currentWeek} of {plannedWeeks}
+            {totalMembers} members
           </p>
         </div>
         <div className="text-right shrink-0 pt-0.5">

@@ -9,6 +9,7 @@ import { MemberPayoutCard } from "@/components/member/member-payout-card";
 import { MemberPersonalSummary } from "@/components/member/member-personal-summary";
 import { SavedCard } from "@/components/member/saved-card";
 import { WeekStampList, type StampWeek } from "@/components/member/week-stamp-list";
+import { memberWindowSentence } from "@/lib/member-window";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { notInCurrentCycleLine } from "@/lib/member-history";
 
@@ -110,7 +111,9 @@ export default async function MePage() {
   );
   const stampWeeks: StampWeek[] = p.weeks.map((w) => ({
     id: `w${w.weekNumber}`,
-    weekNumber: w.weekNumber,
+    // THEIR ordinal, never the cycle's. A ten-week member reading "14" down
+    // the side of their own list is reading the organizer's coordinates.
+    weekNumber: w.ownWeek ?? w.weekNumber,
     date: formatDateUTC(w.date),
     status: w.status,
     isPayoutWeek: drawnWeeks.has(w.weekNumber),
@@ -120,14 +123,23 @@ export default async function MePage() {
     amountDue: w.amountDue,
   }));
 
-  // 2.22: a member always sees their OWN finish date — the week number on its
-  // own means nothing to the person reading it.
-  const finishOn = p.finishDate === null ? null : formatDateLongUTC(new Date(p.finishDate));
-  const finishTail = finishOn === null ? "." : ` — you finish ${finishOn}.`;
-  const joinedLine =
-    p.startWeek > 1
-      ? `You joined in week ${p.startWeek}. Your weeks run from ${p.startWeek} to ${p.finishWeek}${finishTail}`
-      : `Your weeks run from ${p.startWeek} to ${p.finishWeek}${finishTail}`;
+  // 2.22: a member always sees their OWN window — as a start DATE, a NUMBER OF
+  // WEEKS and a finish DATE.
+  //
+  // It used to read "You joined in week 14. Your weeks run from 14 to 23."
+  // Week 14 is a coordinate in the organizer's system that this reader has
+  // never seen, and "joined in week 14" reads as arriving late to something
+  // already running — which is not how an Equb works. Everyone simply has
+  // their own window, and 2.22 says that difference "is normal".
+  //
+  // One sentence shape for everybody, so nobody's window reads as the
+  // exception: there is no longer a branch on startWeek > 1.
+  const joinedLine = memberWindowSentence({
+    startDate: p.startDate === null ? null : new Date(p.startDate),
+    weeksCommitted: p.weeksCommitted,
+    finishDate: p.finishDate === null ? null : new Date(p.finishDate),
+    formatDate: formatDateLongUTC,
+  });
 
   // Their payout: the sum across their numbers, and whether any has landed.
   const payoutNet = p.numbers.reduce((sum, n) => sum + n.netAmount, 0);

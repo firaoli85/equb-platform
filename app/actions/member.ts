@@ -7,6 +7,7 @@ import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-thr
 import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { contribution } from "@/lib/contribution";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
+import { ownWeekNumber } from "@/lib/member-window";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { firebaseConfigured } from "@/lib/firebase-verify";
 import { toE164 } from "@/lib/phone";
@@ -159,6 +160,8 @@ export async function getMyPortal() {
         number: n.number,
         amount: n.amount,
         drawnWeekNumber: draw?.week.weekNumber ?? null,
+        /** The DAY they won — what the portal shows (2.22). */
+        drawnDate: draw?.week.date ?? null,
         payoutStatus: payout?.status ?? null,
         netAmount: payout?.netAmount ?? projected.net,
         grossAmount: payout?.grossAmount ?? projected.gross,
@@ -205,6 +208,16 @@ export async function getMyPortal() {
               stored: storedWeekDates(participation.cycle.weeks),
               cycleStartDate: participation.cycle.startDate,
             })?.date.toISOString() ?? null,
+          // THEIR START, AS A DAY. The portal speaks in dates and their own
+          // counts; a cycle week number is the organizer's coordinate and
+          // means nothing to the person reading their own account (2.22).
+          // Resolved exactly like the finish: the STORED row wins (2.14/2.7).
+          startDate:
+            resolveWeekDate({
+              weekNumber: participation.startWeek,
+              stored: storedWeekDates(participation.cycle.weeks),
+              cycleStartDate: participation.cycle.startDate,
+            })?.date.toISOString() ?? null,
           weeksCommitted: participation.weeksCommitted,
           weeklyAmount: participation.weeklyAmount,
           // 2.1: this is a SAVINGS group. What they have PAID IN leads; what
@@ -222,6 +235,14 @@ export async function getMyPortal() {
           nextDue: nextDue ? { weekNumber: nextDue.weekNumber, date: nextDue.date } : null,
           weeks: standing.weeks.map((w) => ({
             weekNumber: w.weekNumber,
+            // Their own position, 1-based from their own start. The cycle
+            // number rides along for admin-facing joins only — no member
+            // surface may render it (lib/member-vocabulary.test.ts).
+            ownWeek: ownWeekNumber({
+              weekNumber: w.weekNumber,
+              startWeek: participation.startWeek,
+              weeksCommitted: participation.weeksCommitted,
+            }),
             date: w.date,
             // The portal never accuses ahead of the calendar: future weeks
             // and the still-open current week read as "Upcoming" (2.16).
@@ -400,6 +421,9 @@ export async function getMemberCollections() {
       return {
         number: n.number,
         drawnWeekNumber: draw?.week.weekNumber ?? null,
+        // The DAY they won. The portal speaks in dates; a cycle week number
+        // is the organizer's coordinate (2.22, lib/member-window.ts).
+        drawnDate: draw?.week.date ?? null,
         collected: payout?.status === "COLLECTED",
       };
     });

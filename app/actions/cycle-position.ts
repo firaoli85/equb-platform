@@ -202,9 +202,15 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
       if (standing.amountOutstanding > 0) {
         owedBy.push({ participationId: p.id, name, amount: standing.amountOutstanding });
       }
-      // PAID AHEAD, per member: money sitting on weeks that have not elapsed.
+      // PAID AHEAD, per member: money on weeks AFTER the current one.
+      //
+      // This compared against `elapsed` — the last week whose payment WINDOW
+      // had closed — so for the five days between a week arriving and its
+      // window shutting, every ordinary on-time payment counted as paid ahead.
+      // On the live cycle mid-week 13 that was 13 members and $12,925, of
+      // which $9,375 was simply that week's money.
       const ahead = p.payments.filter(
-        (pm) => pm.week.weekNumber > elapsed && pm.amountPaid > 0,
+        (pm) => pm.week.weekNumber > currentWeek && pm.amountPaid > 0,
       );
       if (ahead.length > 0) {
         aheadBy.push({
@@ -259,7 +265,7 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
       };
     });
 
-    const collection = collectionPosition({ series, owedBy, aheadBy, stoppedBy });
+    const collection = collectionPosition({ series, owedBy, aheadBy, stoppedBy, currentWeek });
     const cash = cashPosition({
       payments: flatPayments.map((p) => ({ amountPaid: p.amountPaid })),
       payouts: payouts.map((p) => ({ netAmount: p.netAmount, status: p.status })),

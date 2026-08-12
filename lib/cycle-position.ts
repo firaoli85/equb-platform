@@ -77,10 +77,44 @@ export type CollectionPosition = {
   shortfall: number;
   /** Who makes the shortfall up, largest first. */
   owedBy: OwingMember[];
-  /** Money received for weeks that have NOT elapsed — owed forward. */
+  /**
+   * Money received for weeks AFTER the current one.
+   *
+   * THIS USED TO BE "every week that has not ELAPSED", and that is a different
+   * set. A week's payment window closes five days after it opens, so from the
+   * moment the current week arrives until its window shuts, the current week
+   * is not elapsed — and every ordinary on-time contribution paid into it was
+   * counted as money paid toward a week that had not happened.
+   *
+   * Measured on the live cycle, mid-week 13: $12,925 across 13 members was
+   * reported as paid ahead. $9,375 of it was that week's normal money, and
+   * only $3,550 from 3 members was genuinely for a later week. Members who had
+   * simply paid on time read as "1 week ahead", and the three who really were
+   * ahead each had their count inflated by one.
+   *
+   * A WINDOW BEING OPEN AND A WEEK NOT HAVING HAPPENED ARE DIFFERENT FACTS.
+   * The first is about a deadline; the second is about the calendar. Paid
+   * ahead is the second one, so it is measured against {@link currentWeek}.
+   */
   paidAhead: number;
-  /** Who paid ahead, largest first. */
+  /** Who paid ahead, largest first. Weeks after the current one only. */
   aheadBy: AheadMember[];
+  /** The week the cycle is IN — the highest week whose date has arrived. */
+  currentWeek: number;
+  /**
+   * What the current week should bring in. NOT part of `shouldHaveCollected`:
+   * its window is still open, so nobody is short for it yet and no message may
+   * say they are (2.16).
+   */
+  expectedThisWeek: number;
+  /**
+   * Money already received FOR the current week.
+   *
+   * It is neither collection-for-elapsed-weeks nor paid ahead, and before this
+   * existed it fell into the second bucket by default. Reported on its own so
+   * the money is visible and lands in exactly one place.
+   */
+  collectedThisWeek: number;
   /** Members who have stopped, biggest hole first. */
   stoppedBy: StoppedMember[];
   /**
@@ -113,11 +147,31 @@ export function collectionPosition(input: {
   series: readonly WeekReceipts[];
   owedBy: readonly OwingMember[];
   aheadBy: readonly AheadMember[];
+  /**
+   * The week the cycle is IN — the highest week whose date has ARRIVED, from
+   * `currentWeekFromRows`. NOT `elapsedThroughWeek`: that one waits for the
+   * payment window to close, and the five days in between are precisely when
+   * ordinary current-week money was being filed as paid ahead.
+   *
+   * Optional so existing callers compile, and it falls back to the elapsed
+   * boundary — the old, wrong behaviour — rather than to something arbitrary.
+   * Every real caller passes it; `lib/cycle-position.test.ts` pins the
+   * difference.
+   */
+  currentWeek?: number;
   /** Members who have stopped (2.18). Optional — absent means nobody has. */
   stoppedBy?: readonly StoppedMember[];
 }): CollectionPosition {
+  // THREE BUCKETS, NOT TWO. A week is either finished (its window has closed
+  // and it can be short), happening now (arrived, window still open — its
+  // money is ordinary), or still to come (paid into it early).
   const elapsed = input.series.filter((w) => w.elapsed);
-  const ahead = input.series.filter((w) => !w.elapsed);
+  const elapsedThrough = elapsed.reduce((max, w) => Math.max(max, w.weekNumber), 0);
+  const currentWeek = input.currentWeek ?? elapsedThrough;
+  const thisWeek = input.series.filter(
+    (w) => !w.elapsed && w.weekNumber <= currentWeek,
+  );
+  const ahead = input.series.filter((w) => w.weekNumber > currentWeek);
 
   const shouldHaveCollected = elapsed.reduce((s, w) => s + w.expected, 0);
   const collected = elapsed.reduce((s, w) => s + w.received, 0);
@@ -148,10 +202,16 @@ export function collectionPosition(input: {
     willNotArrive: Math.min(willNotArrive, gap),
     toCover: stoppedBy.reduce((s, m) => s + m.shortfallToCover, 0),
     // Money sitting on weeks that have not happened yet. NOT this cycle's
-    // collection, and not his to spend.
+    // collection, and not his to spend. Measured against the CURRENT week, not
+    // the elapsed boundary — see the field's own note.
     paidAhead: ahead.reduce((s, w) => s + w.received, 0),
     aheadBy: [...input.aheadBy].filter((m) => m.amount > 0).sort((a, b) => b.amount - a.amount),
-    elapsedThroughWeek: elapsed.reduce((max, w) => Math.max(max, w.weekNumber), 0),
+    currentWeek,
+    // The week that is happening now: its money is ordinary, and nobody is
+    // short for it until its window closes.
+    expectedThisWeek: thisWeek.reduce((s, w) => s + w.expected, 0),
+    collectedThisWeek: thisWeek.reduce((s, w) => s + w.received, 0),
+    elapsedThroughWeek: elapsedThrough,
   };
 }
 
@@ -393,10 +453,18 @@ export function collectionSentence(
           : "") +
         "."
       : "";
+  // THIS WEEK, SAID SEPARATELY. Its window is still open, so it is neither
+  // collected-and-counted nor paid ahead — and saying nothing about it left
+  // the reader unable to see where this week's money had gone.
+  const now =
+    p.collectedThisWeek > 0 || p.expectedThisWeek > 0
+      ? ` Week ${p.currentWeek} is still open: ${formatMoney(p.collectedThisWeek)} of ` +
+        `${formatMoney(p.expectedThisWeek)} is in, and nobody is short for it until it closes.`
+      : "";
   const ahead =
     p.paidAhead > 0
-      ? ` A further ${formatMoney(p.paidAhead)} has been paid toward weeks that have not happened yet, ` +
+      ? ` A further ${formatMoney(p.paidAhead)} has been paid toward weeks after this one, ` +
         `by ${p.aheadBy.length} member${p.aheadBy.length === 1 ? "" : "s"} — that money belongs to those weeks, not to this one.`
       : "";
-  return head + short + stopped + ahead;
+  return head + short + stopped + now + ahead;
 }

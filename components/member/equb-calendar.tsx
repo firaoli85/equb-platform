@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ownWeekLabel } from "@/lib/member-window";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { motionTokens } from "@/lib/motion-tokens";
 
@@ -51,9 +52,12 @@ const LEGEND = [
 export function EqubCalendar({
   weeks,
   defaultMonth,
+  totalWeeks,
 }: {
   weeks: CalendarWeek[];
   defaultMonth: string; // "YYYY-MM"
+  /** How many weeks they are paying for — their own denominator (2.22). */
+  totalWeeks: number;
 }) {
   const [displayMonth, setDisplayMonth] = useState(defaultMonth);
   const [direction, setDirection] = useState(0);
@@ -171,7 +175,11 @@ export function EqubCalendar({
                 <div key={day} className="flex items-center justify-center py-0.5">
                   <div
                     className={`w-8 h-8 flex items-center justify-center rounded-full text-[12px] font-bold select-none ${cellCls}`}
-                    title={isEqub && weekNum != null ? `Week ${weekNum} — ${statusLabel}` : undefined}
+                    title={
+                      isEqub && weekNum != null
+                        ? `${ownWeekLabel(weekNum, totalWeeks)} — ${statusLabel}`
+                        : undefined
+                    }
                   >
                     {day}
                   </div>

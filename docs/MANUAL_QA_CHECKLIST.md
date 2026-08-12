@@ -401,6 +401,31 @@ that actually reached a rendered chart in this codebase, so none of them is hypo
 
 Run these signed in as a **synthetic** member from `scripts/portal-test-fixture.mts`.
 
+**Use a LATE-STARTING member for the whole portal pass** — one whose window is, say, cycle
+weeks 14–23. Every fault below is invisible on a member who started at week 1, because for
+them the cycle's week number and their own happen to be the same number.
+
+### The portal's vocabulary — run on EVERY member screen (UI_STANDARDS 8c)
+
+- [ ] **No cycle week number appears anywhere.** Not in a sentence, a badge, a list column,
+      a tooltip or a `title` attribute. The organizer's week 14 means nothing to the
+      person reading their own account, and naming it implies they arrived late to
+      something already running — 2.22 says everyone simply has their own window.
+- [ ] **Their window reads as a start DATE, a COUNT and a finish DATE.**
+      *"You started Sunday, August 16, 2026 and you are paying for 10 weeks — you finish
+      Sunday, October 18, 2026."* Never *"your weeks run from 14 to 23"*, and never
+      *"you joined in week 14"*.
+- [ ] **Any index is THEIRS.** *"week 3 of your 10"*, counted from their own start — never
+      the cycle's number, and never over the cycle's total.
+- [ ] **Progress uses their denominator.** A ten-week member reads *"3 of 10 weeks paid"*.
+      If you see *"of 20"*, the cycle's total has leaked onto their card.
+- [ ] **Draws read as dates.** *"you won on Sunday, August 16, 2026"*, not *"you won in
+      week 14"*.
+- [ ] **Boundaries read as dates.** *"before you started — your weeks begin {date}"*, never
+      *"before you joined"*.
+- [ ] Cross-check the same member in the ADMIN: cycle week numbers **must** still be there.
+      They are the organizer's frame and are correct in his screens.
+
 ## Sign-in — `/login`
 
 - [ ] Only channels that actually work are offered.

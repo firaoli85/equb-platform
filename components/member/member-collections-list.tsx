@@ -15,6 +15,8 @@ export type DrawRow = {
 export type MyNumber = {
   number: number;
   drawnWeekNumber: number | null;
+  /** The DAY they won — what the member reads. The week number is not shown. */
+  drawnDate: Date | null;
   collected: boolean;
 };
 
@@ -42,7 +44,7 @@ export function MemberCollectionsList({
           Collections
         </h1>
         <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 tabular-nums">
-          Who has been drawn, by lucky number · Week {currentWeek}
+          Who has been drawn, by lucky number
         </p>
       </div>
 
@@ -56,17 +58,19 @@ export function MemberCollectionsList({
           myNumbers.map((n) => (
             <p key={n.number} className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
               <span className="text-indigo-600 dark:text-indigo-400">Your draw:</span> #{n.number},{" "}
-              {n.collected && n.drawnWeekNumber !== null
-                ? `you collected in week ${n.drawnWeekNumber}`
-                : n.drawnWeekNumber !== null
-                  ? `you won in week ${n.drawnWeekNumber}`
+              {/* Dates, not cycle weeks (2.22). "You won in week 14" is a
+                  coordinate the reader has never seen. */}
+              {n.collected && n.drawnDate !== null
+                ? `you collected on ${formatDateUTC(n.drawnDate)}`
+                : n.drawnDate !== null
+                  ? `you won on ${formatDateUTC(n.drawnDate)}`
                   : "still in the draw"}
             </p>
           ))
         )}
         {nextDraw && (
           <p className="text-[11px] text-gray-600 dark:text-gray-400 tabular-nums pt-1 border-t border-indigo-100 dark:border-indigo-900/50">
-            Next draw: week {nextDraw.weekNumber} · {formatDateUTC(nextDraw.date)}
+            Next draw: {formatDateUTC(nextDraw.date)}
           </p>
         )}
       </div>

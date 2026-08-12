@@ -7,6 +7,8 @@ export type PayoutNumber = {
   number: number;
   amount: number;
   drawnWeekNumber: number | null;
+  /** The DAY they won. The member reads the date; the week number is admin. */
+  drawnDate: Date | null;
   payoutStatus: "PENDING" | "COLLECTED" | null;
   netAmount: number;
   grossAmount: number;
@@ -71,11 +73,11 @@ export function MemberPayoutCard({
                 <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
                 </svg>
-                Collected{n.drawnWeekNumber !== null ? ` · won week ${n.drawnWeekNumber}` : ""}
+                Collected{n.drawnDate !== null ? ` · won ${formatDateUTC(n.drawnDate)}` : ""}
               </span>
             ) : n.drawnWeekNumber !== null ? (
               <span className="inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full border tabular-nums text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-900">
-                Won week {n.drawnWeekNumber} · payout on its way
+                {n.drawnDate !== null ? `Won ${formatDateUTC(n.drawnDate)}` : "Won"} · payout on its way
               </span>
             ) : (
               <span className="inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full border text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800">
@@ -94,7 +96,7 @@ export function MemberPayoutCard({
         </span>
         {nextDue ? (
           <span className="tabular-nums">
-            Next due: week {nextDue.weekNumber} · {formatDateUTC(nextDue.date)}
+            Next due: {formatDateUTC(nextDue.date)}
           </span>
         ) : (
           <span className="font-semibold text-emerald-600 dark:text-emerald-400">All paid up</span>

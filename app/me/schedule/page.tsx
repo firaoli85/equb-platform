@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getMyPortal } from "@/app/actions/member";
 import { EqubCalendar, type CalendarWeek } from "@/components/member/equb-calendar";
 import { formatDateLongUTC } from "@/lib/format";
+import { memberWindowSentence } from "@/lib/member-window";
 
 export const dynamic = "force-dynamic";
 
@@ -44,10 +45,14 @@ export default async function SchedulePage() {
         </Link>
       </div>
       <p className="text-[11px] text-gray-600 dark:text-gray-400 tabular-nums -mt-2">
-        Your weeks run from week {p.startWeek} to week {p.finishWeek}
-        {p.finishDate !== null && <> — you finish {formatDateLongUTC(new Date(p.finishDate))}</>}.
+        {memberWindowSentence({
+          startDate: p.startDate === null ? null : new Date(p.startDate),
+          weeksCommitted: p.weeksCommitted,
+          finishDate: p.finishDate === null ? null : new Date(p.finishDate),
+          formatDate: formatDateLongUTC,
+        })}
       </p>
-      <EqubCalendar weeks={weeks} defaultMonth={defaultMonth} />
+      <EqubCalendar weeks={weeks} defaultMonth={defaultMonth} totalWeeks={p.weeksCommitted} />
     </div>
   );
 }

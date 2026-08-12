@@ -150,6 +150,60 @@ Every mutating control follows the same four beats:
 **Destructive actions additionally:** a confirmation that states plainly what will happen
 and what it affects, and for high-stakes ones a typed confirmation of the member's name.
 
+### 6b. A refusal appears AT THE CONTROL that was pressed
+
+> **The reason must render where the organizer is looking — beside the button, inside the
+> panel, in the dialog that is still open. A banner at the top of the page is not enough,
+> and on a long screen it is not feedback at all.**
+
+Beat 4 above already said "positioned at the control". It was a clause inside a list, and
+an audit of every admin surface found **fifteen** controls that ignored it. So it gets its
+own rule, with the failure mode named.
+
+**Why it is worse than no feedback.** The organizer presses Save. The server refuses for a
+real reason. The refusal renders 370 lines up, above the fold, behind a scroll. He sees
+nothing change and reports *"it did not save"* — with no error to quote, because from where
+he sat there wasn't one. Debugging then starts from a false premise: everyone looks for a
+swallowed exception, and the message was there the whole time.
+
+That is exactly how the participation-save bug was reported, and the message was never
+missing — `submitParticipation` set it correctly every time.
+
+**The test.** With the control on screen and the page scrolled to it, can the reason be read
+without moving? If not, it is misplaced. Specifically:
+
+| Shape | Where the reason goes |
+|---|---|
+| Button in a panel or drawer | Inside that panel, adjacent to the button |
+| Button at the foot of a long form | Beside the button — a top banner may *also* fire, never instead |
+| Confirmation dialog | **In the dialog**, which stays open on failure. A dialog that closes and reports elsewhere has thrown the message away |
+| Row action in a table or list | In that row, or in a slot pinned to it |
+| Refusal knowable before the request | Say so at the control instead of round-tripping (see `saveParticipation`'s cap check) |
+
+**Never discard the result.** `await action(...)` with no `if (!result.ok)` is the worst
+case: the screen renders success over a refusal.
+
+**Two examples already right, to copy:** `components/presentation-toggle.tsx` renders its own
+failure *inside the button label* ("Could not switch — try again"); `components/admin/week-winner-editor.tsx:215`
+puts a `role="alert"` slot in the editor block, two lines from the control it serves.
+
+**Known violations, from the audit — real outstanding work, not a disclaimer:**
+
+| Severity | Control | File |
+|---|---|---|
+| high | "Close the cycle" — writes every carried balance | `cycle/close/close-flow.tsx:282` → banner at `:85` |
+| high | "Mark collected", "Save" (payout edit) | `collections/collections-view.tsx:649, :762` → banner at `:265` |
+| high | "Review…" add/move a winner | `components/admin/week-winner-editor.tsx:290` → banner on the parent page |
+| high | "Send N messages on WhatsApp" | `messages/compose-send.tsx:225` → error above the recipient list |
+| high | "Create plan" | `wheel/setup/wheel-setup.tsx:643` → banner at `:283` |
+| high | "Record" a ledger payment | `people/[id]/member-payments.tsx:252` → alert at `:492` |
+| high | "Remove completely" / "keep the records" | `components/admin/remove-from-cycle.tsx:261` → alert at `:157` |
+| high | "Record that they stopped" | `components/admin/close-participation.tsx:301` → alert at `:161` |
+| high | Receipt row Save / Delete | `people/[id]/participation-editor.tsx:1081, :1128` → banner at `:503` |
+| medium | Delete a cash reading · lucky-number row · "Record $X collected" · "Cancel" a plan | `cash-reading-panel.tsx:250` · `participation-editor.tsx:960` · `waiting-view.tsx:379` · `wheel-setup.tsx:655` |
+| medium | **Result discarded entirely** — `recordCarryDecision` | `cycle/add/add-member-wizard.tsx:316` |
+| low | "Review and assign…" | `people/[id]/assign-payout.tsx:328` |
+
 ---
 
 ## 7. Motion
@@ -226,6 +280,44 @@ Two rules that go with the words, and matter more than the words:
 
 Enforced by `lib/cycle-position.test.ts` ("uses no accounting vocabulary in any verdict,
 ever") and by `scripts/verify-cycle-position.mts` against live rows.
+
+### 8c. Members read dates and their own counts. Cycle week numbers are ADMIN-only.
+
+A cycle week number is the **organizer's administrative coordinate**. He runs a 20-week
+cycle and lives in it all day. The member does not — they think *"I started on this date and
+I am paying for ten weeks."*
+
+The portal said:
+
+> You joined in week 14. Your weeks run from 14 to 23 — you finish Sunday, October 18, 2026.
+
+Two faults in one sentence. **Week 14 is a coordinate the reader has never seen.** And
+**"joined in week 14" implies they came in late** to something already running, which is not
+how an Equb works — 2.22 is explicit that everyone simply has their own window and that the
+difference between them *"is normal"*. It now reads:
+
+> You started Sunday, August 16, 2026 and you are paying for 10 weeks — you finish Sunday,
+> October 18, 2026.
+
+**One sentence shape for everybody**, so nobody's window reads as the exception. There is no
+longer a branch on whether they started at week 1.
+
+| Member surface | Never | Always |
+|---|---|---|
+| Their window | "your weeks run from 14 to 23" | a start **date**, a **count**, a finish **date** |
+| Their week list | the cycle's week number | **their** ordinal — "week 3 of your 10" — or the date |
+| Progress | "3 of 20 weeks paid" | "3 of 10 weeks paid" — **their** denominator |
+| A draw | "you won in week 14" | "you won on Sunday, August 16, 2026" |
+| A boundary | "before you joined" | "before you started — your weeks begin {date}" |
+| The group page | "Week 12 of 20" | member counts and dates |
+
+**The admin keeps cycle week numbers everywhere.** That is the organizer's frame and it is
+correct there. Only `app/me/` and `components/member/` are bound by this rule.
+
+One derivation: `lib/member-window.ts` (`memberWindowSentence`, `ownWeekNumber`,
+`ownWeekLabel`, `ownProgressLabel`, `outsideWindowLabel`). Enforced by
+`lib/member-vocabulary.test.ts`, a source scan over every member `.tsx` — proven
+non-vacuous on the reported sentence, and proven not to fire on comments that quote it.
 
 ---
 

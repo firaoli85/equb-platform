@@ -320,6 +320,106 @@ describe("positionVerdict — never just a number", () => {
   });
 });
 
+// ————————————————— THE CURRENT WEEK IS NOT "AHEAD" —————————————————
+//
+// Reported from live data on a Wednesday of week 13: 13 members shown as
+// "paid ahead" totalling $12,925, most of them "1 week ahead" for what was
+// ordinary on-time money. Week 13's date had arrived; its payment window did
+// not close until the Thursday. The split was made on `elapsed` alone, so for
+// those five days every normal contribution was filed as money paid toward a
+// week that had not happened.
+//
+// A WINDOW BEING OPEN AND A WEEK NOT HAVING HAPPENED ARE DIFFERENT FACTS.
+describe("paid ahead means AFTER the current week, not 'window still open'", () => {
+  // Weeks 1..12 finished. Week 13 has ARRIVED and its window is still OPEN.
+  // Weeks 14+ have not arrived. Two members at $500: one paid week 13 on
+  // time, one paid weeks 13 AND 14.
+  const midWeek13 = [
+    ...Array.from({ length: 12 }, (_, i) => week(i + 1, 100_000, 100_000, true)),
+    week(13, 100_000, 75_000, false), // arrived, window open — money is ordinary
+    week(14, 100_000, 25_000, false), // not arrived — genuinely early
+    week(15, 100_000, 0, false),
+  ];
+
+  const position = () =>
+    collectionPosition({
+      series: midWeek13,
+      owedBy: [],
+      aheadBy: [{ participationId: "b", name: "Bekele", amount: 25_000, weeks: 1 }],
+      currentWeek: 13,
+    });
+
+  // THE DEFECT, STATED DIRECTLY.
+  it("does NOT count this week's money as paid ahead", () => {
+    const p = position();
+    expect(p.paidAhead).toBe(25_000); // week 14 only
+    expect(p.paidAhead).not.toBe(100_000); // NOT week 13 + week 14
+  });
+
+  it("reports this week's money on its own, so it lands somewhere", () => {
+    const p = position();
+    expect(p.currentWeek).toBe(13);
+    expect(p.collectedThisWeek).toBe(75_000);
+    expect(p.expectedThisWeek).toBe(100_000);
+  });
+
+  // Nobody is short for a week whose window has not closed (2.16).
+  it("keeps the open week OUT of what should have come in", () => {
+    const p = position();
+    expect(p.elapsedThroughWeek).toBe(12);
+    expect(p.shouldHaveCollected).toBe(1_200_000); // weeks 1..12 only
+    expect(p.collected).toBe(1_200_000);
+    expect(p.shortfall).toBe(0);
+  });
+
+  it("every cent lands in exactly one bucket", () => {
+    const p = position();
+    const total = midWeek13.reduce((s, w) => s + w.received, 0);
+    expect(p.collected + p.collectedThisWeek + p.paidAhead).toBe(total);
+  });
+
+  // The regression, from the other side: the OLD rule reproduced.
+  it("the elapsed boundary — the old rule — really would have swept it up", () => {
+    const old = midWeek13.filter((w) => !w.elapsed).reduce((s, w) => s + w.received, 0);
+    expect(old).toBe(100_000); // week 13 AND week 14 — the bug
+    expect(position().paidAhead).toBe(25_000); // the fix
+  });
+
+  // Once the window closes the same week becomes ordinary collection, and
+  // nothing moves into "ahead".
+  it("when the week's window closes, its money becomes collection", () => {
+    const closed = midWeek13.map((w) => (w.weekNumber === 13 ? { ...w, elapsed: true } : w));
+    const p = collectionPosition({ series: closed, owedBy: [], aheadBy: [], currentWeek: 13 });
+    expect(p.elapsedThroughWeek).toBe(13);
+    expect(p.collected).toBe(1_275_000);
+    expect(p.collectedThisWeek).toBe(0);
+    expect(p.paidAhead).toBe(25_000); // week 14, unchanged
+  });
+
+  it("says so in the sentence, rather than leaving the money unexplained", () => {
+    const s = collectionSentence(position(), formatMoney);
+    expect(s).toContain("Week 13 is still open");
+    expect(s).toContain("$750 of $1,000 is in");
+    expect(s).toContain("nobody is short for it until it closes");
+    expect(s).toContain("$250 has been paid toward weeks after this one");
+  });
+
+  // A member who pays on time must never appear on the paid-ahead list, and
+  // that list is built in the action from the SAME boundary.
+  it("a member who paid only this week is not on the ahead list at all", () => {
+    const p = collectionPosition({
+      series: midWeek13,
+      owedBy: [],
+      // The action filters `weekNumber > currentWeek`, so an on-time payer
+      // never reaches this array. Passing an empty list is what it produces.
+      aheadBy: [],
+      currentWeek: 13,
+    });
+    expect(p.aheadBy).toEqual([]);
+    expect(p.paidAhead).toBe(25_000);
+  });
+});
+
 describe("collectionSentence — the dashboard's register", () => {
   it("states should, actual, who is short, and what was paid early", () => {
     const p = collectionPosition({
@@ -332,7 +432,7 @@ describe("collectionSentence — the dashboard's register", () => {
     expect(s).toContain("$2,000 should have come in");
     expect(s).toContain("$1,600 has");
     expect(s).toContain("$400 is outstanding, from 1 member");
-    expect(s).toContain("$300 has been paid toward weeks that have not happened");
+    expect(s).toContain("$300 has been paid toward weeks after this one");
     expect(s).toContain("belongs to those weeks, not to this one");
     // The plain-English rule reaches this sentence too (UI_STANDARDS 8b).
     expect(s).not.toMatch(/\b(owed forward|uncommitted|committed)\b/i);

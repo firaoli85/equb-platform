@@ -60,8 +60,15 @@ export function PastCycleCard({ cycle, className = "" }: { cycle: PastCycle; cla
                 {cycle.receivedNet > 0 ? formatMoney(cycle.receivedNet) : "—"}
               </dd>
               <dd className="text-[11px] tabular-nums text-gray-600 dark:text-gray-400">
+                {/* The archive snapshot stores the cycle WEEK a number came
+                    up, not its date — and a closed cycle's week 14 means
+                    nothing to the person reading it, exactly as the note at
+                    the top of this file says. So the fact is stated without
+                    the coordinate; the card's own header carries the dates.
+                    Putting a date here would need the archive to record one,
+                    and a frozen archive is not rewritten for wording. */}
                 {cycle.drawnWeek !== null
-                  ? `your number came up in week ${cycle.drawnWeek}`
+                  ? "your number came up"
                   : "your number was never drawn"}
               </dd>
             </div>

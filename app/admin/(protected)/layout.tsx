@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
+import { AccountMenu } from "@/components/admin/account-menu";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { PresentationToggle } from "@/components/presentation-toggle";
-import { SignOutButton } from "@/components/sign-out-button";
 import { requireAdmin } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
 
@@ -34,9 +34,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </span>
         </div>
         <AdminSidebar />
+        {/* The foot of the rail: the screen-share switch, then the account
+            menu (ADMIN_IA §3) that holds the four settings pages and
+            sign-out. Sign-out is no longer a sibling here — it is the last
+            item of that menu, so there is exactly one of it. */}
         <div className="space-y-2 border-t border-gray-100 dark:border-gray-800/60 p-3">
           <PresentationToggle on={presentation} />
-          <SignOutButton />
+          <AccountMenu />
         </div>
       </aside>
 
@@ -50,7 +54,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <span className="text-sm font-black text-gray-900 dark:text-white">Equb Admin</span>
         <div className="flex items-center gap-2">
           <PresentationToggle on={presentation} />
-          <SignOutButton />
+          {/* Same menu, compact. Settings were unreachable on a phone too. */}
+          <AccountMenu compact />
         </div>
       </header>
 
