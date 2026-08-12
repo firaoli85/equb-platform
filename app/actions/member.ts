@@ -7,7 +7,13 @@ import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-thr
 import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { contribution } from "@/lib/contribution";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
+import { finalPosition, finalPositionSentence } from "@/lib/final-position";
+import { formatMoney } from "@/lib/format";
 import { ownWeekNumber } from "@/lib/member-window";
+import { effectiveFinishWeek } from "@/lib/participation-close";
+
+/** Whose group this is. Same fallback shape as lib/device.ts. */
+const ORGANIZER_NAME = "Firaoli";
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { firebaseConfigured } from "@/lib/firebase-verify";
 import { toE164 } from "@/lib/phone";
@@ -65,6 +71,37 @@ async function portalParticipation(personId: string): Promise<{ id: string } | n
   return live ? { id: live.id } : null;
 }
 
+/**
+ * THEIR RECORD WHEN THEY HAVE STOPPED (2.18).
+ *
+ * Tsion stopped mid-cycle and this portal showed her "You are not in the
+ * current cycle. When the organizer adds you to a cycle, it will appear here."
+ * — a blank wall on the day she would most want her record. 2.18 is explicit:
+ * closed members KEEP access and can see where they stopped.
+ *
+ * It is deliberately NOT returned as `participation`. That would render the
+ * savings ring, the week grid and "next payment due" — a finished record
+ * reading as a live bill, which is the exact mistake the note above this
+ * function was written about. It comes back as its own read-only block.
+ */
+async function stoppedRecord(personId: string) {
+  return prisma.participation.findFirst({
+    where: { personId, status: "CLOSED", cycle: { status: "ACTIVE" } },
+    include: {
+      cycle: { include: { weeks: { orderBy: { weekNumber: "asc" } } } },
+      breaks: { orderBy: { fromWeek: "asc" } },
+      payments: { include: { week: { select: { weekNumber: true, date: true } } } },
+      paymentEvents: { select: { amount: true, pinnedWeekId: true } },
+      luckyNumbers: {
+        include: {
+          payouts: { select: { netAmount: true, status: true } },
+          slotMembers: { include: { slot: { include: { draws: { include: { week: true } } } } } },
+        },
+      },
+    },
+  });
+}
+
 export async function getMyPortal() {
   try {
     const linked = await linkCurrentUserToPerson();
@@ -109,7 +146,67 @@ export async function getMyPortal() {
       },
     };
     if (!participation) {
-      return { ok: true as const, data: { ...base, participation: null } };
+      // THEY MAY HAVE STOPPED RATHER THAN NEVER JOINED (2.18). Those are very
+      // different facts and they used to render the identical blank wall.
+      const stopped = await stoppedRecord(person.id);
+      if (!stopped) {
+        return { ok: true as const, data: { ...base, participation: null, stopped: null } };
+      }
+
+      const paidIn = stopped.paymentEvents.reduce((sum, e) => sum + e.amount, 0);
+      const received = stopped.luckyNumbers
+        .flatMap((n) => n.payouts)
+        .filter((po) => po.status === "COLLECTED")
+        .reduce((sum, po) => sum + po.netAmount, 0);
+      const drawnWeek =
+        stopped.luckyNumbers
+          .flatMap((n) => n.slotMembers.flatMap((sm) => sm.slot.draws))
+          .map((d) => d.week)
+          .sort((a, b) => a.date.getTime() - b.date.getTime())[0] ?? null;
+
+      // Where their window ended: the week before their open break.
+      const lastCountedWeek = effectiveFinishWeek({
+        startWeek: stopped.startWeek,
+        weeksCommitted: stopped.weeksCommitted,
+        breaks: stopped.breaks,
+      });
+      const dateOf = (weekNumber: number) =>
+        stopped.cycle.weeks.find((w) => w.weekNumber === weekNumber)?.date ?? null;
+
+      const position = finalPosition({
+        paidIn,
+        received,
+        weeklyAmount: stopped.weeklyAmount,
+        weeksCommitted: stopped.weeksCommitted,
+      });
+
+      return {
+        ok: true as const,
+        data: {
+          ...base,
+          participation: null,
+          stopped: {
+            cycleName: stopped.cycle.name,
+            // DATES AND THEIR OWN COUNTS (UI_STANDARDS 8c) — never the
+            // organizer's week numbers.
+            startDate: dateOf(stopped.startWeek)?.toISOString() ?? null,
+            stoppedDate: dateOf(lastCountedWeek)?.toISOString() ?? null,
+            weeksPaid: Math.min(
+              Math.floor(paidIn / Math.max(1, stopped.weeklyAmount)),
+              stopped.weeksCommitted,
+            ),
+            weeksCommitted: stopped.weeksCommitted,
+            weeklyAmount: stopped.weeklyAmount,
+            paidIn,
+            drawn:
+              received > 0 || drawnWeek !== null
+                ? { on: drawnWeek?.date.toISOString() ?? null, received }
+                : null,
+            position,
+            sentence: finalPositionSentence(position, ORGANIZER_NAME, formatMoney),
+          },
+        },
+      };
     }
 
     const today = new Date();

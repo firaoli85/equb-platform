@@ -186,6 +186,10 @@ const stoppedBy = stopped.map((p) => {
     amountLeaving,
     alreadyPaidOut,
     shortfallToCover: alreadyPaidOut > 0 ? amountLeaving : 0,
+    owedBack:
+      alreadyPaidOut > 0
+        ? 0
+        : p.payments.reduce((sum, pm) => sum + pm.amountPaid, 0),
     reason: "",
   };
 });

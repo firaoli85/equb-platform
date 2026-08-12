@@ -173,13 +173,17 @@ describe("cashOnHand — money in, money out, what is left. Three facts.", () =>
     const h = cashOnHand(base);
     expect(h.shouldBeHolding).toBe(base.collected - base.handedOut);
     // No fee input exists to pass. The figure cannot depend on one.
+    // Every field is a FACT that has already happened, or a statement about
+    // the figure. None of them is a projection, and there is no fee among them.
     expect(Object.keys(h).sort()).toEqual([
       "collected",
       "drawnNotHandedOut",
       "handedOut",
+      "owedToStopped",
       "paidEarly",
       "shouldBeHolding",
     ]);
+    expect(Object.keys(h).some((k) => /fee/i.test(k))).toBe(false);
   });
 
   // THE CRITICAL ARITHMETIC. A payout DRAWN but not yet handed over is cash
@@ -462,6 +466,7 @@ describe("collectionSentence — the dashboard's register", () => {
           amountLeaving: 800_000,
           alreadyPaidOut: 1_960_000,
           shortfallToCover: 800_000,
+          owedBack: 0, // she was drawn — she owes him, not the other way
           reason: "Stopped contributing",
         },
       ],

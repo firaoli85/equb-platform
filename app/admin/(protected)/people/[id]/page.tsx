@@ -11,6 +11,7 @@ import { Pager, TruncationNotice } from "@/components/ui/pager";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
+import { finalPosition, finalPositionAdminLine } from "@/lib/final-position";
 import { ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { calculateFinishWeek } from "@/lib/money";
 import { CAPS, PAGE_SIZES, pageInfo, parsePage, truncationNotice } from "@/lib/paging";
@@ -135,6 +136,37 @@ export default async function PersonPage({
           reason: active.closeReason,
           note: active.closeNote,
         }
+      : null;
+
+  /**
+   * WHAT HE OWES THEM, OR THEY OWE HIM (2.18).
+   *
+   * The SAME derivation the member reads on their own portal, from the same
+   * two facts — everything they paid in, and everything they were handed — so
+   * his screen and hers can never disagree about the direction or the figure.
+   *
+   * The receipts are aggregated rather than taken from the paged list below:
+   * total contributed is the sum of the receipts (2.14), and that page is one
+   * page. A total computed from a page would be wrong the moment there were
+   * more receipts than fit on it.
+   */
+  const finalStanding =
+    active && active.status === "CLOSED"
+      ? finalPosition({
+          paidIn:
+            (
+              await prisma.paymentEvent.aggregate({
+                where: { participationId: active.id },
+                _sum: { amount: true },
+              })
+            )._sum.amount ?? 0,
+          received: active.luckyNumbers
+            .flatMap((n) => n.payouts)
+            .filter((po) => po.status === "COLLECTED")
+            .reduce((sum, po) => sum + po.netAmount, 0),
+          weeklyAmount: active.weeklyAmount,
+          weeksCommitted: active.weeksCommitted,
+        })
       : null;
 
   const [standing, catchUp] = active

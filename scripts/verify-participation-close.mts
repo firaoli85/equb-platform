@@ -396,6 +396,11 @@ const position = collectionPosition({
         closingAtWeek: p.closedAtWeek ?? CLOSE_AT,
       }) * p.weeklyAmount,
     alreadyPaidOut: p.id === paidOutMember.id ? collectedPayout.netAmount : 0,
+    // 2.18: a stopped member never drawn is owed what they paid in.
+    owedBack:
+      p.id === paidOutMember.id
+        ? 0
+        : p.payments.reduce((sum, pm) => sum + pm.amountPaid, 0),
     shortfallToCover:
       p.id === paidOutMember.id
         ? weeksLeavingExpectation({

@@ -239,6 +239,7 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
         breaks: breaksOf(p),
       });
       const alreadyPaidOut = paidOutTo.get(p.id) ?? 0;
+      const paidInByThem = p.payments.reduce((sum, pm) => sum + pm.amountPaid, 0);
       const amountLeaving =
         weeksLeavingExpectation({
           startWeek: p.startWeek,
@@ -258,6 +259,11 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
         // Only money already HANDED OVER leaves a hole. A PENDING payout has
         // not left his hands, so there is nothing yet to cover.
         shortfallToCover: alreadyPaidOut > 0 ? amountLeaving : 0,
+        // Money he is HOLDING that is theirs: what a member who was never
+        // drawn paid in. No fee is withheld — a fee is only ever taken from a
+        // payout and they never had one (lib/final-position.ts).
+        owedBack: alreadyPaidOut > 0 ? 0 : paidInByThem,
+
         reason: closeReasonText(
           isCloseReason(p.closeReason) ? p.closeReason : "OTHER",
           p.closeNote,
@@ -280,6 +286,9 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
       handedOut: cash.totalPaidOut,
       drawnNotHandedOut: cash.committedPending,
       paidEarly: collection.paidAhead,
+      // 2.18: money owed back to a stopped member who was never drawn is in
+      // his hands and is not his.
+      owedToStopped: collection.owedBackToStopped,
     });
     // The fee, kept OUT of the position above. It is what he might keep if the
     // cycle finishes as planned, which is a projection — and a projection

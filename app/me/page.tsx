@@ -47,6 +47,102 @@ export default async function MePage() {
   // Nothing that implies participation now renders: no ring, no week grid, no
   // "next due". Their most recent finished cycle is summarised below, clearly
   // labelled as finished, with the full record one tap away.
+  // THEY STOPPED, RATHER THAN NEVER JOINED (2.18). Two completely different
+  // facts that rendered the identical blank wall — "When the organizer adds
+  // you to a cycle, it will appear here" — on the day their record matters
+  // most. This branch comes FIRST: the blank state below is the fallthrough.
+  if (!participation && result.data.stopped) {
+    const st = result.data.stopped;
+    return (
+      <div className="space-y-4">
+        {newDevice && (
+          <NewDeviceNotice sessionId={newDevice.sessionId} message={newDevice.message} />
+        )}
+
+        <section className="animate-fade-in-up rounded-2xl border border-gray-200 bg-white px-5 py-6 dark:border-gray-800 dark:bg-[#141414]">
+          <h1 className="text-xl font-black text-balance text-gray-900 dark:text-white">
+            Your record in {st.cycleName}
+          </h1>
+          <p className="mt-1.5 text-sm text-pretty text-gray-600 dark:text-gray-400">
+            You stopped part-way through. This is where you left it — nothing here is a bill,
+            and nothing further is expected from you.
+          </p>
+
+          {/* THEIR OWN FRAME: dates and their own counts (UI_STANDARDS 8c).
+              The organizer recorded "stopped at week 12"; week 12 is his
+              coordinate and means nothing to the person reading this. */}
+          <dl className="mt-4 space-y-2 border-t border-gray-100 pt-3 text-sm dark:border-gray-800/60">
+            {st.startDate && (
+              <div className="flex flex-wrap items-baseline gap-x-3">
+                <dt className="text-gray-600 dark:text-gray-400">You started</dt>
+                <dd className="ml-auto font-semibold text-gray-900 dark:text-white">
+                  {formatDateLongUTC(new Date(st.startDate))}
+                </dd>
+              </div>
+            )}
+            {st.stoppedDate && (
+              <div className="flex flex-wrap items-baseline gap-x-3">
+                <dt className="text-gray-600 dark:text-gray-400">You stopped</dt>
+                <dd className="ml-auto font-semibold text-gray-900 dark:text-white">
+                  {formatDateLongUTC(new Date(st.stoppedDate))}
+                </dd>
+              </div>
+            )}
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <dt className="text-gray-600 dark:text-gray-400">Weeks you paid</dt>
+              <dd className="ml-auto font-semibold tabular-nums text-gray-900 dark:text-white">
+                {st.weeksPaid} of your {st.weeksCommitted}
+              </dd>
+            </div>
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <dt className="text-gray-600 dark:text-gray-400">You paid in</dt>
+              <dd className="ml-auto text-lg font-black tabular-nums text-gray-900 dark:text-white">
+                {formatMoney(st.paidIn)}
+              </dd>
+            </div>
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <dt className="text-gray-600 dark:text-gray-400">
+                {st.drawn ? "You were drawn" : "You were not drawn"}
+              </dt>
+              <dd className="ml-auto font-semibold tabular-nums text-gray-900 dark:text-white">
+                {st.drawn
+                  ? `${st.drawn.on ? `${formatDateLongUTC(new Date(st.drawn.on))} — ` : ""}${formatMoney(st.drawn.received)}`
+                  : "—"}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        {/* THE FINAL POSITION, never implicit. A member who stopped is exactly
+            the person who cannot work this out for themselves. */}
+        <section
+          className={
+            "animate-fade-in-up-1 rounded-2xl border px-5 py-4 " +
+            (st.position.direction === "owed-to-them"
+              ? "border-emerald-300 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/25"
+              : st.position.direction === "they-owe"
+                ? "border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/25"
+                : "border-gray-200 bg-white dark:border-gray-800 dark:bg-[#141414]")
+          }
+        >
+          <p className="text-[11px] font-bold tracking-wider text-gray-600 uppercase dark:text-gray-400">
+            Where this leaves you
+          </p>
+          <p className="mt-1 text-base leading-snug font-bold text-pretty text-gray-900 dark:text-white">
+            {st.sentence}
+          </p>
+        </section>
+
+        <Link
+          href="/me/history"
+          className="flex min-h-11 animate-fade-in-up-2 items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 transition-colors hover:border-gray-300 dark:border-gray-800 dark:bg-[#141414] dark:text-gray-200 dark:hover:border-gray-700"
+        >
+          Your full history →
+        </Link>
+      </div>
+    );
+  }
+
   if (!participation) {
     const past = await getMyPastCycles();
     const cycles = past.ok ? past.data.cycles : [];

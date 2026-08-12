@@ -58,6 +58,18 @@ export type StoppedMember = {
   alreadyPaidOut: number;
   /** `amountLeaving` when they were already paid out, else 0. */
   shortfallToCover: number;
+  /**
+   * Cents he owes THEM: what a member who was never drawn paid in.
+   *
+   * It is money he is HOLDING that is not his (2.18) — they put it in and took
+   * nothing out, so it belongs to them exactly as paid-early money belongs to
+   * the weeks it was paid for. No fee is withheld: a fee is only ever taken
+   * from a payout and they never had one (lib/final-position.ts).
+   *
+   * Zero for a member who WAS drawn — they owe him, which is
+   * `shortfallToCover`, and the two never both apply.
+   */
+  owedBack: number;
   /** The neutral reason, as recorded. */
   reason: string;
 };
@@ -117,6 +129,12 @@ export type CollectionPosition = {
   collectedThisWeek: number;
   /** Members who have stopped, biggest hole first. */
   stoppedBy: StoppedMember[];
+  /**
+   * What he owes stopped members who were never drawn — money in his hands
+   * that is theirs. Counted against what he can cover, exactly like money paid
+   * early for weeks that have not happened.
+   */
+  owedBackToStopped: number;
   /**
    * Of the gap in elapsed weeks, the part that belongs to members who have
    * stopped. It is recorded on THEIR OWN records (2.18) and it is not money
@@ -201,6 +219,7 @@ export function collectionPosition(input: {
     stoppedBy,
     willNotArrive: Math.min(willNotArrive, gap),
     toCover: stoppedBy.reduce((s, m) => s + m.shortfallToCover, 0),
+    owedBackToStopped: stoppedBy.reduce((s, m) => s + m.owedBack, 0),
     // Money sitting on weeks that have not happened yet. NOT this cycle's
     // collection, and not his to spend. Measured against the CURRENT week, not
     // the elapsed boundary — see the field's own note.
@@ -238,6 +257,8 @@ export type CashOnHand = {
   paidEarly: number;
   /** Of what he holds: payouts drawn, not yet handed over. */
   drawnNotHandedOut: number;
+  /** Of what he holds: money owed back to stopped members never drawn (2.18). */
+  owedToStopped: number;
 };
 
 /**
@@ -293,6 +314,8 @@ export function cashOnHand(input: {
   drawnNotHandedOut: number;
   /** From collectionPosition — money on weeks that have not elapsed. */
   paidEarly: number;
+  /** Owed back to stopped members never drawn. Reported, never subtracted. */
+  owedToStopped?: number;
 }): CashOnHand {
   return {
     collected: input.collected,
@@ -300,6 +323,7 @@ export function cashOnHand(input: {
     shouldBeHolding: input.collected - input.handedOut,
     paidEarly: input.paidEarly,
     drawnNotHandedOut: input.drawnNotHandedOut,
+    owedToStopped: input.owedToStopped ?? 0,
   };
 }
 
@@ -361,7 +385,8 @@ export function positionVerdict(input: {
   // cash in his hand today and both have to come out of it later. The FEE is
   // deliberately absent — it is an estimate, and a question about whether he
   // can meet what he owes must not lean on one.
-  const holdingForOthers = input.cash.paidEarly + input.cash.drawnNotHandedOut;
+  const holdingForOthers =
+    input.cash.paidEarly + input.cash.drawnNotHandedOut + input.cash.owedToStopped;
   const coverage = input.actual - holdingForOthers;
 
   const versusBooks =
