@@ -35,8 +35,8 @@ export function parsePositionSection(raw: string | string[] | undefined): Positi
  * before clicking.
  *
  * `attention` is set from real state, never decoration: money outstanding,
- * money owed forward, a negative uncommitted figure, or a cash position that
- * cannot cover what is owed. A dot that is always on teaches the reader to
+ * money paid toward weeks that have not happened, holding less than what
+ * belongs to other people, or a cash reading that cannot cover what is owed. A dot that is always on teaches the reader to
  * ignore it.
  */
 export function positionSections(input: {
@@ -44,7 +44,8 @@ export function positionSections(input: {
   shortfall: number;
   aheadByCount: number;
   paidAhead: number;
-  uncommitted: number;
+  /** He is holding less than the money that belongs to other people. */
+  holdingLessThanOwed: boolean;
   /** null when no reading has been recorded yet. */
   verdictKind: "covered" | "surplus" | "short" | "exact" | null;
 }): Section[] {
@@ -64,8 +65,10 @@ export function positionSections(input: {
     {
       key: "holding",
       label: "What you should hold",
-      // Negative uncommitted IS the "using other people's money" signal.
-      attention: input.uncommitted < 0,
+      // Holding less than the money that belongs to other people IS the
+      // "using someone else's money" signal — the question the screen exists
+      // to answer. Not a projection, and not a colour on a fact.
+      attention: input.holdingLessThanOwed,
     },
     {
       key: "cash",

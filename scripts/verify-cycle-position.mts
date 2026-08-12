@@ -25,7 +25,7 @@ const prisma = new PrismaClient({
 const fixture = await import("./lib/production-fixture.mts");
 const { elapsedThroughWeek } = await import("../lib/commitment");
 const { cashPosition, receiptsByWeek } = await import("../lib/dashboard");
-const { collectionPosition, expectedHolding, positionVerdict } = await import(
+const { cashOnHand, collectionPosition, feeEstimate, positionVerdict } = await import(
   "../lib/cycle-position"
 );
 const { formatMoney } = await import("../lib/format");
@@ -160,54 +160,103 @@ const cash = cashPosition({
   payments: after.flat.map((p) => ({ amountPaid: p.amountPaid })),
   payouts: payouts.map((p) => ({ netAmount: p.netAmount, status: p.status })),
 });
-const holding = expectedHolding({
-  totalReceived: cash.totalReceived,
-  totalPaidOut: cash.totalPaidOut,
-  committedPending: cash.committedPending,
-  feeOnCollected: payouts.filter((p) => p.status === "COLLECTED").reduce((s, p) => s + p.feeAmount, 0),
-  feeOnPending: payouts.filter((p) => p.status === "PENDING").reduce((s, p) => s + p.feeAmount, 0),
-  paidAhead: after.position.paidAhead,
+const holding = cashOnHand({
+  collected: cash.totalReceived,
+  handedOut: cash.totalPaidOut,
+  drawnNotHandedOut: cash.committedPending,
+  paidEarly: after.position.paidAhead,
 });
-check("expected holding IS the dashboard's currentlyHeld", holding.expected === cash.currentlyHeld);
-check("committed matches the dashboard's committedPending", holding.committedToPayouts === cash.committedPending);
+const fee = feeEstimate({
+  onHandedOut: payouts.filter((p) => p.status === "COLLECTED").reduce((s, p) => s + p.feeAmount, 0),
+  onDrawn: payouts.filter((p) => p.status === "PENDING").reduce((s, p) => s + p.feeAmount, 0),
+});
 check(
-  "the fixture really has both COLLECTED and PENDING payouts (so the split matters)",
+  "what he should be holding IS the dashboard's currentlyHeld",
+  holding.shouldBeHolding === cash.currentlyHeld,
+);
+check(
+  "the fixture really has both COLLECTED and PENDING payouts (so the distinction matters)",
   payouts.some((p) => p.status === "COLLECTED") && payouts.some((p) => p.status === "PENDING"),
 );
-check("a real fee has accumulated", holding.feeEarned > 0, formatMoney(holding.feeEarned));
 check(
-  "the parts account for the whole",
-  holding.expected ===
-    holding.owedForward + holding.committedToPayouts + holding.feeEarned + holding.uncommitted,
+  "a real payout is drawn but not handed out",
+  holding.drawnNotHandedOut > 0,
+  formatMoney(holding.drawnNotHandedOut),
+);
+
+// THE ARITHMETIC THE ORGANIZER CHECKS BY HAND. Money in, money out, what is
+// left — against LIVE ROWS, not a hand-built object.
+const handedOverFromRows = payouts
+  .filter((p) => p.status === "COLLECTED")
+  .reduce((s, p) => s + p.netAmount, 0);
+check(
+  "money handed out counts only payouts actually COLLECTED",
+  holding.handedOut === handedOverFromRows,
+  `${formatMoney(holding.handedOut)} vs ${formatMoney(handedOverFromRows)}`,
+);
+check(
+  "money in minus money out IS what he should be holding",
+  holding.shouldBeHolding === holding.collected - holding.handedOut,
+);
+check(
+  "the drawn-but-not-handed-out payout is NOT subtracted — the cash is still his to hold",
+  holding.shouldBeHolding ===
+    cashOnHand({ ...holding, drawnNotHandedOut: 0 }).shouldBeHolding,
+);
+check("a real fee has accumulated", fee.soFar > 0, formatMoney(fee.soFar));
+check(
+  "and the fee is NOT part of what he should be holding",
+  holding.shouldBeHolding !== holding.collected - holding.handedOut - fee.soFar,
 );
 
 // ————————————————— 4. THE VERDICT MOVES WITH THE READING —————————————————
 
 console.log("\n4. The verdict, against a real reading");
 
-const short = positionVerdict({ expected: holding, actual: 0, formatMoney });
+const short = positionVerdict({ cash: holding, actual: 0, formatMoney });
 check("holding nothing reads as SHORT", short.kind === "short");
-check("and says what he would need", short.shortBy > 0 && short.sentence.includes("cover that"));
+check(
+  "and says what he would need",
+  short.shortBy > 0 && short.sentence.includes("before the next payout"),
+);
 
-const exact = positionVerdict({ expected: holding, actual: holding.expected, formatMoney });
-check("holding exactly the expected figure reads as EXACT", exact.kind === "exact");
-check("and names the fee as his", exact.sentence.includes(formatMoney(holding.feeEarned)));
+const exact = positionVerdict({ cash: holding, actual: holding.shouldBeHolding, formatMoney });
+check("holding exactly that figure reads as EXACT", exact.kind === "exact");
+check(
+  "and says how much of it belongs to other people",
+  exact.sentence.includes(formatMoney(holding.paidEarly + holding.drawnNotHandedOut)),
+);
 
-const surplus = positionVerdict({ expected: holding, actual: holding.expected + 230_000, formatMoney });
+const surplus = positionVerdict({
+  cash: holding,
+  actual: holding.shouldBeHolding + 230_000,
+  formatMoney,
+});
 check("holding more reads as SURPLUS", surplus.kind === "surplus");
 check("and says $2,300 MORE", surplus.sentence.includes("$2,300 MORE"));
+
+// PLAIN ENGLISH, against the live figures — not only in the unit test.
+const banned = /\b(uncommitted|committed|owed forward|claimed|free|net|reconcil\w*)\b/i;
+for (const [label, v] of [
+  ["short", short],
+  ["exact", exact],
+  ["surplus", surplus],
+] as const) {
+  check(`the ${label} verdict uses no accounting words`, !banned.test(v.sentence), v.sentence);
+  check(`the ${label} verdict never mentions the fee`, !/fee/i.test(v.sentence));
+}
 
 // A reading round-trips through the one stored fact.
 const reading = await prisma.cashReading.create({
   data: {
     cycleId: f.cycleId,
-    totalAmount: holding.expected,
+    totalAmount: holding.shouldBeHolding,
     readAt: today,
     note: `${fixture.FIXTURE_TAG} reading`,
   },
 });
 const readBack = await prisma.cashReading.findUniqueOrThrow({ where: { id: reading.id } });
-check("the reading round-trips", readBack.totalAmount === holding.expected);
+check("the reading round-trips", readBack.totalAmount === holding.shouldBeHolding);
 check("and carries its own date", readBack.readAt.toISOString().slice(0, 10) === "2026-07-08");
 await prisma.cashReading.delete({ where: { id: reading.id } });
 check(
@@ -276,8 +325,8 @@ check(
   `${latestOverall?.totalAmount} vs ${newest.total}`,
 );
 
-const onPage1 = positionVerdict({ expected: holding, actual: page1[0].totalAmount, formatMoney });
-const onPage2 = positionVerdict({ expected: holding, actual: latestOverall!.totalAmount, formatMoney });
+const onPage1 = positionVerdict({ cash: holding, actual: page1[0].totalAmount, formatMoney });
+const onPage2 = positionVerdict({ cash: holding, actual: latestOverall!.totalAmount, formatMoney });
 check(
   "so the verdict reads the same on page 1 and page 2",
   onPage1.sentence === onPage2.sentence,

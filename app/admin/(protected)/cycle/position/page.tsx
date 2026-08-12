@@ -51,7 +51,7 @@ export default async function CyclePositionPage({
     shortfall: c.shortfall,
     aheadByCount: c.aheadBy.length,
     paidAhead: c.paidAhead,
-    uncommitted: h.uncommitted,
+    holdingLessThanOwed: h.shouldBeHolding < h.paidEarly + h.drawnNotHandedOut,
     verdictKind: d.verdict?.kind ?? null,
   });
   const href = (key: string) => `?section=${key}`;
@@ -132,7 +132,7 @@ export default async function CyclePositionPage({
           title={
             <span className="flex flex-wrap items-center gap-2">
               Paid ahead
-              <Pill tone={c.paidAhead > 0 ? "attention" : "neutral"}>owed forward, not collected</Pill>
+              <Pill tone={c.paidAhead > 0 ? "attention" : "neutral"}>for weeks not yet reached</Pill>
             </span>
           }
           sub="Money received for weeks that have NOT happened yet. It is in your hands, but it belongs to those weeks — spending it is spending someone else's money."
@@ -204,41 +204,68 @@ export default async function CyclePositionPage({
             Received minus paid out, split into what is claimed and what is free. A healthy
             balance may simply be your fee accumulating.
           </SectionHeading>
+      {/* THREE FACTS. Money in, money out, what is left.
+          The fee is NOT here — it is a projection of what he might keep, and a
+          projection inside a cash position makes the whole figure less
+          believable. It has its own card below, labelled an estimate.
+          A payout DRAWN BUT NOT HANDED OVER is not subtracted either: the cash
+          is still in his hand. It is stated beneath instead. */}
       <Card className="animate-fade-in-up-2">
         <CardHeader
           title="What you should be holding"
-          sub="Received minus paid out — and what of it is actually yours. A positive balance may simply be your fee accumulating rather than slack."
+          sub="Money in, money out, what is left. Every figure here has already happened."
         />
         <div className="px-5 pb-4">
-          <p className="text-3xl font-black tabular-nums text-gray-900 dark:text-white">
-            {formatMoney(h.expected)}
-          </p>
-          <dl className="mt-3 space-y-1.5 text-sm">
-            <Row label="Owed forward (paid ahead)" cents={h.owedForward} tone="warn" note="not yours to spend" />
-            <Row
-              label="Committed to pending payouts"
-              cents={h.committedToPayouts}
-              tone="warn"
-              note="already promised to winners drawn"
+          <dl className="space-y-2">
+            <PlainRow label="Money collected" cents={h.collected} />
+            <PlainRow
+              label="Money handed out"
+              cents={h.handedOut}
+              note="payouts you have actually handed over"
             />
-            <Row label="Your fee, earned" cents={h.feeEarned} tone="good" note="genuinely yours" />
-            <Row
-              label="Uncommitted"
-              cents={h.uncommitted}
-              tone={h.uncommitted < 0 ? "bad" : "neutral"}
-              note={
-                h.uncommitted < 0
-                  ? "NEGATIVE — you are holding less than you owe"
-                  : "free after everything above"
-              }
-            />
+            <PlainRow label="You should be holding" cents={h.shouldBeHolding} big />
           </dl>
-          {h.feeCommitted > 0 && (
-            <p className="mt-3 text-xs text-gray-600 dark:text-gray-400">
-              A further {formatMoney(h.feeCommitted)} of fee is committed on payouts drawn but not
-              yet collected — yours once they are handed over.
-            </p>
+
+          {/* Statements ABOUT the figure, never arithmetic inside it. */}
+          {(h.paidEarly > 0 || h.drawnNotHandedOut > 0) && (
+            <ul className="mt-4 space-y-1.5 border-t border-gray-100 pt-3 text-sm text-gray-700 dark:border-gray-800/60 dark:text-gray-300">
+              {h.paidEarly > 0 && (
+                <li>
+                  <strong className="tabular-nums">{formatMoney(h.paidEarly)}</strong> of this was
+                  paid early for weeks that have not happened yet.
+                </li>
+              )}
+              {h.drawnNotHandedOut > 0 && (
+                <li>
+                  <strong className="tabular-nums">{formatMoney(h.drawnNotHandedOut)}</strong> is
+                  drawn but not handed out yet.
+                </li>
+              )}
+            </ul>
           )}
+        </div>
+      </Card>
+
+      {/* THE FEE — separate, and labelled an estimate. */}
+      <Card className="animate-fade-in-up-2">
+        <CardHeader
+          title="Your fee, estimated"
+          sub="What you keep if the cycle finishes as planned. An estimate — it is not part of what you are holding above, and it is not money you can count on until the payouts are done."
+        />
+        <div className="px-5 pb-4">
+          <p className="text-2xl font-black tabular-nums text-gray-900 dark:text-white">
+            {formatMoney(d.fee.total)}
+          </p>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            {formatMoney(d.fee.soFar)} from payouts already handed out
+            {d.fee.ifRemainingPayoutsComplete > 0 && (
+              <>
+                , and {formatMoney(d.fee.ifRemainingPayoutsComplete)} more if the payouts already
+                drawn are all handed over
+              </>
+            )}
+            .
+          </p>
         </div>
       </Card>
 
@@ -254,7 +281,7 @@ export default async function CyclePositionPage({
           </SectionHeading>
       <div className="animate-fade-in-up-2">
         <CashReadingPanel
-          expected={h.expected}
+          expected={h.shouldBeHolding}
           verdict={d.verdict}
           latest={
             d.latestReading
@@ -289,30 +316,51 @@ export default async function CyclePositionPage({
   );
 }
 
-function Row({
+/**
+ * One line of the cash position.
+ *
+ * No colour coding by "tone". These are facts, and tinting a fact red or green
+ * tells the reader how to feel about it before they have read it — which is
+ * exactly the editorialising the plain-English pass removed from the words.
+ */
+function PlainRow({
   label,
   cents,
   note,
-  tone,
+  big = false,
 }: {
   label: string;
   cents: number;
-  note: string;
-  tone: "good" | "warn" | "bad" | "neutral";
+  note?: string;
+  big?: boolean;
 }) {
-  const colour =
-    tone === "bad"
-      ? "text-red-800 dark:text-red-400"
-      : tone === "warn"
-        ? "text-amber-800 dark:text-amber-400"
-        : tone === "good"
-          ? "text-emerald-800 dark:text-emerald-400"
-          : "text-gray-900 dark:text-white";
   return (
-    <div className="flex flex-wrap items-baseline gap-x-3 border-b border-gray-100 dark:border-gray-800/60 pb-1.5 last:border-b-0">
-      <dt className="font-semibold text-gray-800 dark:text-gray-200">{label}</dt>
-      <dd className={`ml-auto tabular-nums font-bold ${colour}`}>{formatMoney(cents)}</dd>
-      <span className="basis-full text-xs text-gray-500 dark:text-gray-400">{note}</span>
+    <div
+      className={
+        "flex flex-wrap items-baseline gap-x-3 " +
+        (big ? "border-t border-gray-200 pt-2 dark:border-gray-700" : "")
+      }
+    >
+      <dt
+        className={
+          big
+            ? "text-base font-black text-gray-900 dark:text-white"
+            : "text-sm font-semibold text-gray-800 dark:text-gray-200"
+        }
+      >
+        {label}
+      </dt>
+      <dd
+        className={
+          "ml-auto tabular-nums text-gray-900 dark:text-white " +
+          (big ? "text-2xl font-black" : "text-sm font-bold")
+        }
+      >
+        {formatMoney(cents)}
+      </dd>
+      {note && (
+        <span className="basis-full text-xs text-gray-500 dark:text-gray-400">{note}</span>
+      )}
     </div>
   );
 }

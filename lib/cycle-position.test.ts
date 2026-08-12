@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  cashOnHand,
   collectionPosition,
   collectionSentence,
-  expectedHolding,
+  feeEstimate,
   positionVerdict,
 } from "./cycle-position";
 import { cashPosition, receiptsByWeek } from "./dashboard";
@@ -127,7 +128,7 @@ describe("agreement with the dashboard — one derivation, not two", () => {
     expect(p.collected).toBe(400_000);
   });
 
-  it("the expected holding starts from the dashboard's own cash position", () => {
+  it("what he should be holding starts from the dashboard's own cash position", () => {
     const cash = cashPosition({
       payments: [{ amountPaid: 400_000 }],
       payouts: [
@@ -135,112 +136,186 @@ describe("agreement with the dashboard — one derivation, not two", () => {
         { netAmount: 90_000, status: "PENDING" },
       ],
     });
-    const holding = expectedHolding({
-      totalReceived: cash.totalReceived,
-      totalPaidOut: cash.totalPaidOut,
-      committedPending: cash.committedPending,
-      feeOnCollected: 2_000,
-      feeOnPending: 1_800,
-      paidAhead: 100_000,
+    const h = cashOnHand({
+      collected: cash.totalReceived,
+      handedOut: cash.totalPaidOut,
+      drawnNotHandedOut: cash.committedPending,
+      paidEarly: 100_000,
     });
-    expect(holding.expected).toBe(cash.currentlyHeld);
-    expect(holding.committedToPayouts).toBe(cash.committedPending);
+    expect(h.shouldBeHolding).toBe(cash.currentlyHeld);
+    // The drawn payout is REPORTED, not subtracted: the cash is still in hand.
+    expect(h.drawnNotHandedOut).toBe(cash.committedPending);
+    expect(h.shouldBeHolding).toBe(400_000 - 100_000);
   });
 });
 
-describe("expectedHolding — the fee is why this is not one number", () => {
+describe("cashOnHand — money in, money out, what is left. Three facts.", () => {
   const base = {
-    totalReceived: 1_000_000,
-    totalPaidOut: 200_000,
-    committedPending: 150_000,
-    feeOnCollected: 4_000,
-    feeOnPending: 3_000,
-    paidAhead: 50_000,
+    collected: 1_000_000,
+    handedOut: 200_000,
+    drawnNotHandedOut: 150_000,
+    paidEarly: 50_000,
   };
 
-  it("splits what he holds into the claims on it", () => {
-    const h = expectedHolding(base);
-    expect(h.expected).toBe(800_000);
-    expect(h.owedForward).toBe(50_000);
-    expect(h.committedToPayouts).toBe(150_000);
-    expect(h.feeEarned).toBe(4_000);
-    expect(h.uncommitted).toBe(800_000 - 50_000 - 150_000 - 4_000);
+  it("is exactly collected minus handed out, and nothing else", () => {
+    const h = cashOnHand(base);
+    expect(h.collected).toBe(1_000_000);
+    expect(h.handedOut).toBe(200_000);
+    expect(h.shouldBeHolding).toBe(800_000);
   });
 
-  it("lets uncommitted go NEGATIVE — that is the signal, not an error", () => {
-    const h = expectedHolding({ ...base, committedPending: 900_000 });
-    expect(h.uncommitted).toBeLessThan(0);
+  // THE FEE IS NOT IN THE CASH POSITION.
+  //
+  // It used to be subtracted here. It is a projection of what he MIGHT keep,
+  // and a projection folded into a statement of fact makes the whole figure
+  // less believable. This test fails the moment anyone puts it back.
+  it("does not move when the fee changes, because the fee is not in it", () => {
+    const h = cashOnHand(base);
+    expect(h.shouldBeHolding).toBe(base.collected - base.handedOut);
+    // No fee input exists to pass. The figure cannot depend on one.
+    expect(Object.keys(h).sort()).toEqual([
+      "collected",
+      "drawnNotHandedOut",
+      "handedOut",
+      "paidEarly",
+      "shouldBeHolding",
+    ]);
   });
 
-  it("keeps committed fee separate from earned fee", () => {
-    const h = expectedHolding(base);
-    expect(h.feeEarned).toBe(4_000);
-    expect(h.feeCommitted).toBe(3_000);
-    // Only the EARNED fee is subtracted: the pending one is not his yet.
-    expect(h.uncommitted).toBe(596_000);
+  // THE CRITICAL ARITHMETIC. A payout DRAWN but not yet handed over is cash
+  // still sitting in his hand. Subtracting it tells him he holds less than he
+  // does — the direction that makes an organizer borrow money he did not need.
+  it("does NOT subtract a payout that is drawn but not handed over", () => {
+    const none = cashOnHand({ ...base, drawnNotHandedOut: 0 });
+    const huge = cashOnHand({ ...base, drawnNotHandedOut: 750_000 });
+    expect(none.shouldBeHolding).toBe(800_000);
+    expect(huge.shouldBeHolding).toBe(800_000);
+    // Reported, so he can see it. Never subtracted.
+    expect(huge.drawnNotHandedOut).toBe(750_000);
+  });
+
+  it("does not subtract money paid early either — it is stated, not netted", () => {
+    const a = cashOnHand({ ...base, paidEarly: 0 });
+    const b = cashOnHand({ ...base, paidEarly: 400_000 });
+    expect(a.shouldBeHolding).toBe(b.shouldBeHolding);
+    expect(b.paidEarly).toBe(400_000);
+  });
+
+  it("handing the drawn payout over is what finally moves the figure", () => {
+    // Same money, one step later: it has left his hand.
+    const before = cashOnHand({ ...base, drawnNotHandedOut: 150_000 });
+    const after = cashOnHand({
+      ...base,
+      handedOut: base.handedOut + 150_000,
+      drawnNotHandedOut: 0,
+    });
+    expect(before.shouldBeHolding - after.shouldBeHolding).toBe(150_000);
+  });
+});
+
+describe("feeEstimate — kept out of the cash position, labelled an estimate", () => {
+  it("separates the settled part from the part that depends on the cycle finishing", () => {
+    const f = feeEstimate({ onHandedOut: 4_000, onDrawn: 3_000 });
+    expect(f.soFar).toBe(4_000);
+    expect(f.ifRemainingPayoutsComplete).toBe(3_000);
+    expect(f.total).toBe(7_000);
+  });
+
+  it("is a separate function from the cash position — not a field on it", () => {
+    const h = cashOnHand({
+      collected: 1_000_000,
+      handedOut: 200_000,
+      drawnNotHandedOut: 0,
+      paidEarly: 0,
+    });
+    expect("fee" in h).toBe(false);
+    expect("feeEarned" in h).toBe(false);
   });
 });
 
 describe("positionVerdict — never just a number", () => {
-  const expected = expectedHolding({
-    totalReceived: 1_000_000,
-    totalPaidOut: 200_000,
-    committedPending: 150_000,
-    feeOnCollected: 835_00, // $835
-    feeOnPending: 0,
-    paidAhead: 50_000,
+  // $10,000 in, $2,000 handed over → he should be holding $8,000.
+  // Of that: $1,500 is drawn and not handed out, $500 was paid early.
+  // So $2,000 of what he holds belongs to other people.
+  const cash = cashOnHand({
+    collected: 1_000_000,
+    handedOut: 200_000,
+    drawnNotHandedOut: 150_000,
+    paidEarly: 50_000,
   });
 
-  it("SURPLUS: says how much more, and how much of it is his fee", () => {
-    const v = positionVerdict({ expected, actual: expected.expected + 230_000, formatMoney });
+  it("SURPLUS: says how much more, and what is left that is his to use", () => {
+    const v = positionVerdict({ cash, actual: cash.shouldBeHolding + 230_000, formatMoney });
     expect(v.kind).toBe("surplus");
     expect(v.difference).toBe(230_000);
-    expect(v.sentence).toContain("$2,300 MORE than expected");
-    expect(v.sentence).toContain("$835");
-    expect(v.sentence).toContain("you are covered");
+    expect(v.sentence).toContain("$2,300 MORE than the books say");
+    expect(v.sentence).toContain("$2,000 you are holding for other people");
+    expect(v.sentence).toContain("$8,300 is yours to use");
   });
 
   it("SHORT: says by how much, what it is against, and what he must do", () => {
-    // Holding less than what is owed out plus owed forward.
-    const v = positionVerdict({ expected, actual: 100_000, formatMoney });
+    // Holding less than the money that belongs to other people.
+    const v = positionVerdict({ cash, actual: 100_000, formatMoney });
     expect(v.kind).toBe("short");
     expect(v.shortBy).toBe(100_000);
     expect(v.sentence).toContain("short by $1,000");
-    expect(v.sentence).toContain("promised to winners");
-    expect(v.sentence).toContain("weeks that have not happened");
-    expect(v.sentence).toContain("cover that before the next payout");
+    expect(v.sentence).toContain("$1,500 is drawn but not handed out yet");
+    expect(v.sentence).toContain("$500 was paid early for weeks that have not happened");
+    expect(v.sentence).toContain("before the next payout");
   });
 
   it("a gap in the books is reported even when he can still cover everything", () => {
-    const v = positionVerdict({ expected, actual: expected.expected - 40_000, formatMoney });
+    const v = positionVerdict({ cash, actual: cash.shouldBeHolding - 40_000, formatMoney });
     expect(v.kind).toBe("covered");
-    expect(v.sentence).toContain("$400 LESS than expected");
+    expect(v.sentence).toContain("$400 LESS than the books say");
     // Two different questions, both answered.
-    expect(v.sentence).toContain("still enough to cover");
+    expect(v.sentence).toContain("can still cover everything");
     expect(v.sentence).toContain("not recorded");
   });
 
   it("EXACT: the books and the cash agree", () => {
-    const v = positionVerdict({ expected, actual: expected.expected, formatMoney });
+    const v = positionVerdict({ cash, actual: cash.shouldBeHolding, formatMoney });
     expect(v.kind).toBe("exact");
     expect(v.difference).toBe(0);
     expect(v.sentence).toContain("exactly what the books say");
   });
 
-  it("coverage ignores the fee — the fee is his, what is owed is not", () => {
-    const v = positionVerdict({ expected, actual: 200_000, formatMoney });
-    // owed = paidAhead 50,000 + committed 150,000 = 200,000
+  // "Can I meet what I owe" must not lean on an estimate. The fee is not in
+  // the cash position and it is not in this answer either.
+  it("coverage is what he holds against what belongs to other people, fee absent", () => {
+    const v = positionVerdict({ cash, actual: 200_000, formatMoney });
+    // drawn-not-handed-out 150,000 + paid early 50,000 = 200,000
     expect(v.coverage).toBe(0);
     expect(v.kind).not.toBe("short");
   });
 
+  it("a drawn payout still counts against him even though it has not left", () => {
+    // He holds nothing beyond the $1,500 he has promised a winner.
+    const v = positionVerdict({ cash, actual: 199_999, formatMoney });
+    expect(v.kind).toBe("short");
+    expect(v.shortBy).toBe(1);
+  });
+
   it("never emits a bare number, NaN or a negative-looking amount", () => {
     for (const actual of [0, 1, 200_000, 800_000, 5_000_000]) {
-      const v = positionVerdict({ expected, actual, formatMoney });
+      const v = positionVerdict({ cash, actual, formatMoney });
       expect(v.sentence.length).toBeGreaterThan(40);
       expect(v.sentence).not.toContain("NaN");
       expect(v.sentence).not.toContain("undefined");
       expect(v.sentence).not.toContain("$-");
+    }
+  });
+
+  // PLAIN ENGLISH IS THE RULE, NOT A PREFERENCE. He is not an accountant and
+  // he never was. Every one of these words was on this screen and every one
+  // of them made him stop and translate.
+  it("uses no accounting vocabulary in any verdict, ever", () => {
+    const banned = /\b(uncommitted|committed|owed forward|claimed|free|net|reconcil\w*)\b/i;
+    for (const actual of [0, 1, 199_999, 200_000, 760_000, 800_000, 1_030_000, 5_000_000]) {
+      const v = positionVerdict({ cash, actual, formatMoney });
+      expect(v.sentence).not.toMatch(banned);
+      // And the fee never appears in a statement of what he is holding.
+      expect(v.sentence.toLowerCase()).not.toContain("fee");
     }
   });
 });

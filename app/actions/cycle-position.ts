@@ -22,7 +22,8 @@ import { currentWeekFromRows, elapsedThroughWeek } from "@/lib/commitment";
 import {
   collectionPosition,
   collectionSentence,
-  expectedHolding,
+  cashOnHand,
+  feeEstimate,
   positionVerdict,
   type AheadMember,
   type OwingMember,
@@ -163,17 +164,27 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
       payments: flatPayments.map((p) => ({ amountPaid: p.amountPaid })),
       payouts: payouts.map((p) => ({ netAmount: p.netAmount, status: p.status })),
     });
-    const holding = expectedHolding({
-      totalReceived: cash.totalReceived,
-      totalPaidOut: cash.totalPaidOut,
-      committedPending: cash.committedPending,
-      feeOnCollected: payouts
+    // THE CASH POSITION — facts only.
+    //
+    // handedOut counts COLLECTED payouts and nothing else: a payout that is
+    // drawn but not handed over is still cash in his hand, so it is REPORTED
+    // below rather than subtracted here.
+    const holding = cashOnHand({
+      collected: cash.totalReceived,
+      handedOut: cash.totalPaidOut,
+      drawnNotHandedOut: cash.committedPending,
+      paidEarly: collection.paidAhead,
+    });
+    // The fee, kept OUT of the position above. It is what he might keep if the
+    // cycle finishes as planned, which is a projection — and a projection
+    // inside a cash position makes the whole figure less believable.
+    const fee = feeEstimate({
+      onHandedOut: payouts
         .filter((p) => p.status === "COLLECTED")
         .reduce((s, p) => s + p.feeAmount, 0),
-      feeOnPending: payouts
+      onDrawn: payouts
         .filter((p) => p.status === "PENDING")
         .reduce((s, p) => s + p.feeAmount, 0),
-      paidAhead: collection.paidAhead,
     });
 
     // A SILENT `take: 24` WAS A LIE WAITING TO HAPPEN.
@@ -206,10 +217,11 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
         collection,
         collectionSentence: collectionSentence(collection, formatMoney),
         holding,
+        fee,
         cash,
         // The verdict only exists once he has told the system what he holds.
         verdict: latest
-          ? positionVerdict({ expected: holding, actual: latest.totalAmount, formatMoney })
+          ? positionVerdict({ cash: holding, actual: latest.totalAmount, formatMoney })
           : null,
         latestReading: latest,
         // History, each with the difference AT THAT MOMENT against today's
@@ -222,7 +234,7 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
           bankAmount: r.bankAmount,
           cashAmount: r.cashAmount,
           note: r.note,
-          differenceVsExpectedToday: r.totalAmount - holding.expected,
+          differenceVsExpectedToday: r.totalAmount - holding.shouldBeHolding,
         })),
         readingInfo,
       },

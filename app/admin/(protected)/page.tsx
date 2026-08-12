@@ -150,7 +150,7 @@ export default async function CommandCenterPage() {
           <StatCard
             label="Currently held"
             cents={d.position.currentlyHeld}
-            sub="Committed vs uncommitted"
+            sub="What is promised, and what is not"
             href="/admin/cash?view=held"
             emphasis
             delayClass="animate-fade-in-up-2"
@@ -164,13 +164,14 @@ export default async function CommandCenterPage() {
               <Link href="/admin/cash?view=held" className="font-bold text-gray-900 dark:text-white underline decoration-indigo-400 tabular-nums">
                 {formatMoney(d.position.committedPending)}
               </Link>{" "}
-              is already owed to {d.position.pendingPayoutCount} pending payout
-              {d.position.pendingPayoutCount === 1 ? "" : "s"}.{" "}
-              <strong className="tabular-nums">{formatMoney(d.position.uncommitted)}</strong> is
-              uncommitted.
+              is promised to {d.position.pendingPayoutCount}{" "}
+              {d.position.pendingPayoutCount === 1 ? "winner" : "winners"} who{" "}
+              {d.position.pendingPayoutCount === 1 ? "has" : "have"} not been handed it yet.{" "}
+              <strong className="tabular-nums">{formatMoney(d.position.uncommitted)}</strong> is not
+              promised to anyone.
             </>
           ) : (
-            <>Nothing is pending — every drawn payout has been settled.</>
+            <>Nobody is waiting — every payout that has been drawn is already handed out.</>
           )}
         </p>
       </section>

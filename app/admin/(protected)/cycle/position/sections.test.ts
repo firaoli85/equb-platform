@@ -35,7 +35,7 @@ describe("positionSections — the dots mean something", () => {
     shortfall: 0,
     aheadByCount: 0,
     paidAhead: 0,
-    uncommitted: 500_000,
+    holdingLessThanOwed: false,
     verdictKind: "surplus" as const,
   };
 
@@ -58,15 +58,15 @@ describe("positionSections — the dots mean something", () => {
     expect(s.find((x) => x.key === "ahead")!.count).toBe(3);
   });
 
-  // The whole point of the screen: a negative uncommitted figure IS
-  // "I am using other people's money".
-  it("marks What you should hold when uncommitted has gone NEGATIVE", () => {
-    const s = positionSections({ ...clean, uncommitted: -1 });
+  // The whole point of the screen: holding LESS than the money that belongs to
+  // other people IS "I am using other people's money".
+  it("marks What you should hold when he holds less than belongs to others", () => {
+    const s = positionSections({ ...clean, holdingLessThanOwed: true });
     expect(s.find((x) => x.key === "holding")!.attention).toBe(true);
   });
 
-  it("does not mark it when uncommitted is merely zero", () => {
-    const s = positionSections({ ...clean, uncommitted: 0 });
+  it("leaves it clear when what he holds covers what belongs to other people", () => {
+    const s = positionSections({ ...clean, holdingLessThanOwed: false });
     expect(s.find((x) => x.key === "holding")!.attention).toBe(false);
   });
 

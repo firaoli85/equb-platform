@@ -149,24 +149,27 @@ function HeldView({ d }: { d: Data }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* PLAIN ENGLISH, THE SAME AS THE CYCLE POSITION. "Committed" and
+            "uncommitted" are accounting words; he is not an accountant and he
+            never was. Say what the money IS. docs/UI_STANDARDS.md rule 8. */}
         <StatCard
-          label="Committed"
+          label="Promised to winners"
           cents={d.position.committedPending}
-          sub={`owed to ${d.position.pendingPayoutCount} pending payout${d.position.pendingPayoutCount === 1 ? "" : "s"}`}
+          sub={`drawn but not handed out — ${d.position.pendingPayoutCount} ${d.position.pendingPayoutCount === 1 ? "person" : "people"} waiting`}
           href="/admin/waiting"
         />
         <StatCard
-          label="Uncommitted"
+          label="Not promised to anyone"
           cents={d.position.uncommitted}
-          sub="held money not yet owed to anyone"
+          sub="what is left after the money already promised"
           emphasis={d.position.uncommitted > 0}
         />
       </div>
 
       <Card>
         <CardHeader
-          title={`Committed to pending payouts — ${formatMoney(d.position.committedPending)}`}
-          sub="drawn, not yet handed over"
+          title={`Promised to winners — ${formatMoney(d.position.committedPending)}`}
+          sub="drawn, not yet handed out. The cash is still in your hands."
           right={
             <Link
               href="/admin/waiting"
@@ -179,8 +182,8 @@ function HeldView({ d }: { d: Data }) {
         {d.pendingPayouts.length === 0 ? (
           <div className="px-5 pb-5">
             <EmptyState
-              title="No pending payouts."
-              hint="Every drawn payout has been handed over, so all held money is uncommitted."
+              title="Nobody is waiting for a payout."
+              hint="Every payout that has been drawn is already handed out, so none of the money you hold is promised to a winner."
             />
           </div>
         ) : (
@@ -212,8 +215,9 @@ function HeldView({ d }: { d: Data }) {
 
       <Card className="px-5 py-4">
         <p className="text-sm text-gray-800 dark:text-gray-200">
-          <strong className="tabular-nums">{formatMoney(d.position.uncommitted)} uncommitted</strong>{" "}
-          — held money not yet owed to anyone. Everything else in hand already belongs to a winner.
+          Of the money you are holding,{" "}
+          <strong className="tabular-nums">{formatMoney(d.position.uncommitted)}</strong> is not
+          promised to anyone. The rest already belongs to a winner who has not been handed it yet.
         </p>
       </Card>
     </div>

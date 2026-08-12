@@ -86,55 +86,103 @@ export function collectionPosition(input: {
 
 // ————————————————— What he SHOULD be holding —————————————————
 
-export type ExpectedHolding = {
-  /** received − paid out. What the books say is in his hands. */
-  expected: number;
-  /** Of that: money for weeks that have not happened. Not his to spend. */
-  owedForward: number;
-  /** Of that: drawn but not yet handed over. Already promised. */
-  committedToPayouts: number;
-  /** Of that: fee on payouts already handed over. GENUINELY HIS. */
-  feeEarned: number;
-  /** Fee on payouts drawn but not yet collected — his once they are paid. */
-  feeCommitted: number;
-  /** What is left after the three claims above. Can be negative. */
-  uncommitted: number;
+export type CashOnHand = {
+  /** Every cent members have handed in. */
+  collected: number;
+  /**
+   * Money that has actually left — payouts marked COLLECTED, and nothing else.
+   *
+   * A payout that is DRAWN BUT NOT HANDED OVER is still cash in his hand. It is
+   * promised, and promised is not gone. Subtracting it would tell him he holds
+   * less than he does, which is the direction that makes an organizer borrow
+   * money he did not need to borrow.
+   */
+  handedOut: number;
+  /** collected − handedOut. What should be in the bank and the tin. */
+  shouldBeHolding: number;
+
+  // ————— Two plain statements ABOUT that figure, not subtractions from it ————
+
+  /** Of what he holds: money paid for weeks that have not happened yet. */
+  paidEarly: number;
+  /** Of what he holds: payouts drawn, not yet handed over. */
+  drawnNotHandedOut: number;
 };
 
 /**
- * The expected cash position, with the parts separated.
+ * What the organizer might keep if the cycle finishes as planned.
  *
- * THE FEE IS WHY THIS IS NOT ONE NUMBER. A positive balance may simply be his
- * fee accumulating rather than a surplus — the group hands the winner NET and
- * keeps the fee, so every collected payout leaves its fee behind in the same
- * pot as everyone's contributions. Reporting "you're up $8,000" without saying
- * that $8,350 of it is fee tells him he has slack he does not have.
+ * DELIBERATELY NOT PART OF THE CASH POSITION. A cash position is FACTS: money
+ * in, money out, what is left. This is a projection — it depends on how the
+ * cycle finishes, on whether every remaining payout is actually handed over,
+ * and on nobody being written off. Mixing a projection into a statement of
+ * fact makes the whole figure less trustworthy, and the organizer stops
+ * believing any of it.
+ *
+ * Shown separately, labelled an estimate, never subtracted from anything.
  */
-export function expectedHolding(input: {
-  totalReceived: number;
-  /** Net actually handed over. */
-  totalPaidOut: number;
-  /** Net of payouts drawn but not yet collected. */
-  committedPending: number;
-  /** Fee on COLLECTED payouts. */
-  feeOnCollected: number;
-  /** Fee on PENDING payouts. */
-  feeOnPending: number;
+export type FeeEstimate = {
+  /** Fee on payouts already handed over — the settled part of the estimate. */
+  soFar: number;
+  /** Fee on payouts drawn but not yet handed over. */
+  ifRemainingPayoutsComplete: number;
+  /** The two together. Still an estimate: the cycle is not finished. */
+  total: number;
+};
+
+/**
+ * WHAT HE SHOULD BE HOLDING — three facts, and nothing else.
+ *
+ * Money in, money out, what is left. That is a cash position, and every part of
+ * it is something that has already happened.
+ *
+ * WHAT IS NOT IN IT, AND WHY:
+ *
+ *   THE FEE. It used to be subtracted here as a component of what he holds.
+ *   It is a PROJECTION — what he might keep depending on how the cycle
+ *   finishes — and folding a projection into a statement of fact makes the
+ *   whole figure less trustworthy. See {@link feeEstimate}, which reports it
+ *   separately and labelled.
+ *
+ *   PAYOUTS DRAWN BUT NOT HANDED OVER. Only money that has actually LEFT
+ *   reduces what he holds. A drawn payout is promised, and promised is not
+ *   gone — the cash is still in the tin. Subtracting it understates what he
+ *   has, which is the direction that makes an organizer borrow money he did
+ *   not need to borrow.
+ *
+ * Both still appear on the screen. They are stated as sentences ABOUT the
+ * figure, never as arithmetic inside it.
+ */
+export function cashOnHand(input: {
+  /** Every cent members have handed in. */
+  collected: number;
+  /** Payouts marked COLLECTED. Not the drawn ones. */
+  handedOut: number;
+  /** Payouts drawn but not yet handed over — reported, never subtracted. */
+  drawnNotHandedOut: number;
   /** From collectionPosition — money on weeks that have not elapsed. */
-  paidAhead: number;
-}): ExpectedHolding {
-  const expected = input.totalReceived - input.totalPaidOut;
+  paidEarly: number;
+}): CashOnHand {
   return {
-    expected,
-    owedForward: input.paidAhead,
-    committedToPayouts: input.committedPending,
-    feeEarned: input.feeOnCollected,
-    feeCommitted: input.feeOnPending,
-    // Deliberately allowed to go negative: that IS the "I am using other
-    // people's money" signal, and clamping it would hide exactly the thing
-    // he has been calculating by hand for six years.
-    uncommitted:
-      expected - input.paidAhead - input.committedPending - input.feeOnCollected,
+    collected: input.collected,
+    handedOut: input.handedOut,
+    shouldBeHolding: input.collected - input.handedOut,
+    paidEarly: input.paidEarly,
+    drawnNotHandedOut: input.drawnNotHandedOut,
+  };
+}
+
+/** The fee, as an estimate, kept away from the cash position. */
+export function feeEstimate(input: {
+  /** Fee on payouts already handed over. */
+  onHandedOut: number;
+  /** Fee on payouts drawn but not yet handed over. */
+  onDrawn: number;
+}): FeeEstimate {
+  return {
+    soFar: input.onHandedOut,
+    ifRemainingPayoutsComplete: input.onDrawn,
+    total: input.onHandedOut + input.onDrawn,
   };
 }
 
@@ -170,17 +218,27 @@ export type PositionVerdict = {
  *                bad even when the books agree perfectly.
  */
 export function positionVerdict(input: {
-  expected: ExpectedHolding;
+  cash: CashOnHand;
   /** The organizer's entered reading, in cents. */
   actual: number;
   formatMoney: (cents: number) => string;
 }): PositionVerdict {
   const money = input.formatMoney;
-  const difference = input.actual - input.expected.expected;
-  // Everything that is not his: money owed forward, and money promised to
-  // winners already drawn.
-  const owed = input.expected.owedForward + input.expected.committedToPayouts;
-  const coverage = input.actual - owed;
+  const difference = input.actual - input.cash.shouldBeHolding;
+  // What he is holding for somebody else: money paid early for weeks that have
+  // not happened, and payouts drawn but not yet handed over. Both are real
+  // cash in his hand today and both have to come out of it later. The FEE is
+  // deliberately absent — it is an estimate, and a question about whether he
+  // can meet what he owes must not lean on one.
+  const holdingForOthers = input.cash.paidEarly + input.cash.drawnNotHandedOut;
+  const coverage = input.actual - holdingForOthers;
+
+  const versusBooks =
+    difference === 0
+      ? "You hold exactly what the books say."
+      : difference < 0
+        ? `You hold ${money(-difference)} LESS than the books say.`
+        : `You hold ${money(difference)} MORE than the books say.`;
 
   if (coverage < 0) {
     const shortBy = -coverage;
@@ -190,15 +248,10 @@ export function positionVerdict(input: {
       coverage,
       shortBy,
       sentence:
-        (difference === 0
-          ? `You hold exactly what the books say. `
-          : difference < 0
-            ? `You hold ${money(-difference)} LESS than expected. `
-            : `You hold ${money(difference)} MORE than expected. `) +
-        `You are short by ${money(shortBy)} against what members are owed — ` +
-        `${money(input.expected.committedToPayouts)} is promised to winners already drawn and ` +
-        `${money(input.expected.owedForward)} was paid toward weeks that have not happened yet. ` +
-        `You would need to cover that before the next payout.`,
+        `${versusBooks} You are short by ${money(shortBy)} against what you owe: ` +
+        `${money(input.cash.drawnNotHandedOut)} is drawn but not handed out yet, and ` +
+        `${money(input.cash.paidEarly)} was paid early for weeks that have not happened. ` +
+        `You would need to find that before the next payout.`,
     };
   }
 
@@ -209,8 +262,8 @@ export function positionVerdict(input: {
       coverage,
       shortBy: 0,
       sentence:
-        `You hold exactly what the books say. ` +
-        `${money(input.expected.feeEarned)} of it is your fee, so you are covered.`,
+        `${versusBooks} After the ${money(holdingForOthers)} you are holding for other ` +
+        `people, ${money(coverage)} is yours to use.`,
     };
   }
 
@@ -221,10 +274,9 @@ export function positionVerdict(input: {
       coverage,
       shortBy: 0,
       sentence:
-        `You hold ${money(difference)} MORE than expected. ` +
-        // The fee is named first because it is the usual explanation for a
-        // healthy-looking balance, and mistaking it for slack is the error.
-        `${money(input.expected.feeEarned)} of what you hold is your fee, so you are covered.`,
+        `${versusBooks} After the ${money(holdingForOthers)} you are holding for other ` +
+        `people, ${money(coverage)} is yours to use. Worth finding where the extra came ` +
+        `from — a payment recorded twice, or one handed out and not marked.`,
     };
   }
 
@@ -234,11 +286,10 @@ export function positionVerdict(input: {
     coverage,
     shortBy: 0,
     sentence:
-      `You hold ${money(-difference)} LESS than expected, but still enough to cover ` +
-      `everything owed — ${money(coverage)} clear. ` +
-      `${money(input.expected.feeEarned)} of what you hold is your fee. ` +
-      `The gap is worth explaining: a receipt not recorded, or a payout handed over ` +
-      `without being marked collected.`,
+      `${versusBooks} You can still cover everything — after the ` +
+      `${money(holdingForOthers)} you are holding for other people, ${money(coverage)} is ` +
+      `yours to use. The gap is worth explaining: a payment not recorded, or a payout ` +
+      `handed over without being marked.`,
   };
 }
 

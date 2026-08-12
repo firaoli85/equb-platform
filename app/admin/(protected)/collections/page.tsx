@@ -266,7 +266,7 @@ export default async function CollectionsPage() {
         <StatCard
           label="Gone out in total"
           cents={collectedTotal + pendingTotal}
-          sub="collected plus committed — what this cycle owes its winners"
+          sub="handed out plus still promised — what this cycle owes its winners"
           delayClass="animate-fade-in-up-2"
         />
       </div>

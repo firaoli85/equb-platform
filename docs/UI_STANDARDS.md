@@ -196,6 +196,37 @@ Values come from `lib/motion-tokens.ts`. No inline durations or easings.
 
 A second word for the same concept is a finding, not a style preference.
 
+### 8b. No accounting words. He is not an accountant.
+
+The organizer has run this Equb for six years with a notebook. He knows exactly what his
+money is doing — he has never once called any of it a *balance* or a *position*. Every
+word below appeared on a cash screen and every one of them made him stop and translate:
+
+| Banned | Say instead |
+|---|---|
+| committed / committed to payouts | **promised to winners**, or **drawn but not handed out** |
+| uncommitted | **not promised to anyone** |
+| owed forward | **paid early for weeks that have not happened** |
+| claimed / unclaimed | **handed out** / **not handed out yet** |
+| free (of money) | **not promised to anyone** |
+| net (as a noun) | **what is left**, or name the two figures |
+| reconcile / reconciliation | **check what you are holding against the books** |
+| expected holding | **what you should be holding** |
+
+Two rules that go with the words, and matter more than the words:
+
+1. **A cash position is FACTS ONLY.** Money in, money out, what is left. Every figure in
+   it has already happened. A **projection never goes inside it** — the fee is what he
+   *might* keep if the cycle finishes as planned, so it gets its own card, labelled an
+   estimate, and is subtracted from nothing.
+2. **Only money that has actually LEFT reduces what he holds.** A payout that is drawn but
+   not handed over is still cash in his hand. State it beneath the figure as a sentence;
+   never net it out. Understating what he holds is the direction that makes an organizer
+   borrow money he did not need to borrow.
+
+Enforced by `lib/cycle-position.test.ts` ("uses no accounting vocabulary in any verdict,
+ever") and by `scripts/verify-cycle-position.mts` against live rows.
+
 ---
 
 ## 9. Navigation
