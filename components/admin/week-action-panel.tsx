@@ -5,9 +5,8 @@ import { deletePaymentEvent, setWeekDeferral, setWeekNote } from "@/app/actions/
 import { getCatchUpWeeks, getCellDetail } from "@/app/actions/payments-view";
 import { PaymentEntry } from "@/components/admin/payment-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
-import { AmountInput, Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
-import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
+import { formatDateUTC, formatMoney } from "@/lib/format";
 import type { PickableWeek } from "@/lib/week-picking";
 import { DEFERRED_PHRASE, SKIPPED_PHRASE } from "@/lib/status-labels";
 
@@ -24,8 +23,6 @@ import { DEFERRED_PHRASE, SKIPPED_PHRASE } from "@/lib/status-labels";
 // The payment part is now `PaymentEntry`, embedded with the clicked week
 // ticked, so all three views share it. This panel keeps what is genuinely
 // PER-WEEK: deferral, the week note, and undoing a receipt.
-
-type Method = "ZELLE" | "CASH" | "OTHER";
 
 export type WeekTarget = {
   participationId: string;

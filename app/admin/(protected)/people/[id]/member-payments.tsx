@@ -1,20 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { previewAllocation, recordPayment } from "@/app/actions/payments";
+import { useState } from "react";
 import { recordLedgerPayment } from "@/app/actions/ledger";
 import { WeekActionPanel } from "@/components/admin/week-action-panel";
-import { AllocationEntry } from "@/components/allocation-entry";
+import { PaymentEntry } from "@/components/admin/payment-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Pill, type PillTone } from "@/components/ui/primitives";
-import {
-  allocationOutsideSelection,
-  bulkCatchUpAmount,
-  describeAllocation,
-  type CatchUpWeek,
-} from "@/lib/payments-view";
+import { bulkCatchUpAmount, type CatchUpWeek } from "@/lib/payments-view";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import { oldestN, parseWeekRange, selectableWeekNumbers, weeksInRange } from "@/lib/week-selection";
 import { statusLabel } from "@/lib/status-labels";
@@ -57,6 +51,8 @@ export function MemberPayments({
 }) {
   const router = useRouter();
   const [openEntry, setOpenEntry] = useState(false);
+  /** Weeks handed to the shared entry when the strip selection is recorded. */
+  const [preselect, setPreselect] = useState<number[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [method, setMethod] = useState<Method>("ZELLE");
   const [rangeText, setRangeText] = useState("");
@@ -70,37 +66,17 @@ export function MemberPayments({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
-  const [preview, setPreview] = useState<{
-    text: string;
-    outside: number[];
-    amount: number;
-    fingerprint: string;
-  } | null>(null);
   const [busy, setBusy] = useState<"preview" | "save" | "week" | "ledger" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  const [keyNonce, setKeyNonce] = useState(0);
-  const [idempotencyKey, setIdempotencyKey] = useState("");
-  useEffect(() => {
-    setIdempotencyKey(crypto.randomUUID());
-  }, [keyNonce]);
 
   const owing = selectableWeekNumbers(weeks);
   const selectedWeeks = weeks.filter((w) => selected.has(w.weekNumber));
   const amount = bulkCatchUpAmount(selectedWeeks);
-  const weeksFingerprint = weeks
-    .map((w) => `${w.weekNumber}:${w.amountDue}:${w.amountAlreadyPaid}:${w.isDeferred ? 1 : 0}`)
-    .join("|");
-  useEffect(() => {
-    setPreview((p) => (p && p.fingerprint !== weeksFingerprint ? null : p));
-  }, [weeksFingerprint]);
-  const previewValid =
-    preview !== null && preview.amount === amount && preview.fingerprint === weeksFingerprint;
 
   function select(next: Set<number>) {
     setSelected(next);
-    setPreview(null);
     setError(null);
     setSaved(null);
   }
@@ -127,75 +103,7 @@ export function MemberPayments({
     setRangeText("");
   }
 
-  async function handlePreview() {
-    if (amount < 1) return;
-    setBusy("preview");
-    setError(null);
-    setSaved(null);
-    try {
-      const result = await previewAllocation({ participationId, amount });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      if (result.data.allocations.length === 0 || result.data.unallocated > 0) {
-        setPreview(null);
-        setError(
-          result.data.allocations.length === 0
-            ? "Nothing to record — those weeks are already covered by earlier receipts."
-            : `Only ${formatMoney(result.data.totalApplied)} of this fits the member's weeks — the state has changed since the list was loaded. Reload and re-select.`,
-        );
-        return;
-      }
-      setPreview({
-        text: describeAllocation(result.data),
-        outside: allocationOutsideSelection({
-          allocations: result.data.allocations,
-          selectedWeeks: [...selected],
-        }),
-        amount,
-        fingerprint: weeksFingerprint,
-      });
-    } catch {
-      setError("Could not reach the server — nothing was previewed.");
-    } finally {
-      setBusy(null);
-    }
-  }
 
-  async function handleCommit() {
-    if (!previewValid || !idempotencyKey) return;
-    setBusy("save");
-    setError(null);
-    try {
-      const result = await recordPayment({
-        participationId,
-        amount: preview!.amount,
-        method,
-        idempotencyKey,
-        notes: `Catch-up for weeks ${[...selected].sort((a, b) => a - b).join(", ")}`,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      // Clear the selection WITHOUT select() — that helper wipes feedback,
-      // and the confirmation must survive the commit (2.10).
-      setSelected(new Set());
-      setPreview(null);
-      setSaved(
-        `✓ Recorded ${formatMoney(result.data.totalApplied)} — ${describeAllocation({ allocations: result.data.allocations, unallocated: 0 })}.`,
-      );
-      setKeyNonce((n) => n + 1);
-      router.refresh();
-    } catch {
-      setError(
-        "Could not reach the server — the catch-up was NOT confirmed. Check the weeks before entering it again.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
 
   /**
    * `action` reports its own refusal by returning it. It used to return void
@@ -318,11 +226,22 @@ export function MemberPayments({
 
       {openEntry && (
         <div className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/20 p-4">
-          <AllocationEntry
+          {/* THE SHARED ENTRY (2.19). This was `AllocationEntry` — a THIRD
+              payment route, alongside WeekActionPanel's own and the Patterns
+              view's. The one-payment-route guard found it; nothing else could,
+              because all three called `recordPayment` correctly. */}
+          <PaymentEntry
             participationId={participationId}
             memberName={memberName}
-            defaultAmountCents={outstanding > 0 ? outstanding : undefined}
-            onSaved={(message) => {
+            preselect={preselect}
+            weeks={weeks.map((w) => ({
+              weekNumber: w.weekNumber,
+              amountDue: w.amountDue,
+              amountPaid: w.amountAlreadyPaid,
+              isSkipped: w.isSkipped,
+              isDeferred: w.isDeferred,
+            }))}
+            onRecorded={(message) => {
               // THE PANEL STAYS OPEN, and that IS the fix.
               //
               // It used to close here. AllocationEntry already renders its own
@@ -489,41 +408,27 @@ export function MemberPayments({
               { value: "OTHER", label: "Other" },
             ]}
           />
+          {/* ONE PAYMENT ROUTE (2.19). This was a second preview and a
+              second commit — its own `handlePreview`/`handleCommit` calling
+              `recordPayment` directly, beside PaymentEntry above and
+              WeekActionPanel below. Three components building a payment is
+              three places a partial-payment rule has to be fixed.
+              The selection still does its job: it hands the ticked weeks to
+              the shared entry, preselected. */}
           <button
             type="button"
-            onClick={handlePreview}
-            disabled={amount < 1 || busy !== null}
-            className={buttonCls.secondary}
+            onClick={() => {
+              setPreselect([...selected].sort((a, b) => a - b));
+              setOpenEntry(true);
+              setSelected(new Set());
+            }}
+            disabled={amount < 1}
+            title={amount < 1 ? "Tick the weeks to record first." : undefined}
+            className={buttonCls.primary}
           >
-            {busy === "preview" ? "Checking…" : "Preview catch-up"}
+            Record {formatMoney(amount)} for these weeks
           </button>
         </div>
-
-        {previewValid && (
-          <div
-            className="mt-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 px-3.5 py-2.5 text-sm"
-            data-testid="catchup-preview"
-          >
-            <p className="text-gray-800 dark:text-gray-200">
-              <strong className="tabular-nums">{formatMoney(preview!.amount)}</strong>: {preview!.text}
-            </p>
-            {preview!.outside.length > 0 && (
-              <p className="mt-1 text-red-800 dark:text-red-400">
-                Note: oldest debt is paid first, so this also covers week
-                {preview!.outside.length === 1 ? " " : "s "}
-                {preview!.outside.join(", ")}, which you did not select.
-              </p>
-            )}
-            <button
-              type="button"
-              onClick={handleCommit}
-              disabled={busy !== null || !idempotencyKey}
-              className={buttonCls.primary + " mt-2"}
-            >
-              {busy === "save" ? "Recording…" : "Confirm and record"}
-            </button>
-          </div>
-        )}
 
         {error && (
           <div className="mt-2">
