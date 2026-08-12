@@ -51,6 +51,10 @@ export default async function CyclePositionPage({
     shortfall: c.shortfall,
     aheadByCount: c.aheadBy.length,
     paidAhead: c.paidAhead,
+    // Money he has to find himself is worth a dot on Collection even when
+    // nobody is behind — it is the one figure on this page that appears in no
+    // total, because those weeks stopped being expected.
+    toCover: c.toCover,
     holdingLessThanOwed: h.shouldBeHolding < h.paidEarly + h.drawnNotHandedOut,
     verdictKind: d.verdict?.kind ?? null,
   });
@@ -197,12 +201,84 @@ export default async function CyclePositionPage({
         </Card>
       )}
 
+      {/* ————— MEMBERS WHO HAVE STOPPED — never in the list above ————— */}
+      {section === "collection" && c.stoppedBy.length > 0 && (
+        <Card className="animate-fade-in-up-2">
+          <CardHeader
+            title="Members who have stopped"
+            sub="Separate from the list above on purpose. Someone behind is going to pay; someone who has stopped is not, and counting them together is what made this figure wrong."
+          />
+          <ul className="divide-y divide-gray-100 border-t border-gray-100 dark:divide-gray-800/60 dark:border-gray-800/60">
+            {c.stoppedBy.map((m) => (
+              <li key={m.participationId} className="px-5 py-3 text-sm">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <Link
+                    href={`/admin/participations/${m.participationId}`}
+                    className="font-semibold text-gray-900 hover:underline dark:text-white"
+                  >
+                    {m.name}
+                  </Link>
+                  <Pill tone="neutral">stopped at week {m.closedAtWeek}</Pill>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{m.reason}</span>
+                </div>
+                {/* THE SENTENCE, not a row of figures. It is the one thing on
+                    this page the organizer cannot work out for himself. */}
+                <p className="mt-1 text-gray-700 dark:text-gray-300">
+                  {m.alreadyPaidOut > 0 ? (
+                    <>
+                      {m.name} was paid{" "}
+                      <strong className="tabular-nums">{formatMoney(m.alreadyPaidOut)}</strong> and
+                      stopped at week {m.closedAtWeek}.{" "}
+                      {m.shortfallToCover > 0 && (
+                        <>
+                          <strong className="tabular-nums">
+                            {formatMoney(m.shortfallToCover)}
+                          </strong>{" "}
+                          of their contributions will not arrive — you would need to cover that.
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {m.name} stopped at week {m.closedAtWeek}.{" "}
+                      {m.amountLeaving > 0 && (
+                        <>
+                          <strong className="tabular-nums">{formatMoney(m.amountLeaving)}</strong>{" "}
+                          of their contributions will not arrive. They were never paid out, so
+                          there is nothing for you to cover.
+                        </>
+                      )}
+                    </>
+                  )}
+                  {m.balanceRecorded > 0 && (
+                    <>
+                      {" "}
+                      <strong className="tabular-nums">
+                        {formatMoney(m.balanceRecorded)}
+                      </strong>{" "}
+                      they had not paid is on their own record.
+                    </>
+                  )}
+                </p>
+              </li>
+            ))}
+          </ul>
+          {c.toCover > 0 && (
+            <p className="border-t border-gray-100 px-5 py-3 text-sm font-bold text-amber-900 dark:border-gray-800/60 dark:text-amber-200">
+              <span className="tabular-nums">{formatMoney(c.toCover)}</span> in total is yours to
+              cover. It is not in any figure above — those weeks stopped being expected, which is
+              exactly why it has to be said here.
+            </p>
+          )}
+        </Card>
+      )}
+
       {/* ————— What he SHOULD be holding, decomposed ————— */}
       {section === "holding" && (
         <>
           <SectionHeading title="What the books say you are holding">
-            Received minus paid out, split into what is claimed and what is free. A healthy
-            balance may simply be your fee accumulating.
+            Money in, money out, what is left. Every figure has already happened — your fee is
+            an estimate and is kept out of it.
           </SectionHeading>
       {/* THREE FACTS. Money in, money out, what is left.
           The fee is NOT here — it is a projection of what he might keep, and a

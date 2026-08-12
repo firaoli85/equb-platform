@@ -38,12 +38,42 @@ export type AheadMember = {
   weeks: number;
 };
 
+/**
+ * A member who has STOPPED and will not resume this cycle (2.18).
+ *
+ * The whole reason this type exists separately from {@link OwingMember}: one
+ * of them will pay and one will not, and a screen that lists them together is
+ * telling the organizer he is waiting on money that is not coming.
+ */
+export type StoppedMember = {
+  participationId: string;
+  name: string;
+  /** The week they stopped. Weeks after it left the expectation. */
+  closedAtWeek: number;
+  /** Their unpaid weeks UP TO the closing point, now on their own record. */
+  balanceRecorded: number;
+  /** Cents of contributions that stopped being expected. */
+  amountLeaving: number;
+  /** Net cents already handed over to them. */
+  alreadyPaidOut: number;
+  /** `amountLeaving` when they were already paid out, else 0. */
+  shortfallToCover: number;
+  /** The neutral reason, as recorded. */
+  reason: string;
+};
+
 export type CollectionPosition = {
   /** Sum of every ELAPSED week's expectation. */
   shouldHaveCollected: number;
   /** What actually came in for those elapsed weeks. */
   collected: number;
-  /** shouldHaveCollected − collected, never negative. */
+  /**
+   * The gap that people who are still in the cycle are going to pay.
+   *
+   * `shouldHaveCollected − collected − willNotArrive`. The stopped members'
+   * share is taken out because it is a different fact, not because it is
+   * forgiven — see {@link willNotArrive}.
+   */
   shortfall: number;
   /** Who makes the shortfall up, largest first. */
   owedBy: OwingMember[];
@@ -51,6 +81,25 @@ export type CollectionPosition = {
   paidAhead: number;
   /** Who paid ahead, largest first. */
   aheadBy: AheadMember[];
+  /** Members who have stopped, biggest hole first. */
+  stoppedBy: StoppedMember[];
+  /**
+   * Of the gap in elapsed weeks, the part that belongs to members who have
+   * stopped. It is recorded on THEIR OWN records (2.18) and it is not money
+   * the organizer is waiting on. Kept out of `shortfall` for that reason and
+   * added back nowhere: `shouldHaveCollected − collected` still equals
+   * `shortfall + willNotArrive`, so nothing is lost, only sorted.
+   */
+  willNotArrive: number;
+  /**
+   * What the organizer has to find himself.
+   *
+   * Only for members who were ALREADY PAID OUT and then stopped: he handed
+   * over the whole pot against contributions that will not now arrive. Those
+   * weeks left the expectation, so this figure appears in no other total on
+   * the page — which is exactly why it has to be stated.
+   */
+  toCover: number;
   /** The last week whose payment window has closed. */
   elapsedThroughWeek: number;
 };
@@ -64,6 +113,8 @@ export function collectionPosition(input: {
   series: readonly WeekReceipts[];
   owedBy: readonly OwingMember[];
   aheadBy: readonly AheadMember[];
+  /** Members who have stopped (2.18). Optional — absent means nobody has. */
+  stoppedBy?: readonly StoppedMember[];
 }): CollectionPosition {
   const elapsed = input.series.filter((w) => w.elapsed);
   const ahead = input.series.filter((w) => !w.elapsed);
@@ -71,11 +122,31 @@ export function collectionPosition(input: {
   const shouldHaveCollected = elapsed.reduce((s, w) => s + w.expected, 0);
   const collected = elapsed.reduce((s, w) => s + w.received, 0);
 
+  // A stopped member's unpaid weeks are still part of the gap — that money
+  // really did fail to arrive and history is not being rewritten. It is
+  // SORTED OUT of the shortfall, not deducted from it, because the shortfall
+  // answers "what am I still waiting on" and the answer for these members is
+  // nothing. It lives on their own record instead (2.18).
+  const stoppedBy = [...(input.stoppedBy ?? [])].sort(
+    (a, b) =>
+      b.shortfallToCover - a.shortfallToCover ||
+      b.balanceRecorded - a.balanceRecorded ||
+      a.name.localeCompare(b.name),
+  );
+  const willNotArrive = stoppedBy.reduce((s, m) => s + m.balanceRecorded, 0);
+  const gap = Math.max(0, shouldHaveCollected - collected);
+
   return {
     shouldHaveCollected,
     collected,
-    shortfall: Math.max(0, shouldHaveCollected - collected),
+    // Never below zero, and never more than the gap actually is: a recorded
+    // balance bigger than the measured gap would otherwise make the shortfall
+    // read negative, which is not a thing that can happen.
+    shortfall: Math.max(0, gap - Math.min(willNotArrive, gap)),
     owedBy: [...input.owedBy].filter((m) => m.amount > 0).sort((a, b) => b.amount - a.amount),
+    stoppedBy,
+    willNotArrive: Math.min(willNotArrive, gap),
+    toCover: stoppedBy.reduce((s, m) => s + m.shortfallToCover, 0),
     // Money sitting on weeks that have not happened yet. NOT this cycle's
     // collection, and not his to spend.
     paidAhead: ahead.reduce((s, w) => s + w.received, 0),
@@ -308,10 +379,24 @@ export function collectionSentence(
     p.shortfall > 0
       ? ` ${formatMoney(p.shortfall)} is outstanding, from ${p.owedBy.length} member${p.owedBy.length === 1 ? "" : "s"}.`
       : " Nothing is outstanding.";
+  // STOPPED MEMBERS GET THEIR OWN CLAUSE, always. Folding them into the
+  // outstanding figure told the organizer he was waiting on money nobody was
+  // going to send — the single sentence this whole feature exists to correct.
+  const stopped =
+    p.stoppedBy.length > 0
+      ? ` ${p.stoppedBy.length} member${p.stoppedBy.length === 1 ? " has" : "s have"} stopped` +
+        (p.willNotArrive > 0
+          ? `, and ${formatMoney(p.willNotArrive)} they had not paid is on their own record${p.stoppedBy.length === 1 ? "" : "s"} rather than still coming`
+          : "") +
+        (p.toCover > 0
+          ? `. ${formatMoney(p.toCover)} of contributions behind payouts you have already handed over will not arrive — that part is yours to cover`
+          : "") +
+        "."
+      : "";
   const ahead =
     p.paidAhead > 0
       ? ` A further ${formatMoney(p.paidAhead)} has been paid toward weeks that have not happened yet, ` +
-        `by ${p.aheadBy.length} member${p.aheadBy.length === 1 ? "" : "s"} — that money is owed forward, not collected.`
+        `by ${p.aheadBy.length} member${p.aheadBy.length === 1 ? "" : "s"} — that money belongs to those weeks, not to this one.`
       : "";
-  return head + short + ahead;
+  return head + short + stopped + ahead;
 }

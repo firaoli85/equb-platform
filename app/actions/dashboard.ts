@@ -17,6 +17,11 @@ import { currentWeekNumber } from "@/lib/money";
 import { redactDashboard } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
+import {
+  effectiveFinishWeek,
+  windowBreaks,
+  weeksLeavingExpectation,
+} from "@/lib/participation-close";
 import { undrawnWindowWarnings } from "@/lib/wheel";
 
 const MS_PER_DAY = 86_400_000;
@@ -49,6 +54,8 @@ export async function getDashboard(input?: { weekNumber?: number }) {
         participations: {
           include: {
             person: true,
+            // The stretches they were away (2.18).
+            breaks: { orderBy: { fromWeek: "asc" } },
             payments: { include: { week: { select: { weekNumber: true, isSkipped: true } } } },
           },
         },
@@ -86,6 +93,36 @@ export async function getDashboard(input?: { weekNumber?: number }) {
         ? requested
         : currentWeek;
     const active = cycle.participations.filter((p) => p.status === "ACTIVE");
+    const stopped = cycle.participations.filter((p) => p.status === "CLOSED");
+    // Closed members stay IN the series carrying the week they stopped (2.18).
+    // Dropping them would drop their PAID money out of every received figure
+    // too; narrowing their window drops only the expectation, which is the
+    // one thing that should end.
+    // Their breaks, with the derived fallback for rows written before the
+    // table existed (see windowBreaks / legacyBreak).
+    const breaksOf = (p: {
+      status: "ACTIVE" | "CLOSED";
+      startWeek: number;
+      closedAtWeek: number | null;
+      breaks: { fromWeek: number; toWeek: number | null }[];
+      payments: { amountPaid: number; week: { weekNumber: number } }[];
+    }) => {
+      const paid = p.payments.filter((pm) => pm.amountPaid > 0).map((pm) => pm.week.weekNumber);
+      return windowBreaks({
+        status: p.status,
+        startWeek: p.startWeek,
+        closedAtWeek: p.closedAtWeek,
+        lastWeekWithMoney: paid.length > 0 ? Math.max(...paid) : null,
+        breaks: p.breaks,
+      });
+    };
+    const counted = cycle.participations.map((p) => ({
+      id: p.id,
+      weeklyAmount: p.weeklyAmount,
+      startWeek: p.startWeek,
+      weeksCommitted: p.weeksCommitted,
+      breaks: breaksOf(p),
+    }));
 
     const flatPayments: DashboardPayment[] = cycle.participations.flatMap((participation) =>
       participation.payments.map((payment) => ({
@@ -120,18 +157,23 @@ export async function getDashboard(input?: { weekNumber?: number }) {
 
     const series = receiptsByWeek({
       weeks: cycle.weeks.map((w) => ({ weekNumber: w.weekNumber, isSkipped: w.isSkipped })),
-      participations: active,
+      participations: counted,
       payments: flatPayments,
       // Same boundary the cash series uses — 2.14: each week's OWN stored date.
       elapsedThroughWeek: elapsedThroughWeek(cycle.weeks, today),
     });
 
-    const activeNamed = active.map((p) => ({
+    // Named rows for the per-week grids and the attention list. Closed
+    // members are INCLUDED and carry their cutoff: their paid weeks still
+    // show, their later weeks stop being expected, and the attention list
+    // drops them from "behind" entirely — they are not late, they stopped.
+    const activeNamed = cycle.participations.map((p) => ({
       id: p.id,
       name: `${p.person.nameAmharic} — ${p.person.nameEnglishFirst}`,
       weeklyAmount: p.weeklyAmount,
       startWeek: p.startWeek,
       weeksCommitted: p.weeksCommitted,
+      breaks: breaksOf(p),
     }));
     const attention = memberAttention({
       participations: activeNamed,
@@ -185,6 +227,42 @@ export async function getDashboard(input?: { weekNumber?: number }) {
         series,
         cash,
         attention,
+        // MEMBERS WHO HAVE STOPPED (2.18), never folded into `attention`.
+        // Someone who is behind will pay; someone who has stopped will not,
+        // and a dashboard that shows them in one list is telling the organizer
+        // he is waiting on money nobody is going to send. Their forward weeks
+        // have already left every figure above; this is what he can SEE about
+        // it, so a member does not simply vanish off the screen.
+        stopped: stopped.map((p) => {
+          // The last week they were counted: the week before their OPEN break.
+          const closedAtWeek = effectiveFinishWeek({
+            startWeek: p.startWeek,
+            weeksCommitted: p.weeksCommitted,
+            breaks: breaksOf(p),
+          });
+          const paidOut = payouts
+            .filter(
+              (po) =>
+                po.status === "COLLECTED" && po.luckyNumber.participation.id === p.id,
+            )
+            .reduce((s, po) => s + po.netAmount, 0);
+          const amountLeaving =
+            weeksLeavingExpectation({
+              startWeek: p.startWeek,
+              weeksCommitted: p.weeksCommitted,
+              closingAtWeek: closedAtWeek,
+            }) * p.weeklyAmount;
+          return {
+            participationId: p.id,
+            personId: p.person.id,
+            name: p.person.nameEnglishFirst,
+            closedAtWeek,
+            amountLeaving,
+            alreadyPaidOut: paidOut,
+            // Only money already handed over leaves a hole he has to fill.
+            shortfallToCover: paidOut > 0 ? amountLeaving : 0,
+          };
+        }),
         pendingPayouts: payouts
           .filter((p) => p.status === "PENDING")
           .map((p) => ({
@@ -246,7 +324,17 @@ export async function getDashboard(input?: { weekNumber?: number }) {
       // 2.27: the undrawn-window safeguard belongs on the dashboard.
       undrawnWarnings: undrawnWindowWarnings({
         luckyNumbers,
-        participations: activeNamed.map((p) => ({ ...p, status: "ACTIVE" as const })),
+        participations: activeNamed.map((p) => ({
+          ...p,
+          // A member who has STOPPED cannot be "missed" — they left the pool
+          // on purpose, and warning about them would train the organizer to
+          // ignore the warning that protects the members still in (2.27).
+          // An OPEN break is what stopped means; one that has ended is a
+          // member who came back, and they can absolutely still be missed.
+          status: p.breaks.some((b) => b.toWeek === null)
+            ? ("CLOSED" as const)
+            : ("ACTIVE" as const),
+        })),
         drawnNumberIds: new Set(drawnMembers.map((m) => m.luckyNumberId)),
         currentWeek,
         weeksAhead: 3,

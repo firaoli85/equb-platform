@@ -35,6 +35,7 @@ describe("positionSections — the dots mean something", () => {
     shortfall: 0,
     aheadByCount: 0,
     paidAhead: 0,
+    toCover: 0,
     holdingLessThanOwed: false,
     verdictKind: "surplus" as const,
   };
@@ -49,6 +50,13 @@ describe("positionSections — the dots mean something", () => {
     const collection = s.find((x) => x.key === "collection")!;
     expect(collection.attention).toBe(true);
     expect(collection.count).toBe(2);
+  });
+
+  // Money he has to cover himself sits in NO total on the page — those weeks
+  // stopped being expected — so it has to earn the dot by itself.
+  it("marks Collection when money is his to cover, even with nobody behind", () => {
+    const s = positionSections({ ...clean, toCover: 800_000 });
+    expect(s.find((x) => x.key === "collection")!.attention).toBe(true);
   });
 
   it("marks Paid ahead only when there IS money paid ahead", () => {

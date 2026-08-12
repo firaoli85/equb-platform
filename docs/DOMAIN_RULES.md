@@ -517,6 +517,68 @@ panel; `scripts/verify-number-conflict.mts` (18 checks against a real unique ind
 
 ---
 
+## 17. Stopped is not behind
+
+> **A member who has stopped leaves every forward expectation. What they paid stays exactly
+> as recorded, their unpaid weeks become a balance on the PERSON, and their numbers leave
+> the pool. Reversible while the cycle is open — forward only.**
+
+Two members stopped and would not resume, and nothing in the platform could say so. The
+only tool was `removeParticipation`, which deletes their receipts and payouts outright, so
+the honest act and the destructive one were the same button. Left alone, their remaining
+weeks went on being counted as money that should arrive.
+
+**The two facts a single list was blurring:**
+
+| | The money is | On the screens |
+|---|---|---|
+| **Behind** | late, still coming — chase it | `memberAttention`, the outstanding list |
+| **Stopped** | not coming — record it | its own section, its own sentence |
+
+**A BREAK IS A HOLE, NOT A TRUNCATION.** Stopping opens a `ParticipationBreak` at the week
+after their last counted one with no end. Bringing them back CLOSES that break rather than
+deleting it, so the weeks they were away stay outside their window for good — restoring
+them would invent arrears for weeks nobody ever asked them about. A member who stops,
+resumes and stops again has two holes, which is why this is a table and not a column.
+`status` and `closedAtWeek` remain on the participation as denormalised current state for
+the ACTIVE filters that already exist; the break is the truth.
+
+Everything else follows from one predicate. `inWindow` already decides expected,
+membersExpected, weeks behind, outstanding and the lucky-number pool (rule 9), so no screen
+carries its own rule about closing.
+
+**Worked (the case that decides the arithmetic):** Meheret, $1,000/week for 20 weeks, drawn
+and paid `$19,600`, stops at week 12.
+- Weeks 13–20 leave the expectation: `8 × $1,000 = $8,000`.
+- She was **already paid out**, so that `$8,000` is the organizer's **to cover** — stated
+  plainly, never filed as money he is waiting on: *"Meheret was paid $19,600 and stopped at
+  week 12. $8,000 of their contributions will not arrive — you would need to cover that."*
+- A member who stops **without** having been drawn leaves no hole: their number leaves the
+  pool with them, so no pot is handed over against those weeks.
+
+**The reason is a fixed neutral list** — stopped contributing · could not continue · left
+the group · other (with a note about the *arrangement*). A free-text reason on a financial
+record about a real person becomes a character note, and it outlives the cycle in the
+archive.
+
+**Refused when they hold a committed winner plan (2.3),** naming the week and the numbers:
+taking the number out of the pool behind a frozen plan would leave the draw falling through
+to chance on a week the organizer had already decided.
+
+**Pinned by:** `lib/participation-close.test.ts` (53 tests) — the window predicate including
+holes and repeat breaks, the cascade through `receiptsByWeek`/`weekMemberStatus`/
+`memberAttention`, the pool (2.27), every refusal, the paid-out shortfall, forward-only
+reactivation, and the plain-English guard. Proven non-vacuous three ways: a window that
+never narrows fails 6, a hole claimed for a member never paid out fails 3, and a retroactive
+restore fails 2.
+**Live verification:** `scripts/verify-participation-close.mts` — 36 checks on the
+production-shaped fixture, including that the balance survives deleting the whole cycle.
+**It found a bug the unit tests could not:** a reactivated member was `ACTIVE` again, so the
+stored cutoff was ignored and the weeks they were away came back as arrears. That is what
+turned a `closedAtWeek` column into the breaks table.
+
+---
+
 ## Rules with no test
 
 **This list is the work.** Each entry is a rule that is real, is implemented, and is

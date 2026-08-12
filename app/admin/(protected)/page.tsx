@@ -106,6 +106,7 @@ export default async function CommandCenterPage() {
     d.attention.length === 0 &&
     d.pendingPayouts.length === 0 &&
     d.closedShortfalls.length === 0 &&
+    d.stopped.length === 0 &&
     d.lockedMembers.length === 0;
 
   return (
@@ -272,6 +273,33 @@ export default async function CommandCenterPage() {
                     </span>
                     <Pill tone="attention">
                       {m.weeksBehind} behind · {formatMoney(m.amountOwed)} owed
+                    </Pill>
+                    <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                </li>
+              ))}
+              {/* MEMBERS WHO HAVE STOPPED — listed after the ones who are
+                  behind, and never mixed into them. Behind means the money is
+                  late; stopped means it is not coming. They read as the same
+                  row until you say which is which. */}
+              {d.stopped.map((m) => (
+                <li key={`stopped-${m.participationId}`}>
+                  <Link
+                    href={`/admin/people/${m.personId}`}
+                    className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
+                  >
+                    <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
+                      {m.name}
+                      <span className="ml-1.5 font-normal text-gray-600 dark:text-gray-400">
+                        stopped at week {m.closedAtWeek}
+                      </span>
+                    </span>
+                    <Pill tone={m.shortfallToCover > 0 ? "problem" : "neutral"}>
+                      {m.shortfallToCover > 0
+                        ? `${formatMoney(m.shortfallToCover)} for you to cover`
+                        : "not coming back this cycle"}
                     </Pill>
                     <svg className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

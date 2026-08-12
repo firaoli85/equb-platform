@@ -761,10 +761,15 @@ export function AddMemberWizard({
               onChange={(e) => setExtendPastEnd(e.target.checked)}
               className="mt-0.5"
             />
+            {/* Same correction as the participation editor: "the cycle will
+                actually run longer" reads as though everyone keeps paying
+                longer. Nobody else's commitment moves — the extra weeks fall
+                outside their windows, so they owe nothing for them. */}
             <span>
-              Extend past the planned end (organizer override) — the cycle will actually run
-              longer than its {cycle.plannedWeeks} planned weeks, and the extra weeks are
-              created.
+              Extend past the planned end (organizer override) — this member alone keeps paying
+              past week {cycle.plannedWeeks}, and the extra weeks are created on the cycle so the
+              admin grid can hold them. No other member is affected: their commitments are
+              unchanged and those weeks fall outside their window, so they owe nothing for them.
             </span>
           </label>
 

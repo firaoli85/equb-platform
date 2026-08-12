@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/edits";
 import { NumberConflictPanel } from "@/components/admin/number-conflict-panel";
 import { FeeCalculator } from "@/components/admin/fee-calculator";
+import { CloseParticipation } from "@/components/admin/close-participation";
 import { RemoveFromCycle } from "@/components/admin/remove-from-cycle";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/commitment";
 import { formatDateLongUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import type { NumberConflict } from "@/lib/lucky-numbers";
+import { calculateFinishWeek } from "@/lib/money";
 import { nameConfirmed } from "@/lib/settlement";
 
 type Method = "ZELLE" | "CASH" | "OTHER" | null;
@@ -102,6 +104,8 @@ export function ParticipationEditor(props: {
     /** The cycle's real unit and fee — the live calculator reads them (2.6). */
     unitAmount: number;
     feePercent: number;
+    /** Set when they have STOPPED (2.18). Null while they are contributing. */
+    closed: { atWeek: number | null; reason: string | null; note: string | null } | null;
   };
   luckyNumbers: { id: string; number: number; amount: number }[];
   events: EventRowData[];
@@ -172,7 +176,27 @@ export function ParticipationEditor(props: {
   const [weeklyDollars, setWeeklyDollars] = useState(String(participation.weeklyAmount / 100));
   const [startWeek, setStartWeek] = useState(String(participation.startWeek));
   const [weeks, setWeeks] = useState(String(participation.weeksCommitted));
-  const [extend, setExtend] = useState(false);
+  // THE OVERRIDE STARTS WHERE THE MEMBER ALREADY IS.
+  //
+  // This was `useState(false)`, unconditionally — so a member whose commitment
+  // ALREADY runs past the planned end (the override was granted when they were
+  // added) opened this form with the box unticked. Every subsequent edit to
+  // them then sent `extendPastPlannedEnd: false`, and the server refused it
+  // with the cap error, because their commitment still exceeded the cap. The
+  // organizer saw a dialog naming the override, pressed Save, and nothing
+  // happened — including when he was making the commitment SHORTER.
+  //
+  // Reproduced against the live database in scripts/repro-participation-shorten.mts:
+  // 11 → 10 weeks commits cleanly with the override and is refused without it.
+  //
+  // Ticked here means "this member is already past the planned end", which is a
+  // fact, not a fresh consent — and unticking it is still how you take the
+  // override away.
+  const [extend, setExtend] = useState(
+    () =>
+      calculateFinishWeek(participation.startWeek, participation.weeksCommitted) >
+      participation.plannedWeeks,
+  );
 
   // ————— 2.22: the organizer never calculates a finish —————
   //
@@ -275,6 +299,26 @@ export function ParticipationEditor(props: {
     const input = baseInput();
     if (!input) return;
 
+    // DO NOT OPEN A CONFIRMATION FOR A SAVE THAT CANNOT SUCCEED.
+    //
+    // `cap.exceedsCap` is true in exactly the case `validateCommitmentCap`
+    // refuses on the server. Before this, the dialog opened anyway, Save sent
+    // a doomed request, and the refusal landed in the banner at the TOP of a
+    // long form — well above the button that had just been pressed. A real
+    // refusal read as a silent no-op, which is how "it did not save" gets
+    // reported with no error to quote.
+    if (cap?.exceedsCap) {
+      setBanner({
+        kind: "err",
+        text:
+          `Not saved. Week ${input.startWeek + input.weeksCommitted - 1} is past the cycle's ` +
+          `planned ${participation.plannedWeeks}, so this needs the override — tick “Allow ` +
+          `${participation.personName} to keep paying past week ${participation.plannedWeeks}” ` +
+          `below, or shorten the commitment to ${cap.cap} week${cap.cap === 1 ? "" : "s"}.`,
+      });
+      return;
+    }
+
     // THE THREE THINGS THIS SAVE DOES THAT THE DIALOG NEVER MENTIONED.
     //
     // 1. It moves the PAYOUT. When their week-of-the-win was settled out of
@@ -295,10 +339,24 @@ export function ParticipationEditor(props: {
           `weekly resizes that receipt and moves the payout figure with it — on this page and ` +
           `on Collections — whether or not a settlement step opens.`
         : null,
+      // WHAT THIS ACTUALLY DOES, not what it technically touches.
+      //
+      // It used to read "the missing weeks are created on the CYCLE, so they
+      // appear in every member's grid, not just Henok's" — true, and it reads
+      // as though other members are affected. They are not: their commitments
+      // do not change, weeks past their own window fall outside it so they owe
+      // nothing for them, and their expectation for those weeks is zero. The
+      // only real consequence is that the admin grid gains rows.
       addsWeeks
-        ? `This runs to week ${finishesAt}, past the cycle's planned ${participation.plannedWeeks}. ` +
-          `The missing weeks are created on the CYCLE, so they appear in every member's grid, ` +
-          `not just ${participation.personName}'s.`
+        ? `Extending past week ${participation.plannedWeeks} makes this cycle ${finishesAt} ` +
+          `weeks long. Week${finishesAt - participation.plannedWeeks === 1 ? "" : "s"} ` +
+          `${participation.plannedWeeks + 1}${finishesAt - participation.plannedWeeks === 1 ? "" : `-${finishesAt}`} ` +
+          `will be created. No other member is affected — their commitments are unchanged and ` +
+          `those weeks fall outside their window, so they owe nothing for them. Your admin grid ` +
+          `will show ${finishesAt} weeks instead of ${participation.plannedWeeks}, with ` +
+          `week${finishesAt - participation.plannedWeeks === 1 ? "" : "s"} ` +
+          `${participation.plannedWeeks + 1}${finishesAt - participation.plannedWeeks === 1 ? "" : `-${finishesAt}`} ` +
+          `empty except for ${participation.personName}.`
         : null,
     ].filter((line): line is string => line !== null);
 
@@ -533,13 +591,28 @@ export function ParticipationEditor(props: {
           checked={extend}
           onChange={setExtend}
           label={
-            <>Allow extending past the planned {participation.plannedWeeks} weeks (2.22 override — creates the extra weeks)</>
+            <>
+              Allow this member to keep paying past week {participation.plannedWeeks} (2.22
+              override). The extra weeks are created on the cycle so the admin grid can hold
+              them; no other member&apos;s commitment changes.
+            </>
           }
         />
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={saveParticipation} disabled={busy} className={buttonCls.primary}>
             Save participation
           </button>
+          {/* SOMEONE STOPPING IS THE ORDINARY CASE, so it sits first and is
+              not styled as a danger. Shortening their weeks used to be the
+              only way to say it, and that is the expensive way: it deletes
+              and re-allocates every receipt against a commitment they never
+              made. This changes no money at all. */}
+          <CloseParticipation
+            participationId={participation.id}
+            personName={participation.personName}
+            cycleName={participation.cycleName}
+            closed={participation.closed}
+          />
           {/* The single red button that cascade-deleted everything is gone.
               RemoveFromCycle computes what is attached — receipts, payout,
               numbers, fee — and offers the two genuinely different outcomes

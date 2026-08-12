@@ -44,6 +44,8 @@ export function positionSections(input: {
   shortfall: number;
   aheadByCount: number;
   paidAhead: number;
+  /** Cents behind payouts already handed over that will never arrive (2.18). */
+  toCover: number;
   /** He is holding less than the money that belongs to other people. */
   holdingLessThanOwed: boolean;
   /** null when no reading has been recorded yet. */
@@ -54,7 +56,9 @@ export function positionSections(input: {
       key: "collection",
       label: "Collection",
       count: input.owedByCount || undefined,
-      attention: input.shortfall > 0,
+      // Money he has to cover himself earns the dot on its own: it sits in no
+      // total on the page, because those weeks stopped being expected.
+      attention: input.shortfall > 0 || input.toCover > 0,
     },
     {
       key: "ahead",

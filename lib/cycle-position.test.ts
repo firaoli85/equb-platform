@@ -321,7 +321,7 @@ describe("positionVerdict — never just a number", () => {
 });
 
 describe("collectionSentence — the dashboard's register", () => {
-  it("states should, actual, who is short, and what is owed forward", () => {
+  it("states should, actual, who is short, and what was paid early", () => {
     const p = collectionPosition({
       series: [week(1, 100_000, 100_000, true), week(2, 100_000, 60_000, true), week(3, 100_000, 30_000, false)],
       owedBy: [{ participationId: "a", name: "Abebe", amount: 40_000 }],
@@ -333,7 +333,9 @@ describe("collectionSentence — the dashboard's register", () => {
     expect(s).toContain("$1,600 has");
     expect(s).toContain("$400 is outstanding, from 1 member");
     expect(s).toContain("$300 has been paid toward weeks that have not happened");
-    expect(s).toContain("owed forward, not collected");
+    expect(s).toContain("belongs to those weeks, not to this one");
+    // The plain-English rule reaches this sentence too (UI_STANDARDS 8b).
+    expect(s).not.toMatch(/\b(owed forward|uncommitted|committed)\b/i);
   });
 
   it("says nothing about paid-ahead when there is none", () => {
@@ -341,5 +343,43 @@ describe("collectionSentence — the dashboard's register", () => {
     const s = collectionSentence(p, formatMoney);
     expect(s).toContain("Nothing is outstanding.");
     expect(s).not.toContain("paid toward weeks");
+  });
+
+  // A MEMBER WHO STOPPED GETS THEIR OWN CLAUSE. Folding them into the
+  // outstanding figure told the organizer he was waiting on money nobody was
+  // going to send — the sentence this whole feature exists to correct.
+  it("says who stopped, and separates it from what is outstanding", () => {
+    const p = collectionPosition({
+      series: [week(1, 100_000, 100_000, true), week(2, 100_000, 40_000, true)],
+      owedBy: [{ participationId: "a", name: "Abebe", amount: 20_000 }],
+      aheadBy: [],
+      stoppedBy: [
+        {
+          participationId: "m",
+          name: "Meheret",
+          closedAtWeek: 2,
+          balanceRecorded: 40_000,
+          amountLeaving: 800_000,
+          alreadyPaidOut: 1_960_000,
+          shortfallToCover: 800_000,
+          reason: "Stopped contributing",
+        },
+      ],
+    });
+    const s = collectionSentence(p, formatMoney);
+    // The gap is $600; $400 of it belongs to Meheret and is on her record.
+    expect(p.shouldHaveCollected - p.collected).toBe(60_000);
+    expect(p.willNotArrive).toBe(40_000);
+    expect(p.shortfall).toBe(20_000);
+    expect(s).toContain("$200 is outstanding, from 1 member");
+    expect(s).toContain("1 member has stopped");
+    expect(s).toContain("$400 they had not paid is on their own record");
+    expect(s).toContain("$8,000 of contributions behind payouts you have already handed over");
+    expect(s).toContain("yours to cover");
+  });
+
+  it("says nothing about stopped members when nobody has stopped", () => {
+    const p = collectionPosition({ series: [week(1, 100_000, 100_000, true)], owedBy: [], aheadBy: [] });
+    expect(collectionSentence(p, formatMoney)).not.toContain("stopped");
   });
 });

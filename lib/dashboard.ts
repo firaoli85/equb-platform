@@ -5,6 +5,7 @@
 
 import { amountOutstanding, weeksBehind, weeksCredited } from "./derived";
 import { calculateFinishWeek } from "./money";
+import { inWindow as inMemberWindow, type WindowBreak } from "./participation-close";
 
 function assertCents(name: string, cents: number): void {
   if (!Number.isSafeInteger(cents) || cents < 0) {
@@ -151,6 +152,18 @@ export type DashboardParticipation = {
   weeklyAmount: number;
   startWeek: number;
   weeksCommitted: number;
+  /**
+   * Stretches of weeks they were NOT part of the cycle (2.18) — they stopped,
+   * and possibly came back. Every figure derived below (expected,
+   * membersExpected, behind, outstanding) skips these weeks without any screen
+   * knowing that closing exists.
+   *
+   * Optional so existing callers compile unchanged, and absent reads the same
+   * as "never stopped". A stopped member whose rows are passed WITHOUT this
+   * field goes on being counted, which is exactly the bug this exists to fix —
+   * `lib/participation-close.test.ts` pins it.
+   */
+  breaks?: readonly WindowBreak[];
 };
 
 export type DashboardPayment = {
@@ -206,9 +219,9 @@ export function weekReceipts(input: {
   let membersExpected = 0;
 
   for (const participation of input.participations) {
-    const inWindow =
-      participation.startWeek <= weekNumber &&
-      weekNumber <= calculateFinishWeek(participation.startWeek, participation.weeksCommitted);
+    // Weeks they were AWAY are not theirs (2.18). A member who stopped at
+    // week 12 owes nothing for week 13, so week 13 must not expect it.
+    const inWindow = inMemberWindow(participation, weekNumber);
     const payment = paymentFor.get(participation.id);
     // Received money always counts, even outside a window (edited data).
     if (payment) {
@@ -299,10 +312,7 @@ export function weekMemberStatus(input: {
   );
   const rows: WeekMemberStatus[] = [];
   for (const participation of input.participations) {
-    const inWindow =
-      participation.startWeek <= input.weekNumber &&
-      input.weekNumber <=
-        calculateFinishWeek(participation.startWeek, participation.weeksCommitted);
+    const inWindow = inMemberWindow(participation, input.weekNumber);
     if (!inWindow) continue;
     const payment = paymentFor.get(participation.id);
     const amountPaid = payment?.amountPaid ?? 0;
@@ -359,6 +369,12 @@ export function memberAttention(input: {
   const result: AttentionMember[] = [];
   for (const participation of input.participations) {
     const rows = byParticipation.get(participation.id) ?? [];
+    // A member who has STOPPED is not "behind": the money is not late, it is
+    // not coming. They leave this list entirely and are reported separately —
+    // conflating the two is the whole problem this feature exists to fix.
+    // An OPEN break is what "stopped" means; a closed one is a member who
+    // came back, and they can be behind like anybody else.
+    if ((participation.breaks ?? []).some((b) => b.toWeek === null)) continue;
     const finishWeek = calculateFinishWeek(participation.startWeek, participation.weeksCommitted);
     const elapsedCount = Math.min(
       Math.max(0, input.elapsedThroughWeek - participation.startWeek + 1),

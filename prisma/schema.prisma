@@ -181,7 +181,17 @@ model Participation {
   startWeek      Int      @default(1)
   weeksCommitted Int
   status         ParticipationStatus @default(ACTIVE)
+  // WHERE THEY STOPPED (2.18). Inclusive: closing at week 12 keeps weeks 1–12
+  // expected and drops 13 onward. Their window ends here, and because every
+  // derived figure in the platform already asks "is this week in their
+  // window", that one fact takes them out of expected, behind, outstanding
+  // and the lucky-number pool (2.27) at once.
   closedAtWeek   Int?
+  /** Neutral, from a fixed list (lib/participation-close.ts). Never personal. */
+  closeReason    String?
+  /** Only for "Other" — about the arrangement, never about the person. */
+  closeNote      String?
+  closedAt       DateTime?
   // D-23 / 2.18: what the organizer decided about this person's CARRIED
   // BALANCE when adding them to this cycle — "leave", "deduct" or
   // "settle-now". An INTENTION and nothing more: it decides only whether the
@@ -202,8 +212,46 @@ model Participation {
   luckyNumbers   LuckyNumber[]
   payments       Payment[]
   paymentEvents  PaymentEvent[]
+  breaks         ParticipationBreak[]
   @@unique([cycleId, personId])
   @@map("participations")
+}
+
+/**
+ * A stretch of weeks a member was NOT part of the cycle (2.18).
+ *
+ * WHY THIS IS A TABLE AND NOT TWO COLUMNS. `closedAtWeek` can only truncate a
+ * window; it cannot describe a HOLE in one. The moment a stopped member is
+ * brought back, the weeks they were away have to stay outside their
+ * expectation for good — restoring them would invent arrears for weeks nobody
+ * ever asked them about — and that is a hole, not a truncation. A member who
+ * stops, resumes, and stops again has two of them.
+ *
+ * `toWeek` is null while they are still stopped: the break is open and their
+ * window ends at `fromWeek - 1`. Closing the break is what "they are
+ * contributing again" means, and it is why reactivation is forward-only by
+ * construction rather than by a rule somebody has to remember.
+ *
+ * The reason lives here rather than on the participation because it belongs to
+ * THIS break — a member who stopped twice stopped for two different reasons,
+ * and the archive keeps both.
+ */
+model ParticipationBreak {
+  id              String    @id @default(cuid())
+  participationId String
+  /** First week NOT counted. Their window ends at fromWeek − 1. */
+  fromWeek        Int
+  /** Last week not counted. Null while they are still stopped. */
+  toWeek          Int?
+  /** Neutral, from a fixed list (lib/participation-close.ts). */
+  reason          String
+  /** Only for "Other" — about the arrangement, never about the person. */
+  note            String?
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  participation   Participation @relation(fields: [participationId], references: [id], onDelete: Cascade)
+  @@index([participationId])
+  @@map("participation_breaks")
 }
 
 // cycleId is denormalized from participation.cycleId — it exists so the

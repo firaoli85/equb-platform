@@ -27,11 +27,19 @@ import {
   positionVerdict,
   type AheadMember,
   type OwingMember,
+  type StoppedMember,
 } from "@/lib/cycle-position";
 import { cashPosition, receiptsByWeek } from "@/lib/dashboard";
 import { formatMoney } from "@/lib/format";
 import { calculateFinishWeek, MAX_MONEY_CENTS } from "@/lib/money";
 import { PAGE_SIZES, pageInfo } from "@/lib/paging";
+import {
+  effectiveFinishWeek,
+  windowBreaks,
+  closeReasonText,
+  isCloseReason,
+  weeksLeavingExpectation,
+} from "@/lib/participation-close";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
@@ -60,6 +68,9 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
         participations: {
           include: {
             person: true,
+            // The stretches they were away (2.18) — the whole close feature
+            // reaches every derived figure through these.
+            breaks: { orderBy: { fromWeek: "asc" } },
             payments: { include: { week: true } },
             paymentEvents: {
               select: { amount: true, pinnedWeekId: true, pinnedWeek: { select: { weekNumber: true } } },
@@ -72,7 +83,14 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
 
     const payouts = await prisma.payout.findMany({
       where: { luckyNumber: { cycleId: cycle.id } },
-      select: { netAmount: true, feeAmount: true, status: true },
+      select: {
+        netAmount: true,
+        feeAmount: true,
+        status: true,
+        // Whose payout it is — a member who STOPPED after being paid out is
+        // the case that decides the arithmetic below.
+        luckyNumber: { select: { participationId: true } },
+      },
     });
 
     const today = new Date();
@@ -87,6 +105,38 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
       cycleStartDate: cycle.startDate,
     });
     const active = cycle.participations.filter((p) => p.status === "ACTIVE");
+    const stopped = cycle.participations.filter((p) => p.status === "CLOSED");
+    // EVERY participation goes into the series, closed ones included, each
+    // carrying the week it stopped. Filtering closed members out entirely
+    // would take their PAID money out of "actually collected" too, and what
+    // they paid stays exactly as recorded (2.18) — only the expectation ends.
+    // `effectiveFinishWeek` does the rest: their weeks after the closing point
+    // stop being expected, everywhere, without any screen knowing why.
+    // Their breaks, with the derived fallback for rows written before the
+    // table existed (see windowBreaks / legacyBreak).
+    const breaksOf = (p: {
+      status: "ACTIVE" | "CLOSED";
+      startWeek: number;
+      closedAtWeek: number | null;
+      breaks: { fromWeek: number; toWeek: number | null }[];
+      payments: { amountPaid: number; week: { weekNumber: number } }[];
+    }) => {
+      const paid = p.payments.filter((pm) => pm.amountPaid > 0).map((pm) => pm.week.weekNumber);
+      return windowBreaks({
+        status: p.status,
+        startWeek: p.startWeek,
+        closedAtWeek: p.closedAtWeek,
+        lastWeekWithMoney: paid.length > 0 ? Math.max(...paid) : null,
+        breaks: p.breaks,
+      });
+    };
+    const counted = cycle.participations.map((p) => ({
+      id: p.id,
+      weeklyAmount: p.weeklyAmount,
+      startWeek: p.startWeek,
+      weeksCommitted: p.weeksCommitted,
+      breaks: breaksOf(p),
+    }));
     // 2.14: the boundary is each week's OWN stored date, never a projection
     // off an editable start date. Decided once, here, and passed everywhere.
     const elapsed = elapsedThroughWeek(cycle.weeks, today);
@@ -104,25 +154,26 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
     // THE SHARED SERIES — the dashboard's own per-week figures.
     const series = receiptsByWeek({
       weeks: cycle.weeks.map((w) => ({ weekNumber: w.weekNumber, isSkipped: w.isSkipped })),
-      participations: active,
+      participations: counted,
       payments: flatPayments,
       elapsedThroughWeek: elapsed,
     });
 
     // Who makes up the shortfall, and who paid ahead — both derived per member
     // through the SAME standing engine the member's own page uses.
-    const owedBy: OwingMember[] = [];
-    const aheadBy: AheadMember[] = [];
-    for (const p of active) {
-      const finishWeek = calculateFinishWeek(p.startWeek, p.weeksCommitted);
-      const standing = computeStanding({
+    // ONE standing derivation, used for members still in and members who
+    // stopped. The only difference is where the window ENDS: a stopped
+    // member's stops at the week they stopped, so what comes back is their
+    // unpaid weeks up to that point and nothing beyond it.
+    const standingFor = (p: (typeof cycle.participations)[number], throughWeek: number) =>
+      computeStanding({
         weeklyAmount: p.weeklyAmount,
         startWeek: p.startWeek,
         weeksCommitted: p.weeksCommitted,
         cycleWeek: currentWeek,
         today,
         windowWeeks: cycle.weeks
-          .filter((w) => w.weekNumber >= p.startWeek && w.weekNumber <= finishWeek)
+          .filter((w) => w.weekNumber >= p.startWeek && w.weekNumber <= throughWeek)
           .map((w) => {
             const payment = p.payments.find((pm) => pm.weekId === w.id) ?? null;
             return {
@@ -141,6 +192,12 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
             .map((e) => ({ amount: e.amount, weekNumber: e.pinnedWeek?.weekNumber ?? null })),
         ),
       });
+
+    const owedBy: OwingMember[] = [];
+    const aheadBy: AheadMember[] = [];
+    for (const p of active) {
+      const finishWeek = calculateFinishWeek(p.startWeek, p.weeksCommitted);
+      const standing = standingFor(p, finishWeek);
       const name = p.person.nameEnglishFirst;
       if (standing.amountOutstanding > 0) {
         owedBy.push({ participationId: p.id, name, amount: standing.amountOutstanding });
@@ -159,7 +216,50 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
       }
     }
 
-    const collection = collectionPosition({ series, owedBy, aheadBy });
+    // MEMBERS WHO HAVE STOPPED — reported apart from members who are behind.
+    // One will pay and one will not; a screen that shows them together tells
+    // the organizer he is waiting on money nobody is going to send.
+    const paidOutTo = new Map<string, number>();
+    for (const p of payouts) {
+      if (p.status !== "COLLECTED" || !p.luckyNumber) continue;
+      const id = p.luckyNumber.participationId;
+      paidOutTo.set(id, (paidOutTo.get(id) ?? 0) + p.netAmount);
+    }
+    const stoppedBy: StoppedMember[] = stopped.map((p) => {
+      // The last week they were counted: the week before their OPEN break.
+      const closedAtWeek = effectiveFinishWeek({
+        startWeek: p.startWeek,
+        weeksCommitted: p.weeksCommitted,
+        breaks: breaksOf(p),
+      });
+      const alreadyPaidOut = paidOutTo.get(p.id) ?? 0;
+      const amountLeaving =
+        weeksLeavingExpectation({
+          startWeek: p.startWeek,
+          weeksCommitted: p.weeksCommitted,
+          closingAtWeek: closedAtWeek,
+        }) * p.weeklyAmount;
+      return {
+        participationId: p.id,
+        name: p.person.nameEnglishFirst,
+        closedAtWeek,
+        // Derived, never read back from the ledger entry written at close
+        // time (2.14). If they later pay one of those weeks, this figure
+        // drops on its own and no stored number has to be corrected.
+        balanceRecorded: standingFor(p, closedAtWeek).amountOutstanding,
+        amountLeaving,
+        alreadyPaidOut,
+        // Only money already HANDED OVER leaves a hole. A PENDING payout has
+        // not left his hands, so there is nothing yet to cover.
+        shortfallToCover: alreadyPaidOut > 0 ? amountLeaving : 0,
+        reason: closeReasonText(
+          isCloseReason(p.closeReason) ? p.closeReason : "OTHER",
+          p.closeNote,
+        ),
+      };
+    });
+
+    const collection = collectionPosition({ series, owedBy, aheadBy, stoppedBy });
     const cash = cashPosition({
       payments: flatPayments.map((p) => ({ amountPaid: p.amountPaid })),
       payouts: payouts.map((p) => ({ netAmount: p.netAmount, status: p.status })),

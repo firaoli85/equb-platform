@@ -117,8 +117,25 @@ export default async function PersonPage({
   });
   if (!person) notFound();
 
-  const active =
-    person.participations.find((p) => p.status === "ACTIVE" && p.cycle.status === "ACTIVE") ?? null;
+  // THEIR RECORD IN THE LIVE CYCLE — whether or not they are still
+  // contributing.
+  //
+  // This used to require `p.status === "ACTIVE"`, so the moment a member
+  // stopped their entire record disappeared from this page: no receipts, no
+  // weeks, no lucky numbers, and no way to say "they are contributing again".
+  // 2.18 is explicit that closed members stay VISIBLE and keep their record —
+  // "dignity, and a useful record for them" — and a close that cannot be seen
+  // also cannot be reversed.
+  const active = person.participations.find((p) => p.cycle.status === "ACTIVE") ?? null;
+  /** Where they stopped, for the panel that offers the way back. */
+  const closedState =
+    active && active.status === "CLOSED"
+      ? {
+          atWeek: active.closedAtWeek,
+          reason: active.closeReason,
+          note: active.closeNote,
+        }
+      : null;
 
   const [standing, catchUp] = active
     ? await Promise.all([getMemberStanding(active.id), getCatchUpWeeks(active.id)])
@@ -677,6 +694,7 @@ export default async function PersonPage({
                   cycleName: active.cycle.name,
                   unitAmount: active.cycle.unitAmount,
                   feePercent: active.cycle.feePercent,
+                  closed: closedState,
                 }}
                 luckyNumbers={active.luckyNumbers.map((n) => ({
                   id: n.id,
@@ -809,6 +827,7 @@ export default async function PersonPage({
                     cycleName: active.cycle.name,
                     unitAmount: active.cycle.unitAmount,
                     feePercent: active.cycle.feePercent,
+                    closed: closedState,
                   }}
                   luckyNumbers={active.luckyNumbers.map((n) => ({
                     id: n.id,

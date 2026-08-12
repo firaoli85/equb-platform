@@ -56,6 +56,11 @@ export const NAV_GROUPS: NavGroup[] = [
     eyebrow: "People",
     links: [
       { label: "Members", href: "/admin/people" },
+      // In the rail for the same reason "Close the cycle" is: adding a member
+      // creates a person, a participation and their lucky numbers, and can
+      // surface a balance carried in from an earlier cycle. An action with
+      // that much behind it is not a form at the bottom of a list.
+      { label: "Add a member", href: "/admin/cycle/add" },
       { label: "Messages", href: "/admin/messages" },
     ],
   },
@@ -185,6 +190,15 @@ export function NavIcon({ href }: { href: string }) {
       return (
         <svg {...common}>
           <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      );
+    // A person with a plus — the same figure as the directory above it, so the
+    // pair reads as "the people" and "add one" rather than two unrelated ideas.
+    case "/admin/cycle/add":
+      return (
+        <svg {...common}>
+          <path d="M13 20H2v-2a5 5 0 019.288-2.572M13 20h-2M9 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path d="M18 13v6M15 16h6" />
         </svg>
       );
     case "/admin/cycle":

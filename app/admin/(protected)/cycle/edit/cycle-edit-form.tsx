@@ -112,9 +112,16 @@ export function CycleEditForm({
         <>
           {weeksChanged &&
             (plannedWeeks > cycle.plannedWeeks ? (
+              // Growing the cycle creates rows; it does NOT lengthen anybody's
+              // commitment. Saying only "the new weeks are created" left the
+              // organizer to guess whether he had just signed 27 people up for
+              // more weeks. He had not.
               <p>
-                Planned weeks grows {cycle.plannedWeeks} → {plannedWeeks}: the new weeks are
-                created.
+                Planned weeks grows {cycle.plannedWeeks} → {plannedWeeks}: weeks{" "}
+                {cycle.plannedWeeks + 1}
+                {plannedWeeks - cycle.plannedWeeks === 1 ? "" : `-${plannedWeeks}`} are created.
+                No member&apos;s commitment changes — nobody is signed up for the extra weeks, and
+                they owe nothing for them unless you extend them one at a time.
               </p>
             ) : (
               <p>
