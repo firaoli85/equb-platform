@@ -227,8 +227,10 @@ export async function sendToMember(input: { participationId: string; key: string
       ok: true as const,
       data: {
         status: outcome.status,
+        // ACCEPTED carries no reason: nothing went wrong, Twilio simply has
+        // not said anything yet. The UI words that state for itself.
         reason:
-          outcome.status === "SENT"
+          outcome.status === "SENT" || outcome.status === "ACCEPTED"
             ? null
             : outcome.status === "SKIPPED"
               ? outcome.reason

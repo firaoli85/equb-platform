@@ -36,9 +36,33 @@ import {
   WHATSAPP_DISABLED_REASON,
   WHATSAPP_STATEMENTS_BLOCKED_REASON,
 } from "./settings";
+import { classifyTwilioStatus, type DeliveryClass } from "./twilio-status";
 
 const VERIFY_BASE = "https://verify.twilio.com/v2/Services";
 const API_BASE = "https://api.twilio.com/2010-04-01";
+
+/** Where Twilio posts delivery updates. Must match the webhook route. */
+export const STATUS_CALLBACK_PATH = "/api/twilio/status";
+
+/**
+ * The public URL Twilio will POST delivery updates to, or null.
+ *
+ * REQUIRES A PUBLICLY REACHABLE URL. Twilio calls this from the internet, so
+ * it CANNOT fire against localhost — on a dev machine `APP_BASE_URL` is
+ * normally unset and no StatusCallback is sent at all. Everything still works;
+ * the rows simply stay ACCEPTED, which is the honest state for a message
+ * nobody has heard back about. To exercise it locally, point APP_BASE_URL at a
+ * tunnel (ngrok/cloudflared).
+ *
+ * Returns null rather than a half-formed URL: Twilio rejects a malformed
+ * StatusCallback outright, which would fail the send itself.
+ */
+export function statusCallbackUrl(): string | null {
+  const base = process.env.APP_BASE_URL?.trim().replace(/\/+$/, "");
+  if (!base) return null;
+  if (!/^https?:\/\//i.test(base)) return null;
+  return `${base}${STATUS_CALLBACK_PATH}`;
+}
 
 /**
  * ContentVariables did not match the template (Twilio 21656).
@@ -197,7 +221,21 @@ function failure(where: string, status: number, bodyText: string): WhatsAppSendR
 }
 
 export type WhatsAppSendResult =
-  | { ok: true; sid: string; status: string }
+  | {
+      ok: true;
+      sid: string;
+      /** Twilio's RAW status word, carried through unchanged. */
+      status: string;
+      /**
+       * What that word means, classified once (lib/twilio-status.ts).
+       *
+       * "accepted" is the common case and the important one: Twilio has the
+       * message and has confirmed NOTHING about its fate. A caller that
+       * records this as delivered is making the claim that produced ten false
+       * SENT rows.
+       */
+      delivery: DeliveryClass;
+    }
   | {
       ok: false;
       error: string;
@@ -276,6 +314,8 @@ export async function sendWhatsAppMessage(args: {
     };
   }
 
+  const callbackUrl = statusCallbackUrl();
+
   try {
     const res = await fetch(`${API_BASE}/Accounts/${creds.value.sid}/Messages.json`, {
       method: "POST",
@@ -288,13 +328,68 @@ export async function sendWhatsAppMessage(args: {
         From: `whatsapp:${from}`,
         ContentSid: args.contentSid,
         ContentVariables: JSON.stringify(args.contentVariables),
+        // WITHOUT THIS THE PLATFORM CAN NEVER LEARN A MESSAGE FAILED.
+        //
+        // 63112 lands asynchronously, moments after the 201 that says
+        // "queued". No callback meant no second word from Twilio, ever — so a
+        // row written as SENT stayed SENT while Twilio's own records said
+        // failed and billed. Ten rows did exactly that.
+        //
+        // Omitted entirely when no public base URL is set, rather than sent as
+        // a broken value: Twilio rejects a malformed StatusCallback and the
+        // whole send fails, which would turn "no delivery reporting" into "no
+        // delivery". See statusCallbackUrl.
+        ...(callbackUrl ? { StatusCallback: callbackUrl } : {}),
       }).toString(),
     });
     const text = await res.text();
     if (!res.ok) return failure("statement send", res.status, text);
-    const parsed = JSON.parse(text) as { sid?: string; status?: string };
-    // The provider SID is what makes a log row traceable back to Twilio.
-    return { ok: true, sid: parsed.sid ?? "", status: parsed.status ?? "queued" };
+
+    const parsed = JSON.parse(text) as {
+      sid?: string;
+      status?: string;
+      error_code?: number | null;
+      error_message?: string | null;
+    };
+
+    // A 2xx IS NOT A DELIVERY, and this is where that was lost. Twilio answers
+    // 201 Created with status:"queued" for a message it has merely accepted,
+    // and can answer 2xx with status:"failed" outright. `res.ok` alone treated
+    // both as success.
+    const delivery = classifyTwilioStatus(parsed.status);
+
+    if (delivery === "failed") {
+      // Failed IN THE IMMEDIATE RESPONSE. Twilio already knows, so the code
+      // and message are on the body rather than arriving by callback later.
+      const code = parsed.error_code ?? null;
+      const detail = parsed.error_message?.trim();
+      if (isMetaDisabledError(code)) {
+        console.error(
+          `WhatsApp statement send: Meta has disabled the WhatsApp Business Account ` +
+            `(Twilio ${META_DISABLED_WABA_CODE}). Not retrying — while this lasts no send can succeed.`,
+        );
+      }
+      return {
+        ok: false,
+        error:
+          `Twilio refused the message immediately (status "${parsed.status}"` +
+          (code ? `, code ${code}` : "") +
+          `)${detail ? `: ${detail}` : ""}. Nothing reached the member.`,
+        code,
+        // A refusal Twilio made up front is about THIS message, so a retry of
+        // the identical message repeats it.
+        permanent: true,
+      };
+    }
+
+    // The provider SID is what makes a log row traceable back to Twilio, and
+    // what the status callback matches on.
+    return {
+      ok: true,
+      sid: parsed.sid ?? "",
+      status: parsed.status ?? "queued",
+      delivery,
+    };
   } catch (e) {
     // A network throw is NOT permanent — the same message may well send later.
     return {

@@ -25,6 +25,8 @@ type Row = {
 
 type Outcome =
   | { status: "SENT"; body: string }
+  /** Twilio has it; delivery is unconfirmed until a status callback lands. */
+  | { status: "ACCEPTED"; body: string }
   | { status: "FAILED"; body: string; error: string }
   | { status: "SKIPPED"; reason: string };
 

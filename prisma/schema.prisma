@@ -555,8 +555,23 @@ enum MessageTrigger {
 }
 
 enum MessageSendStatus {
-  /** Accepted by the provider (Twilio) for delivery. */
+  /**
+   * DELIVERY THE PROVIDER HAS CONFIRMED. Nothing else may be written as SENT.
+   *
+   * This used to mean "accepted by Twilio", and that conflation is what let
+   * ten rows read SENT while Twilio's own records showed all ten failed with
+   * 63112 and billed. Twilio answers a create with 201 + status:"queued",
+   * which is acceptance, not delivery; the refusal arrives asynchronously.
+   */
   SENT
+  /**
+   * Twilio has the message and has confirmed NOTHING about its fate.
+   *
+   * The honest resting state for a send whose callback has not arrived — and
+   * the state every message stays in when no public APP_BASE_URL is set, since
+   * Twilio cannot reach localhost.
+   */
+  ACCEPTED
   /** The provider refused it — error records why. */
   FAILED
 }

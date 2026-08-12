@@ -126,10 +126,14 @@ export function AllocationEntry({
         confirmation === null
           ? " WhatsApp confirmation was not attempted (internal error — see the message log)."
           : confirmation.status === "SENT"
-            ? " WhatsApp confirmation sent."
-            : confirmation.status === "SKIPPED"
-              ? ` No WhatsApp confirmation: ${confirmation.reason}`
-              : ` WhatsApp confirmation FAILED: ${confirmation.error}`;
+            ? " WhatsApp confirmation delivered."
+            : // Twilio took it and has confirmed nothing. Saying "sent" here is
+              // exactly the claim that produced ten false SENT rows.
+              confirmation.status === "ACCEPTED"
+              ? " WhatsApp confirmation accepted by Twilio — delivery not yet confirmed."
+              : confirmation.status === "SKIPPED"
+                ? ` No WhatsApp confirmation: ${confirmation.reason}`
+                : ` WhatsApp confirmation FAILED: ${confirmation.error}`;
       const message = `✓ Recorded ${formatMoney(result.data.totalApplied)} for ${memberName} — ${describeAllocation({ allocations: result.data.allocations, unallocated: 0 })}.${confirmationNote}`;
       setSaved(message);
       setPreview(null);

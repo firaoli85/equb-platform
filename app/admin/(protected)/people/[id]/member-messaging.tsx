@@ -114,15 +114,27 @@ export function MemberMessaging({
                           className={`text-sm ${
                             result.status === "SENT"
                               ? "text-emerald-700 dark:text-emerald-400"
-                              : "text-amber-800 dark:text-amber-300"
+                              : result.status === "ACCEPTED"
+                                ? "text-gray-700 dark:text-gray-300"
+                                : "text-amber-800 dark:text-amber-300"
                           }`}
                         >
-                          {/* A SKIP IS NOT A FAILURE AND IS NOT A SUCCESS. The
+                          {/* THREE OUTCOMES, THREE SENTENCES (2.10).
+                              This said "Sent." for anything Twilio accepted —
+                              and Twilio accepts with 201/"queued" before it
+                              knows anything. Ten messages were reported as
+                              delivered while Twilio's own records showed all
+                              ten failed with 63112. "Accepted" is now its own
+                              state, worded so it cannot be read as delivery.
+
+                              A SKIP IS NOT A FAILURE AND IS NOT A SUCCESS: the
                               organizer pressed send and nothing left; he is
                               told which, in the engine's own words. */}
                           {result.status === "SENT"
-                            ? "Sent."
-                            : `Not sent — ${result.reason ?? "no reason given."}`}
+                            ? "Delivered."
+                            : result.status === "ACCEPTED"
+                              ? "Accepted by Twilio — not yet confirmed delivered."
+                              : `Not sent — ${result.reason ?? "no reason given."}`}
                         </p>
                       )}
                     </div>
@@ -187,8 +199,23 @@ export function MemberMessaging({
                     <Pill tone={entry.trigger === "AUTOMATIC" ? "accent" : "neutral"}>
                       {entry.trigger === "AUTOMATIC" ? "Automatic" : "Manual"}
                     </Pill>
-                    <Pill tone={entry.status === "SENT" ? "good" : "problem"}>
-                      {entry.status === "SENT" ? "Sent" : entry.status}
+                    {/* ACCEPTED is neither good nor a problem — it is unknown,
+                        so it must not wear the green that means delivered nor
+                        the red that means refused. */}
+                    <Pill
+                      tone={
+                        entry.status === "SENT"
+                          ? "good"
+                          : entry.status === "ACCEPTED"
+                            ? "neutral"
+                            : "problem"
+                      }
+                    >
+                      {entry.status === "SENT"
+                        ? "Delivered"
+                        : entry.status === "ACCEPTED"
+                          ? "Accepted"
+                          : entry.status}
                     </Pill>
                     <span className="ml-auto text-xs tabular-nums text-gray-600 dark:text-gray-400">
                       {new Date(entry.createdAt).toLocaleString("en-US", {

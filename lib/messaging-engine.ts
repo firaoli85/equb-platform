@@ -31,6 +31,7 @@ import {
 
 import { computeStanding, pinnedMapFromEvents, type Standing } from "./standing";
 import { sendWhatsAppMessage } from "./whatsapp";
+import { loggedStatusFor } from "./twilio-status";
 import {
   APPROVED_TEMPLATES,
   buildContentVariables,
@@ -179,7 +180,15 @@ export async function loadTemplates() {
 }
 
 export type SendOutcome =
+  /** Twilio CONFIRMED delivery. Never written for a mere acceptance. */
   | { status: "SENT"; body: string }
+  /**
+   * Twilio has it and has confirmed nothing. The ordinary outcome of a send,
+   * and the one the UI must not describe as delivered — a status callback
+   * decides its fate later, or nothing ever does when no public APP_BASE_URL
+   * is configured.
+   */
+  | { status: "ACCEPTED"; body: string }
   | { status: "FAILED"; body: string; error: string }
   | { status: "SKIPPED"; reason: string };
 
@@ -326,6 +335,17 @@ async function deliver(input: {
     contentVariables: variables.variables,
     body,
   });
+  // What Twilio told us, classified once. "accepted" is the ordinary answer.
+  //
+  // Narrowed to the two NON-failure states on purpose: sendWhatsAppMessage
+  // already turned an immediate status:"failed" into ok:false, so nothing
+  // reaching here with ok:true can classify as FAILED.
+  const logged: "SENT" | "ACCEPTED" = result.ok
+    ? loggedStatusFor(result.status) === "SENT"
+      ? "SENT"
+      : "ACCEPTED"
+    : "ACCEPTED";
+
   await prisma.messageLog.create({
     data: {
       personId: person.id,
@@ -336,14 +356,21 @@ async function deliver(input: {
       toPhone: to,
       // IMPORT never reaches this point — the gate refuses it above.
       trigger: input.trigger === "AUTOMATIC" ? "AUTOMATIC" : "MANUAL",
-      status: result.ok ? "SENT" : "FAILED",
+      // ACCEPTED, NOT SENT, unless Twilio actually confirmed delivery.
+      //
+      // This line read `result.ok ? "SENT" : "FAILED"`, which recorded a 201 +
+      // status:"queued" — acceptance — as delivery. Ten rows said SENT while
+      // Twilio's records said failed/63112/billed. `result.delivery` is the
+      // classification of Twilio's own status word, so SENT is now only ever
+      // written for something Twilio called sent or delivered.
+      status: result.ok ? logged : "FAILED",
       providerSid: result.ok ? result.sid : null,
       error: result.ok ? null : result.error,
     },
   });
 
   return result.ok
-    ? { status: "SENT", body }
+    ? { status: logged, body }
     : { status: "FAILED", body, error: result.error };
 }
 

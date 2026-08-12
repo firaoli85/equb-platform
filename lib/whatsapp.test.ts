@@ -76,7 +76,14 @@ describe("statements now SEND — but only as an approved template", () => {
     const { sendWhatsAppMessage } = await freshModule();
 
     const result = await sendWhatsAppMessage(SEND);
-    expect(result).toEqual({ ok: true, sid: "SM123", status: "queued" });
+    // `delivery` is part of the contract now: "queued" is Twilio ACCEPTING the
+    // message, and the caller must be able to tell that from delivery.
+    expect(result).toEqual({
+      ok: true,
+      sid: "SM123",
+      status: "queued",
+      delivery: "accepted",
+    });
 
     const sent = new URLSearchParams(calls[0].body);
     expect(calls[0].url).toContain("api.twilio.com");
@@ -323,5 +330,123 @@ describe("Twilio 63112 — Meta disabled the Business Account", () => {
     const result = await sendWhatsAppVerification("+12405550187");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.permanent).not.toBe(true);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// A 201 IS NOT A DELIVERY.
+//
+// Ten rows read SENT while Twilio's records showed all ten failed with 63112,
+// billed. Twilio answers a create with 201 Created + status:"queued", which is
+// ACCEPTANCE; the refusal lands asynchronously. `res.ok` alone treated every
+// one of those as success.
+// ————————————————————————————————————————————————————————————————
+
+describe("the immediate response status is read, not just the HTTP code", () => {
+  function respond(status: number, body: unknown) {
+    vi.stubGlobal("fetch", vi.fn(async () => twilioResponse(status, body)));
+  }
+
+  it('201 with status:"queued" is ACCEPTED — not delivered', async () => {
+    respond(201, { sid: "MM123", status: "queued" });
+    const { sendWhatsAppMessage } = await freshModule();
+
+    const result = await sendWhatsAppMessage(SEND);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.status).toBe("queued");
+      // THE ASSERTION THAT WOULD HAVE CAUGHT THE BUG.
+      expect(result.delivery).toBe("accepted");
+      expect(result.delivery).not.toBe("delivered");
+    }
+  });
+
+  it('201 with status:"failed" and a code is FAILED, not SENT', async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    respond(201, {
+      sid: "MM123",
+      status: "failed",
+      error_code: 63112,
+      error_message: "Channel Sender is disabled",
+    });
+    const { sendWhatsAppMessage } = await freshModule();
+
+    const result = await sendWhatsAppMessage(SEND);
+    // A 2xx that says "failed" is a failure. res.ok was the whole test before.
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe(63112);
+      expect(result.permanent).toBe(true);
+      expect(result.error).toContain("63112");
+      expect(result.error).toContain("Channel Sender is disabled");
+    }
+  });
+
+  it('201 with status:"undelivered" is also a failure', async () => {
+    respond(201, { sid: "MM123", status: "undelivered", error_code: 63024 });
+    const { sendWhatsAppMessage } = await freshModule();
+    const result = await sendWhatsAppMessage(SEND);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe(63024);
+  });
+
+  it('201 with status:"delivered" is the only shape that means delivered', async () => {
+    respond(201, { sid: "MM123", status: "delivered" });
+    const { sendWhatsAppMessage } = await freshModule();
+    const result = await sendWhatsAppMessage(SEND);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.delivery).toBe("delivered");
+  });
+
+  it("an unrecognised status is accepted, never delivered", async () => {
+    respond(201, { sid: "MM123", status: "wibble" });
+    const { sendWhatsAppMessage } = await freshModule();
+    const result = await sendWhatsAppMessage(SEND);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.delivery).toBe("accepted");
+  });
+});
+
+describe("StatusCallback — the only way to hear a message failed", () => {
+  it("is sent with the message when APP_BASE_URL is public", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://equb.example.com");
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_u: string, init: { body: string }) => {
+        bodies.push(String(init.body));
+        return twilioResponse(201, { sid: "MM123", status: "queued" });
+      }),
+    );
+    const { sendWhatsAppMessage } = await freshModule();
+
+    await sendWhatsAppMessage(SEND);
+    const sent = new URLSearchParams(bodies[0]);
+    expect(sent.get("StatusCallback")).toBe("https://equb.example.com/api/twilio/status");
+  });
+
+  it("is OMITTED rather than malformed when no base URL is set", async () => {
+    // Twilio rejects a malformed StatusCallback outright, which would turn
+    // "no delivery reporting" into "no delivery".
+    vi.stubEnv("APP_BASE_URL", "");
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_u: string, init: { body: string }) => {
+        bodies.push(String(init.body));
+        return twilioResponse(201, { sid: "MM123", status: "queued" });
+      }),
+    );
+    const { sendWhatsAppMessage } = await freshModule();
+
+    const result = await sendWhatsAppMessage(SEND);
+    expect(result.ok).toBe(true);
+    expect(new URLSearchParams(bodies[0]).get("StatusCallback")).toBeNull();
+  });
+
+  it("is omitted for a non-http value rather than sent as garbage", async () => {
+    vi.stubEnv("APP_BASE_URL", "localhost:3000");
+    const { statusCallbackUrl } = await freshModule();
+    expect(statusCallbackUrl()).toBeNull();
   });
 });

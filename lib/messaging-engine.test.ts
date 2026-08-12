@@ -281,17 +281,20 @@ describe("deliver() end to end", () => {
     return { outcome, calls };
   }
 
-  it("PAYMENT_CONFIRMED writes a SENT log row carrying the provider SID", async () => {
+  // ACCEPTED, not SENT — twilioOk() answers 201 with status:"queued", which is
+  // Twilio taking the message, not delivering it. This test asserted SENT and
+  // was right about the old behaviour; that behaviour is the bug.
+  it("PAYMENT_CONFIRMED writes an ACCEPTED log row carrying the provider SID", async () => {
     const { outcome, calls } = await send("PAYMENT_CONFIRMED", {
       amountReceived: 75_000,
       weeksCovered: [4, 5, 6],
     });
-    expect(outcome.status).toBe("SENT");
+    expect(outcome.status).toBe("ACCEPTED");
     expect(calls).toHaveLength(1);
 
     const row = messageLogCreate.mock.calls[0][0] as { data: Record<string, unknown> };
     expect(row.data.templateKey).toBe("PAYMENT_CONFIRMED");
-    expect(row.data.status).toBe("SENT");
+    expect(row.data.status).toBe("ACCEPTED");
     expect(row.data.providerSid).toBe("SM_REAL");
     expect(row.data.error).toBeNull();
     expect(row.data.toPhone).toBe("+12405550187");
@@ -309,7 +312,7 @@ describe("deliver() end to end", () => {
         drawnWeek: 12,
         payoutNet: 980_000,
       });
-      expect(outcome.status, key).toBe("SENT");
+      expect(outcome.status, key).toBe("ACCEPTED");
       const sent = new URLSearchParams(calls[0]);
       expect(sent.get("ContentSid"), key).toBe(APPROVED_TEMPLATES[key].contentSid);
       expect(sent.get("Body"), key).toBeNull();
@@ -373,5 +376,71 @@ describe("deliver() end to end", () => {
     expect(row.data.status).toBe("FAILED");
     expect(row.data.providerSid).toBeNull();
     expect(String(row.data.error)).toContain("21656");
+  });
+});
+
+describe("deliver() records ACCEPTED, never a delivery it has not observed", () => {
+  it('a 201 with status:"queued" writes ACCEPTED to MessageLog', async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => twilioOk()),
+    );
+    const { sendStatement } = await engine();
+    const outcome = await sendStatement({
+      participationId: "p1",
+      key: "BEHIND_NOTICE",
+      trigger: "MANUAL",
+    });
+
+    // THE ROW THAT USED TO SAY SENT. Ten of them did, while Twilio's records
+    // showed failed/63112/billed.
+    expect(outcome.status).toBe("ACCEPTED");
+    const row = messageLogCreate.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(row.data.status).toBe("ACCEPTED");
+    expect(row.data.providerSid).toBe("SM_REAL");
+    expect(row.data.error).toBeNull();
+  });
+
+  it('a 201 with status:"delivered" is the only thing that writes SENT', async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 201,
+        text: async () => JSON.stringify({ sid: "SM_REAL", status: "delivered" }),
+      })),
+    );
+    const { sendStatement } = await engine();
+    const outcome = await sendStatement({
+      participationId: "p1",
+      key: "BEHIND_NOTICE",
+      trigger: "MANUAL",
+    });
+    expect(outcome.status).toBe("SENT");
+    const row = messageLogCreate.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(row.data.status).toBe("SENT");
+  });
+
+  it('a 201 with status:"failed" writes FAILED with the code, not SENT', async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 201,
+        text: async () =>
+          JSON.stringify({ sid: "SM_REAL", status: "failed", error_code: 63112 }),
+      })),
+    );
+    const { sendStatement } = await engine();
+    const outcome = await sendStatement({
+      participationId: "p1",
+      key: "BEHIND_NOTICE",
+      trigger: "MANUAL",
+    });
+    expect(outcome.status).toBe("FAILED");
+    const row = messageLogCreate.mock.calls[0][0] as { data: Record<string, unknown> };
+    expect(row.data.status).toBe("FAILED");
+    expect(String(row.data.error)).toContain("63112");
   });
 });

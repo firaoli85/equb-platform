@@ -1,0 +1,19 @@
+-- ACCEPTED: Twilio has the message and has confirmed nothing about its fate.
+--
+-- WHY THIS VALUE EXISTS. MessageSendStatus had only SENT and FAILED, and SENT
+-- was written the moment Twilio answered 201 Created. But 201 means ACCEPTED
+-- FOR DELIVERY, not delivered — Twilio applies a refusal like 63112
+-- asynchronously, moments later. Ten rows were therefore recorded as SENT
+-- while Twilio's own records showed all ten as failed, error_code 63112, and
+-- billed. The platform reported delivery for messages that never left Twilio.
+--
+-- SENT now means delivery the provider has CONFIRMED. Everything Twilio has
+-- merely taken is ACCEPTED until a status callback says otherwise.
+--
+-- Additive and safe to run against live data: adding a value to a Postgres
+-- enum rewrites nothing and invalidates no existing row. Existing SENT rows
+-- keep their value — correcting the ten false ones is a separate, explicit
+-- step (scripts/reconcile-message-status.mts), because rewriting history
+-- automatically inside a schema migration is not something a migration should
+-- ever do.
+ALTER TYPE "MessageSendStatus" ADD VALUE IF NOT EXISTS 'ACCEPTED';
