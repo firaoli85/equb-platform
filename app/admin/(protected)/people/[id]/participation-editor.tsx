@@ -17,6 +17,7 @@ import { FeeCalculator } from "@/components/admin/fee-calculator";
 import { CloseParticipation } from "@/components/admin/close-participation";
 import { RemoveFromCycle } from "@/components/admin/remove-from-cycle";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
@@ -181,6 +182,22 @@ export function ParticipationEditor(props: {
   const [weeklyDollars, setWeeklyDollars] = useState(String(participation.weeklyAmount / 100));
   const [startWeek, setStartWeek] = useState(String(participation.startWeek));
   const [weeks, setWeeks] = useState(String(participation.weeksCommitted));
+
+  // §2.10, beats 1–3. The confirmation belongs to the Save BUTTON, not to the
+  // page — see the note at the control itself for what went wrong.
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+  /**
+   * What is stored right now, as the form sees it.
+   *
+   * Seeded from the props and moved forward on every successful save, so
+   * "dirty" keeps meaning "different from what is saved" across repeated
+   * edits — not just "different from what the page loaded with".
+   */
+  const [savedShape, setSavedShape] = useState({
+    weeklyAmount: participation.weeklyAmount,
+    startWeek: participation.startWeek,
+    weeksCommitted: participation.weeksCommitted,
+  });
   // THE OVERRIDE STARTS WHERE THE MEMBER ALREADY IS.
   //
   // This was `useState(false)`, unconditionally — so a member whose commitment
@@ -227,6 +244,12 @@ export function ParticipationEditor(props: {
 
   const startWeekNum = parseWeekField(startWeek);
   const weeksNum = parseWeekField(weeks);
+
+  /** Beat 1: the Save is dead until something actually differs from stored. */
+  const participationDirty =
+    parseDollarsToCents(weeklyDollars) !== savedShape.weeklyAmount ||
+    startWeekNum !== savedShape.startWeek ||
+    weeksNum !== savedShape.weeksCommitted;
   const cycleStart = new Date(participation.cycleStartDate);
   const storedDates = useMemo(
     () => storedWeekDates(participation.cycleWeeks),
@@ -277,6 +300,7 @@ export function ParticipationEditor(props: {
     if (!input) return;
     setBanner(null);
     setBusy(true);
+    setSaveState({ kind: "saving" });
     try {
       const result = await updateParticipation(
         withSettlement ? { ...input, settlement: withSettlement } : input,
@@ -285,16 +309,34 @@ export function ParticipationEditor(props: {
         setSettlement(null);
         setTypedName("");
         setReturnedDollars("");
-        setBanner({ kind: "ok", text: "✓ Participation saved — receipts re-allocated." });
+        // SAY WHAT CHANGED, not merely that something did. "Saved" leaves him
+        // checking; naming the new shape IS the confirmation (§2.10).
+        setSaveState({
+          kind: "ok",
+          message:
+            `Saved — ${formatMoney(input.weeklyAmount)}/week, weeks ${input.startWeek} to ` +
+            `${calculateFinishWeek(input.startWeek, input.weeksCommitted)}. Receipts re-allocated.`,
+        });
+        // The form is clean against what is NOW stored, so the button goes
+        // dead until something changes again — beat 1 of rule 6.
+        setSavedShape({
+          weeklyAmount: input.weeklyAmount,
+          startWeek: input.startWeek,
+          weeksCommitted: input.weeksCommitted,
+        });
         router.refresh();
       } else if ("needsSettlement" in result && result.needsSettlement) {
+        setSaveState({ kind: "idle" });
         setSettlement(result.needsSettlement);
         setChoice(result.needsSettlement.gap > 0 ? "returned" : "credit");
       } else {
-        setBanner({ kind: "err", text: `Not saved: ${result.error}` });
+        setSaveState({ kind: "err", message: `Not saved: ${result.error}` });
       }
     } catch {
-      setBanner({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
+      setSaveState({
+        kind: "err",
+        message: "Could not reach the server — nothing was confirmed.",
+      });
     } finally {
       setBusy(false);
     }
@@ -604,9 +646,27 @@ export function ParticipationEditor(props: {
           }
         />
         <div className="flex flex-wrap items-center gap-3">
-          <button type="button" onClick={saveParticipation} disabled={busy} className={buttonCls.primary}>
-            Save participation
-          </button>
+          {/* THE REPORTED DEFECT (§2.10). He changed the weeks from 10 to 12,
+              pressed this, and saw nothing. The save worked and the
+              confirmation rendered — 100 lines of JSX ABOVE, at the top of a
+              form holding the amount, the start week, the weeks field, two
+              checkboxes, the cap message and the fee calculator. He was
+              looking at the button.
+
+              SaveButton owns the feedback so it cannot be put anywhere else:
+              the confirmation renders beside the control that caused it, the
+              label carries the working state, and the button is dead until
+              something has actually changed. */}
+          <SaveButton
+            state={saveState}
+            onSave={saveParticipation}
+            onStateSettled={() => setSaveState({ kind: "idle" })}
+            label="Save participation"
+            savingLabel="Saving…"
+            dirty={participationDirty}
+            disabled={busy}
+            notDirtyHint="Nothing has changed — the weekly amount, start week and weeks committed all match what is saved."
+          />
           {/* SOMEONE STOPPING IS THE ORDINARY CASE, so it sits first and is
               not styled as a danger. Shortening their weeks used to be the
               only way to say it, and that is the expensive way: it deletes
@@ -1032,6 +1092,19 @@ function EventRow({
   const [receivedAt, setReceivedAt] = useState(event.receivedAt.slice(0, 10));
   const [notes, setNotes] = useState(event.notes ?? "");
   const router = useRouter();
+  /**
+   * Beat 1 of rule 6: dead until the row differs from the stored receipt.
+   *
+   * It was gated on `busy` alone. Pressing Save on an untouched row rewrote
+   * the receipt with its own values and wrote an audit entry recording a
+   * change that had not happened — on the append-only log, where a wrong entry
+   * can only be answered by another entry (rule 15).
+   */
+  const rowDirty =
+    parseDollarsToCents(dollars) !== event.amount ||
+    method !== (event.method ?? "") ||
+    receivedAt !== event.receivedAt.slice(0, 10) ||
+    notes !== (event.notes ?? "");
   // Structural, from the server (pinnedWeekId + settlementPayoutId). This used
   // to sniff the notes for "settled from the payout" — and the Save button on
   // this same row can empty the notes, so one ordinary edit made a settlement
@@ -1087,7 +1160,8 @@ function EventRow({
       <td className="whitespace-nowrap py-1.5">
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || !rowDirty}
+          title={!busy && !rowDirty ? "Nothing has changed in this receipt." : undefined}
           onClick={() => {
             const cents = parseDollarsToCents(dollars);
             if (cents === null || cents < 1) return;

@@ -323,10 +323,23 @@ export function MemberPayments({
             memberName={memberName}
             defaultAmountCents={outstanding > 0 ? outstanding : undefined}
             onSaved={(message) => {
-              // The entry unmounts on save — its confirmation must not be
-              // lost with it (2.10).
+              // THE PANEL STAYS OPEN, and that IS the fix.
+              //
+              // It used to close here. AllocationEntry already renders its own
+              // confirmation 24 lines under its own commit button — exactly
+              // where rule 6 wants it — and closing destroyed that element in
+              // the same batched render, so it never painted. The replacement
+              // copy was hoisted to `saved` below, ~190 lines and a whole week
+              // table away. The loss was noticed; the replacement was put
+              // somewhere he was not looking.
+              //
+              // That message is the ONLY place the WhatsApp outcome appears
+              // ("accepted by Twilio — delivery not yet confirmed"), so the
+              // sentence most likely to matter was guaranteed to be off-screen.
+              //
+              // Leaving it open also suits the job: recording several weeks
+              // for one member is the common case, and he closes it himself.
               setSaved(message);
-              setOpenEntry(false);
               router.refresh();
             }}
           />

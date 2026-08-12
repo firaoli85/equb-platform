@@ -436,6 +436,15 @@ function PayoutLine({
   const [net, setNet] = useState(String(p.netAmount / 100));
   const [notes, setNotes] = useState(p.notes ?? "");
 
+  /** Beat 1 of rule 6: has anything actually changed from what is stored? */
+  const editDirty =
+    method !== (p.method ?? "ZELLE") ||
+    date !== (p.paidAt ?? new Date().toISOString().slice(0, 10)) ||
+    parseDollarsToCents(gross) !== p.grossAmount ||
+    parseDollarsToCents(fee) !== p.feeAmount ||
+    parseDollarsToCents(net) !== p.netAmount ||
+    notes !== (p.notes ?? "");
+
   function saveEdit() {
     const grossC = parseDollarsToCents(gross);
     const feeC = parseDollarsToCents(fee);
@@ -776,7 +785,18 @@ function PayoutLine({
                 className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
               />
             </label>
-            <button type="button" onClick={saveEdit} disabled={busy} className={buttonCls.secondary}>
+            {/* Beat 1: dead until something differs from the payout as
+                stored. This was gated on `busy` alone, so pressing Save on an
+                untouched drawer wrote the same six values back, moved the
+                payout's settlement arithmetic through updatePayout, and left
+                an audit entry recording a change that was not one. */}
+            <button
+              type="button"
+              onClick={saveEdit}
+              disabled={busy || !editDirty}
+              title={!busy && !editDirty ? "Nothing has changed in this payout." : undefined}
+              className={buttonCls.secondary}
+            >
               Save
             </button>
           </div>

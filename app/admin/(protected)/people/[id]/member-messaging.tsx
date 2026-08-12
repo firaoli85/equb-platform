@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { sendToMember, type MemberMessagingView } from "@/app/actions/member-messaging";
 import { Card, CardHeader, EmptyState, Pill } from "@/components/ui/primitives";
@@ -22,6 +23,7 @@ export function MemberMessaging({
   view: MemberMessagingView;
   personName: string;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [sendingKey, setSendingKey] = useState<string | null>(null);
   const [result, setResult] = useState<{ key: string; status: string; reason: string | null } | null>(
@@ -40,6 +42,16 @@ export function MemberMessaging({
         return;
       }
       setResult({ key, status: outcome.data.status, reason: outcome.data.reason });
+      // BEAT 3 IS TWO THINGS: say it happened, AND let the screen take on the
+      // new truth. The inline confirmation beside the button is exemplary, but
+      // "Already sent to them" below is a SERVER prop read at page load, and
+      // nothing here or in the action revalidated it — so the message just
+      // sent was absent from the very list that exists to answer "have I
+      // already chased them this week?". Send twice and neither appeared.
+      //
+      // Every other client component in this folder already does this; this
+      // was the one that did not.
+      router.refresh();
     });
   }
 

@@ -204,13 +204,17 @@ export function CashReadingPanel({
             </div>
 
             <div className="flex gap-2">
+              {/* Beat 2: the control says it is working. It read "Save this
+                  reading" throughout the round trip, so a slow save looked
+                  like a dead button and invited a second press. */}
               <button
                 type="button"
                 disabled={busy || totalCents === null}
+                aria-busy={busy}
                 onClick={() => void save()}
                 className={buttonCls.primary}
               >
-                Save this reading
+                {busy ? "Saving…" : "Save this reading"}
               </button>
               <button type="button" onClick={() => setOpen(false)} className={buttonCls.ghost}>
                 Cancel

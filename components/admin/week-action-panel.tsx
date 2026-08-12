@@ -173,7 +173,13 @@ export function WeekActionPanel({
         return;
       }
       const where = describeAllocation({ allocations: result.data.allocations, unallocated: 0 });
-      onSaved(`✓ Recorded ${formatMoney(result.data.totalApplied)} for ${target.memberName} — ${where}.`);
+      const message = `Recorded ${formatMoney(result.data.totalApplied)} for ${target.memberName} — ${where}.`;
+      // KEEP IT HERE TOO, not only in the parent. Every caller of this panel
+      // closed it on save and rendered the confirmation at the top of its own
+      // screen — the top of a 27×20 grid, or of a long member page. The cell
+      // he clicked was nowhere near it (§2.10, rule 6 beat 3).
+      setOk(message);
+      onSaved(`✓ ${message}`);
       setPreview(null);
       setKeyNonce((n) => n + 1);
     } catch {
@@ -296,7 +302,20 @@ export function WeekActionPanel({
       </div>
 
       {error && <Alert kind="err">Not recorded: {error}</Alert>}
-      {ok && <Alert kind="ok">{ok}</Alert>}
+      {/* THE CONFIRMATION FOR THIS PANEL, INSIDE IT (§2.10, rule 6 beat 3).
+          `ok` already existed and only ever carried "Note saved."; a recorded
+          PAYMENT went straight to the host, which closed the panel and drew
+          the message at the top of its own screen — the top of a 27×20 grid,
+          or of a long member page. The cell he clicked was nowhere near it. */}
+      {ok && (
+        <p
+          role="status"
+          data-testid="save-ok"
+          className="rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm font-semibold text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+        >
+          ✓ {ok.replace(/^✓\s*/, "")}
+        </p>
+      )}
 
       {/* ————— Record: prefilled to this week's due, editable for a partial ————— */}
       {!detail?.weekIsSkipped && (

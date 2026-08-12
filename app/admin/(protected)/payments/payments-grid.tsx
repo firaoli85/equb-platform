@@ -341,8 +341,11 @@ export function PaymentsGrid({
               key={`${open.participationId}-${open.weekNumber}`}
               target={target}
               onSaved={(message) => {
+                // THE PANEL STAYS OPEN. Closing it destroyed the confirmation
+                // it now renders inside itself, and the hoisted copy landed at
+                // the top of the grid — nowhere near the cell that was
+                // clicked (§2.10 beat 3). He closes it when he is done.
                 setSaved(message);
-                setOpen(null);
                 router.refresh();
               }}
               onClose={() => setOpen(null)}

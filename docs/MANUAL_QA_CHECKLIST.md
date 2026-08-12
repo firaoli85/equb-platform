@@ -48,6 +48,30 @@ Run these on **every** screen. They are the mechanical ones — necessary, never
       may be skipped.
 - [ ] **Tab order matches reading order.** The focus ring must not jump around the page.
 
+### Save feedback — run on EVERY mutating control (§2.10, UI_STANDARDS rule 6)
+
+**Scroll so the control is at the BOTTOM of the screen before you press it.** That is the
+whole test. The reported defect — changing a participation from 10 weeks to 12 and seeing
+nothing — was a confirmation rendered correctly, 100 lines of form above the button.
+
+- [ ] **Before you touch anything, the Save is dead** — and hovering it says why
+      (*"Nothing has changed yet."*). A Save that is live on an untouched form will happily
+      write the same values back and log an audit entry for a change that never happened.
+- [ ] **While it runs, the control itself says so** — *"Saving…"*, *"Recording…"* — and
+      cannot be pressed twice.
+- [ ] **On success the confirmation appears WITHOUT SCROLLING**, beside the control you
+      pressed. Not at the top of the page. Not after you scroll up to find it.
+- [ ] **The confirmation says WHAT CHANGED**, not just that something did:
+      *"Saved — $500/week, weeks 1 to 12. Receipts re-allocated."* A bare "Saved" leaves
+      him checking the figures himself, which is the job it exists to spare him.
+- [ ] **The screen behind it shows the new truth** — the row, the total and the grid all
+      reflect the change without a manual reload. Send a message twice and check the
+      "already sent" list actually grows.
+- [ ] **On failure the reason appears at the control too**, and stays until acted on
+      (rule 6b). Success fades after a few seconds; a refusal never does.
+- [ ] **A panel that saves does not vanish taking its own confirmation with it.** If it
+      closes, the message must survive somewhere you are still looking.
+
 And these are the ones that catch **wrong** rather than **broken** — the phantom fifth PIN
 dot passed every mechanical check above:
 
