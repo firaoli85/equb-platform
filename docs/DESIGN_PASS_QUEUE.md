@@ -86,6 +86,33 @@ Follows `docs/UI_STANDARDS.md` for hit target and control sizing.
 
 ---
 
+## 3. SaveButton EVERYWHERE — after payment entry
+
+**Lands with:** the pass immediately after payment entry (#4). Organizer's ordering.
+
+`components/ui/save-button.tsx` now owns all four beats of UI_STANDARDS rule 6, so the
+confirmation renders inside the same element as the button and cannot be placed wrongly.
+It is currently used by the control that exposed the defect (the participation Save) and
+by the seven confirmed defects the audit found.
+
+Every other mutating screen still rolls its own: a `busy` flag here, a `saved` string
+there, an `Alert` at the top of the page somewhere else.
+
+> **Why (organizer):** *"A control that behaves differently on different screens is its
+> own defect."*
+
+That is the whole reason this is queued rather than optional. The remaining screens are
+not broken — the audit refuted 20 of 27 claims against them — they are simply
+**inconsistent**, and inconsistency in a save control is what teaches an organizer not to
+trust any of them.
+
+**Scope:** every remaining `<button>` that calls a server action. Where a screen has a
+genuine reason to differ (a redirect *is* the confirmation; a vanishing row *is* the
+confirmation), record the reason in a comment rather than converting it — the audit
+already identified those cases and they should not be forced into the shared control.
+
+---
+
 ## NOTED, NOT QUEUED
 
 ### Passkeys — a post-deploy idea

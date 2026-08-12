@@ -882,6 +882,15 @@ written against defects that actually occurred. **The organizer runs it.**
 - **State sequencing in terms of work and risk**, never energy.
 - **Instructions must be step by step and exact.** Assume nothing about where a menu is or
   what a field is called.
+- **Edit with tools that FAIL LOUDLY on a missed anchor, and re-grep after every edit.**
+  Scripted string replacement (`node -e "...replace(...)"`) returns silently when the
+  anchor does not match, so the edit simply does not happen and nothing says so. In one
+  session that produced **five silent no-ops** — and one of them made a `tsc --noEmit`
+  pass meaningless, because the file it was supposed to have changed was untouched and
+  therefore still compiled. Use the editing tool that errors on a non-match; when a script
+  is genuinely the right shape (a repeated mechanical change across many files), have it
+  print what it changed and assert the count, then grep the result before believing it.
+  **A green check on code you did not actually write is worse than a red one.**
 
 ### The Sunday check — `npm run check:position`
 

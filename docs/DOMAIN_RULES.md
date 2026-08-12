@@ -184,6 +184,36 @@ The allocation is **shown before it is committed**. The organizer never picks th
 **One engine, two entry points** (2.19): the week view and the member profile run the
 identical allocation. The profile is not a second system.
 
+### Ticking weeks computes an AMOUNT. It never pins the money.
+
+> **Selecting weeks is a calculator, not an instruction about where money lands. The engine
+> still allocates oldest-debt-first, and the preview says so whenever the two differ.**
+
+The payment-entry build lets the organizer tick four weeks and record without doing
+arithmetic. That convenience must not become a second allocation route.
+
+**Why (organizer's ruling, August 2026):**
+
+> §2.15 exists because a member four weeks behind who sends money is paying down the
+> **oldest debt**, never the current week — the rule removed a step where the organizer
+> could get it wrong. Ticking to compute an amount is convenience; ticking to **pin** money
+> would reintroduce exactly that risk, and would let week 5 sit unpaid while week 11 is
+> settled. In the common case the two are identical, and when they differ the preview tells
+> him before he commits.
+
+**Worked:** Getahun owes weeks 5 and 6. The organizer ticks weeks 8–11 (`4 × $500`).
+- The **amount** becomes `$2,000` — that is all the ticking did.
+- The **engine** applies it to weeks 5, 6, 7 and 8, oldest first.
+- The **preview says so before anything commits**: *"$1,000 of this lands on weeks 5 and 6,
+  which are older."* `allocationOutsideSelection` (`lib/payments-view.ts`) exists for
+  exactly this and is the honest half of the feature.
+
+Where nothing older is owed — the common case — the ticked weeks and the allocated weeks
+are the same set and the distinction never surfaces.
+
+**Pinned by:** `lib/week-selection.test.ts` → *"oldestN — oldest debt first (2.15's spirit)"*;
+`lib/payments-view.test.ts` → *"allocationOutsideSelection — honest about oldest-debt-first"*.
+
 **After the cycle closes**, the weeks are final, so money recorded on the profile reduces
 the **ledger balance** instead — same entry, same math, different target.
 
