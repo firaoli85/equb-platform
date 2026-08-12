@@ -1,0 +1,372 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { recordPayment } from "@/app/actions/payments";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
+import { AmountInput, Select } from "@/components/ui/controls";
+import { formatMoney, parseDollarsToCents } from "@/lib/format";
+import { allocationOutsideSelection } from "@/lib/payments-view";
+import {
+  amountForWeeks,
+  coverageForAmount,
+  coverageSentence,
+  isPickable,
+  quickAmounts,
+  remainingOn,
+  weeksInDrag,
+  weeksTouchedBy,
+  type PickableWeek,
+} from "@/lib/week-picking";
+
+// THE ONE PAYMENT INTERACTION (2.19: one engine, one way to do each thing).
+//
+// Recording money is what the organizer does most, and it was the slowest
+// screen he had: one week at a time, with "$2,000 — that's weeks 8, 9, 10 and
+// 11" done in his head. This is that sum, done for him, from either end.
+//
+// SELECTION AND AMOUNT ARE TWO VIEWS OF ONE NUMBER.
+//   Tick weeks      → the amount fills.
+//   Type an amount  → the squares fill.
+// Neither is the master. Touching one updates the other, immediately.
+//
+// THE GRID IS THE PREVIEW. There is no separate "this will cover…" diagram,
+// because the weeks are already on screen as squares: typing $1,750 fills
+// three of them solid and one half-way. An equb IS a grid of weeks, so the
+// confirmation and the data are the same object. That is the one place this
+// screen spends its boldness; everything else here is deliberately plain.
+//
+// TICKING NEVER PINS THE MONEY (§2.15, DOMAIN_RULES rule 4). A member four
+// weeks behind who sends money is paying down the OLDEST debt, never the
+// current week. Ticking computes an amount; `allocatePayment` still decides
+// where it lands, and when the two differ this says so — in words, before
+// anything commits.
+//
+// Design references: QuickBooks Bill Payment (the leftover is a permanent
+// line, not an error state), Fresha Split payment (quick amounts + a remainder
+// always on screen), Xero and Deel (selection count and total in the toolbar
+// slot, actions appearing on first tick).
+
+type Method = "ZELLE" | "CASH" | "OTHER";
+
+const METHODS: { value: Method; label: string }[] = [
+  { value: "ZELLE", label: "Zelle" },
+  { value: "CASH", label: "Cash" },
+  { value: "OTHER", label: "Other" },
+];
+
+export function PaymentEntry({
+  participationId,
+  memberName,
+  weeks,
+  preselect = [],
+  onRecorded,
+}: {
+  participationId: string;
+  memberName: string;
+  /** Their own window, in week order, with what each still needs. */
+  weeks: readonly PickableWeek[];
+  /** Weeks ticked on open — the cell they clicked, or a dragged range. */
+  preselect?: readonly number[];
+  /** Fires after a successful record so the host can refresh. */
+  onRecorded: (message: string) => void;
+}) {
+  const pickable = useMemo(() => weeks.filter(isPickable), [weeks]);
+
+  const [selected, setSelected] = useState<Set<number>>(
+    () => new Set(preselect.filter((n) => pickable.some((w) => w.weekNumber === n))),
+  );
+  const [dollars, setDollars] = useState(() => {
+    const cents = amountForWeeks(weeks, new Set(preselect));
+    return cents > 0 ? String(cents / 100) : "";
+  });
+  const [method, setMethod] = useState<Method>("ZELLE");
+  const [notes, setNotes] = useState("");
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+
+  // A fresh key per submission intent, re-armed after each save, so a
+  // double-click cannot double-pay.
+  const [keyNonce, setKeyNonce] = useState(0);
+  const idempotencyKey = useMemo(
+    () => `${participationId}:${keyNonce}:${globalThis.crypto?.randomUUID?.() ?? keyNonce}`,
+    [participationId, keyNonce],
+  );
+
+  const amount = parseDollarsToCents(dollars) ?? 0;
+  const coverage = useMemo(() => coverageForAmount(weeks, amount), [weeks, amount]);
+  const lands = useMemo(() => weeksTouchedBy(coverage), [coverage]);
+  const chips = useMemo(() => quickAmounts(weeks), [weeks]);
+
+  // WHERE THE MONEY ACTUALLY GOES vs WHAT HE TICKED. The honest half of the
+  // ruling: silent when they agree, explicit when they do not.
+  const elsewhere = useMemo(
+    () =>
+      selected.size === 0
+        ? []
+        : allocationOutsideSelection({
+            // `applied`/`fillsWeek` are irrelevant here — this asks only WHICH
+            // weeks the money reaches, not how much lands on each.
+            allocations: lands.map((weekNumber) => ({
+              weekNumber,
+              applied: 0,
+              fillsWeek: false,
+            })),
+            selectedWeeks: [...selected],
+          }),
+    [lands, selected],
+  );
+
+  /** Ticking rewrites the amount. The amount is never edited behind his back. */
+  function applySelection(next: Set<number>) {
+    setSelected(next);
+    const cents = amountForWeeks(weeks, next);
+    setDollars(cents > 0 ? String(cents / 100) : "");
+    setSaveState({ kind: "idle" });
+  }
+
+  function toggleWeek(weekNumber: number) {
+    const next = new Set(selected);
+    if (next.has(weekNumber)) next.delete(weekNumber);
+    else next.add(weekNumber);
+    applySelection(next);
+  }
+
+  // ————— Drag to sweep a range —————
+  //
+  // STATE, NOT A REF. The in-progress range has to be VISIBLE while the mouse
+  // is down — the squares light up as he sweeps — and anything the render
+  // reads has to be state. A ref held it first, which meant reading
+  // `dragFrom.current` during render: `react-hooks/refs` caught it, and it was
+  // a real bug rather than a lint preference, because a ref change does not
+  // re-render and the highlight would have lagged a square behind the mouse.
+  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  const dragRange = drag ? weeksInDrag(weeks, drag.from, drag.to) : [];
+
+  function endDrag() {
+    if (drag && drag.from !== drag.to) {
+      applySelection(new Set([...selected, ...weeksInDrag(weeks, drag.from, drag.to)]));
+    }
+    setDrag(null);
+  }
+
+  const selectedTotal = amountForWeeks(weeks, selected);
+  const canRecord = amount > 0 && coverage.unallocated === 0;
+
+  async function commit() {
+    if (!canRecord) return;
+    setSaveState({ kind: "saving" });
+    try {
+      const result = await recordPayment({
+        participationId,
+        amount,
+        method,
+        idempotencyKey,
+        notes: notes.trim() || undefined,
+      });
+      if (!result.ok) {
+        setSaveState({ kind: "err", message: `Not recorded: ${result.error}` });
+        return;
+      }
+      const message = `Recorded ${formatMoney(result.data.totalApplied)} for ${memberName} — ${coverageSentence(coverage, formatMoney).replace(/^This /, "").replace(/\.$/, "")}.`;
+      setSaveState({ kind: "ok", message });
+      onRecorded(`✓ ${message}`);
+      applySelection(new Set());
+      setNotes("");
+      setKeyNonce((n) => n + 1);
+    } catch {
+      setSaveState({
+        kind: "err",
+        message:
+          "Could not reach the server — the payment was NOT recorded. Check their weeks before entering it again.",
+      });
+    }
+  }
+
+  return (
+    <div className="space-y-3" data-testid="payment-entry" onMouseUp={endDrag} onMouseLeave={endDrag}>
+      {/* THE SELECTION BAR — appears on first tick, never before. An
+          always-present bar of dead controls is noise. It sits ABOVE the
+          squares, in the slot the eye already checks, rather than floating
+          over the very weeks being chosen. */}
+      {selected.size > 0 && (
+        <div
+          data-testid="selection-bar"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-indigo-50 px-3 py-2 text-sm dark:bg-indigo-950/40"
+        >
+          <span className="font-bold text-indigo-900 tabular-nums dark:text-indigo-200">
+            {selected.size} week{selected.size === 1 ? "" : "s"} selected
+          </span>
+          <span className="font-black text-indigo-900 tabular-nums dark:text-indigo-100">
+            {formatMoney(selectedTotal)}
+          </span>
+          <button
+            type="button"
+            onClick={() => applySelection(new Set())}
+            className="ml-auto text-xs font-semibold text-indigo-700 hover:underline dark:text-indigo-300"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* THE WEEKS, AS SQUARES — and as the preview. Filled = this amount
+          covers it; half = the leftover part-pays it; ring = ticked. */}
+      <div>
+        <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400">
+          {memberName}&apos;s weeks — tick them, or drag across a run
+        </p>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Weeks to record">
+          {weeks.map((w) => {
+            const canPick = isPickable(w);
+            const ticked = selected.has(w.weekNumber);
+            const inDrag = dragRange.includes(w.weekNumber);
+            const covered = coverage.fullWeeks.includes(w.weekNumber);
+            const partial = coverage.partialWeek === w.weekNumber;
+            return (
+              <button
+                key={w.weekNumber}
+                type="button"
+                disabled={!canPick}
+                aria-pressed={ticked}
+                data-week={w.weekNumber}
+                data-covered={covered ? "full" : partial ? "partial" : undefined}
+                title={
+                  canPick
+                    ? `Week ${w.weekNumber} — ${formatMoney(remainingOn(w))} still owed`
+                    : w.isSkipped
+                      ? `Week ${w.weekNumber} — skipped, nobody owes it`
+                      : `Week ${w.weekNumber} — already paid`
+                }
+                onMouseDown={() => {
+                  if (!canPick) return;
+                  setDrag({ from: w.weekNumber, to: w.weekNumber });
+                }}
+                onMouseEnter={() => setDrag((d) => (d ? { ...d, to: w.weekNumber } : d))}
+                // A click is a drag that never moved: endDrag ignores it, and
+                // this toggles the one square.
+                onClick={() => {
+                  if (!canPick) return;
+                  if (drag && drag.from !== drag.to) return;
+                  toggleWeek(w.weekNumber);
+                }}
+                className={
+                  "relative h-11 w-11 rounded-lg border-2 text-xs font-bold tabular-nums transition-colors md:h-9 md:w-9 " +
+                  (!canPick
+                    ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-600"
+                    : ticked || inDrag
+                      ? "border-indigo-600 bg-indigo-600 text-white dark:border-indigo-500 dark:bg-indigo-500"
+                      : covered
+                        ? "border-indigo-400 bg-indigo-100 text-indigo-900 dark:border-indigo-600 dark:bg-indigo-950 dark:text-indigo-200"
+                        : partial
+                          ? "border-indigo-400 bg-gradient-to-r from-indigo-100 from-50% to-white to-50% text-indigo-900 dark:border-indigo-600 dark:from-indigo-950 dark:to-transparent dark:text-indigo-200"
+                          : "border-gray-300 text-gray-700 hover:border-indigo-400 dark:border-gray-700 dark:text-gray-300")
+                }
+              >
+                {w.weekNumber}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* THE AMOUNT — the other view of the same number. */}
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+            Amount received
+          </span>
+          <AmountInput
+            value={dollars}
+            onChange={(v) => {
+              setDollars(v);
+              // Typing takes over: the ticks stop claiming to describe it.
+              setSelected(new Set());
+              setSaveState({ kind: "idle" });
+            }}
+            ariaLabel="Amount received in dollars"
+            className="w-32"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+            How
+          </span>
+          <Select
+            value={method}
+            onChange={(v) => setMethod(v as Method)}
+            options={METHODS}
+            ariaLabel="Payment method"
+            className="w-32"
+          />
+        </label>
+      </div>
+
+      {/* QUICK AMOUNTS, from their real weeks — never a tier list. */}
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map((c) => (
+            <button
+              key={c.label}
+              type="button"
+              data-testid="quick-amount"
+              onClick={() => applySelection(new Set(c.weeks))}
+              className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:border-indigo-400 hover:bg-indigo-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:bg-indigo-950/40"
+            >
+              {c.label} · {formatMoney(c.amount)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* THE REMAINDER, ALWAYS PRESENT. Partial payments are first-class, so
+          this line does not appear and disappear — a field that comes and goes
+          is one he stops reading. */}
+      <p
+        data-testid="coverage"
+        aria-live="polite"
+        className="rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-800 dark:bg-white/5 dark:text-gray-200"
+      >
+        {coverageSentence(coverage, formatMoney)}
+      </p>
+
+      {/* THE HONEST HALF OF THE RULING. Ticking computed the amount; the
+          engine sends it to the oldest debt. Silent when they agree. */}
+      {elsewhere.length > 0 && (
+        <p
+          data-testid="lands-elsewhere"
+          role="status"
+          className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          Note: {formatMoney(amount)} lands on week{elsewhere.length === 1 ? "" : "s"}{" "}
+          {elsewhere.join(", ")} first — {elsewhere.length === 1 ? "it is" : "they are"} older
+          and still owed. Money always pays the oldest debt first.
+        </p>
+      )}
+
+      <label className="block">
+        <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+          Note (optional)
+        </span>
+        <input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Anything worth remembering about this payment"
+          className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
+        />
+      </label>
+
+      <SaveButton
+        state={saveState}
+        onSave={() => void commit()}
+        onStateSettled={() => setSaveState({ kind: "idle" })}
+        label={amount > 0 ? `Record ${formatMoney(amount)}` : "Record"}
+        savingLabel="Recording…"
+        dirty={canRecord}
+        notDirtyHint={
+          amount <= 0
+            ? "Enter an amount, or tick the weeks it covers."
+            : "That amount does not fit their remaining weeks — reduce it."
+        }
+      />
+    </div>
+  );
+}

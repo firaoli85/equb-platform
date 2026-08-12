@@ -1,3 +1,5 @@
+"use client";
+
 // PER-MEMBER PAYMENT CONSISTENCY — docs/ADMIN_IA.md §5.4.
 //
 // A dot strip per member, one dot per week of THEIR OWN window.
@@ -18,6 +20,7 @@
 // is a bare tick. The strip survives greyscale.
 
 import Link from "next/link";
+import { useState } from "react";
 import type { ConsistencyState } from "@/lib/chart";
 import { longestOverdueRun } from "@/lib/chart";
 
@@ -65,10 +68,44 @@ const LEGEND_LABEL: Record<ConsistencyState, string> = {
 export function ConsistencyStrip({
   members,
   className = "",
+  onPick,
 }: {
   members: readonly MemberStrip[];
   className?: string;
+  /**
+   * MAKES THE STRIP DO SOMETHING.
+   *
+   * This chart answered "who is slipping" and then offered nothing to do
+   * about it: every dot was a link to the week board, which is the wrong
+   * destination — he has found a PERSON, and the next thing he wants is to
+   * record their money.
+   *
+   * With this, a dot opens payment entry for that member with that week
+   * ticked, and dragging across a run ticks the whole run. Without it the
+   * chart keeps its old navigation, so it stays usable anywhere it is
+   * embedded read-only.
+   */
+  onPick?: (participationId: string, weeks: number[]) => void;
 }) {
+  // Declared BEFORE the empty-state early return: a hook behind a conditional
+  // return is a different hook order on the two paths.
+  const [drag, setDrag] = useState<{
+    participationId: string;
+    from: number;
+    to: number;
+  } | null>(null);
+
+  /** A click is a one-week drag; a sweep is the run between the two ends. */
+  function endDrag(participationId: string) {
+    if (!drag || drag.participationId !== participationId) return;
+    const lo = Math.min(drag.from, drag.to);
+    const hi = Math.max(drag.from, drag.to);
+    const weeks: number[] = [];
+    for (let n = lo; n <= hi; n++) weeks.push(n);
+    setDrag(null);
+    onPick?.(participationId, weeks);
+  }
+
   if (members.length === 0) {
     return (
       <div
@@ -84,6 +121,10 @@ export function ConsistencyStrip({
 
   // Worst run first. The organizer opens this screen to find the person who is
   // slipping, and alphabetical order hides them among people who are fine.
+  //
+  // (Hooks run above the early return for the empty case — see the top of this
+  // function — because a hook behind a conditional return is a different hook
+  // order on the two paths.)
   const rows = members
     .map((m) => ({
       ...m,
@@ -131,21 +172,65 @@ export function ConsistencyStrip({
               >
                 {m.name}
               </Link>
-              <span className="flex flex-1 flex-wrap gap-[3px]">
-                {m.weeks.map((w) => (
-                  <Link
-                    key={w.weekNumber}
-                    href={`/admin/payments?week=${w.weekNumber}`}
-                    aria-label={`${m.name}, week ${w.weekNumber}: ${DOT[w.state].title}`}
-                    title={`Week ${w.weekNumber} — ${DOT[w.state].title}`}
-                    // The dot is 8px; the hit area around it is not. A 3px gap
-                    // between 8px dots would be a 20-target minefield at 390px,
-                    // so each dot sits inside its own 16px reach.
-                    className="flex h-4 w-[11px] items-center justify-center rounded-[3px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-600"
-                  >
-                    <span className={`h-2 w-2 ${DOT[w.state].cls}`} />
-                  </Link>
-                ))}
+              <span
+                className="flex flex-1 flex-wrap gap-[3px]"
+                onMouseUp={onPick ? () => endDrag(m.participationId) : undefined}
+                onMouseLeave={onPick ? () => endDrag(m.participationId) : undefined}
+              >
+                {m.weeks.map((w) => {
+                  const label = `${m.name}, week ${w.weekNumber}: ${DOT[w.state].title}`;
+                  // The dot is 8px; the hit area around it is not. A 3px gap
+                  // between 8px dots would be a 20-target minefield at 390px,
+                  // so each dot sits inside its own 16px reach.
+                  const hit =
+                    "flex h-4 w-[11px] items-center justify-center rounded-[3px] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-600";
+                  const inDrag =
+                    drag !== null &&
+                    drag.participationId === m.participationId &&
+                    w.weekNumber >= Math.min(drag.from, drag.to) &&
+                    w.weekNumber <= Math.max(drag.from, drag.to);
+
+                  if (!onPick) {
+                    return (
+                      <Link
+                        key={w.weekNumber}
+                        href={`/admin/payments?week=${w.weekNumber}`}
+                        aria-label={label}
+                        title={`Week ${w.weekNumber} — ${DOT[w.state].title}`}
+                        className={hit}
+                      >
+                        <span className={`h-2 w-2 ${DOT[w.state].cls}`} />
+                      </Link>
+                    );
+                  }
+                  return (
+                    <button
+                      key={w.weekNumber}
+                      type="button"
+                      data-testid="strip-dot"
+                      data-week={w.weekNumber}
+                      aria-label={`${label}. Record a payment.`}
+                      title={`Week ${w.weekNumber} — ${DOT[w.state].title}. Click to record.`}
+                      onMouseDown={() =>
+                        setDrag({
+                          participationId: m.participationId,
+                          from: w.weekNumber,
+                          to: w.weekNumber,
+                        })
+                      }
+                      onMouseEnter={() =>
+                        setDrag((d) =>
+                          d && d.participationId === m.participationId
+                            ? { ...d, to: w.weekNumber }
+                            : d,
+                        )
+                      }
+                      className={`${hit} ${inDrag ? "bg-indigo-200 dark:bg-indigo-800" : ""}`}
+                    >
+                      <span className={`h-2 w-2 ${DOT[w.state].cls}`} />
+                    </button>
+                  );
+                })}
               </span>
               {m.run > 1 && (
                 <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-1.5 text-[10px] font-bold tabular-nums text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">

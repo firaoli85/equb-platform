@@ -2,24 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { deletePaymentEvent, setWeekDeferral, setWeekNote } from "@/app/actions/edits";
-import { previewAllocation, recordPayment } from "@/app/actions/payments";
-import { getCellDetail } from "@/app/actions/payments-view";
+import { getCatchUpWeeks, getCellDetail } from "@/app/actions/payments-view";
+import { PaymentEntry } from "@/components/admin/payment-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
-import { describeAllocation } from "@/lib/payments-view";
+import type { PickableWeek } from "@/lib/week-picking";
 import { DEFERRED_PHRASE, SKIPPED_PHRASE } from "@/lib/status-labels";
 
 // THE one per-week action panel (2.19: one way to do each thing). Used by the
 // payments Members view, the payments Grid, and the member profile — so
 // "record", "partial", "defer", "undo" behave identically everywhere.
 //
-// PARTIAL is first-class: the amount is prefilled to this week's remaining due
-// and is editable, so "Getahun paid $400 toward week 14" is one edit away.
-// The engine is unchanged (2.15 oldest-debt-first) — when the money would land
-// on an EARLIER week than the one clicked, the preview says so in plain words
-// before anything commits.
+// RECORDING MONEY IS NOT DONE HERE ANY MORE. This panel used to carry its own
+// amount field, its own preview and its own commit — a second payment route
+// beside the one the Patterns view uses, and two routes to one action is
+// exactly what 2.19 forbids. It is how the two drift: a partial-payment rule
+// fixed in one would never reach the other.
+//
+// The payment part is now `PaymentEntry`, embedded with the clicked week
+// ticked, so all three views share it. This panel keeps what is genuinely
+// PER-WEEK: deferral, the week note, and undoing a receipt.
 
 type Method = "ZELLE" | "CASH" | "OTHER";
 
@@ -55,20 +59,16 @@ export function WeekActionPanel({
   onSaved: (message: string) => void;
   onClose: () => void;
 }) {
+  /** What this week still needs — the header pill only. */
   const remaining = Math.max(0, target.amountDue - target.amountAlreadyPaid);
 
-  const [dollars, setDollars] = useState(remaining > 0 ? String(remaining / 100) : "");
-  const [method, setMethod] = useState<Method>("ZELLE");
-  const [notes, setNotes] = useState("");
-  const [detail, setDetail] = useState<Detail | null>(null);
+  const [loadedDetail, setDetail] = useState<(Detail & { key: string }) | null>(null);
   const [note, setNote] = useState("");
-  const [preview, setPreview] = useState<{
-    text: string;
-    amount: number;
-    landsEarlier: number[];
-    coversThisWeek: number;
-  } | null>(null);
-  const [busy, setBusy] = useState<"preview" | "save" | "week" | null>(null);
+  /** Their whole window — PaymentEntry works across weeks, not just this one. */
+  const [loadedWeeks, setLoadedWeeks] = useState<{ key: string; weeks: PickableWeek[] } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState<"save" | "week" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
@@ -80,116 +80,67 @@ export function WeekActionPanel({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
-  // A fresh idempotency key per submission intent, re-armed after each save,
-  // so a double-click cannot double-pay.
+  // Re-fetched after a save so the squares show the money that just landed.
   const [keyNonce, setKeyNonce] = useState(0);
-  const [idempotencyKey, setIdempotencyKey] = useState("");
-  useEffect(() => {
-    setIdempotencyKey(crypto.randomUUID());
-  }, [keyNonce]);
 
+  // What each fetch is FOR. Data whose key does not match is another cell's,
+  // and reads as not-loaded rather than being shown.
+  const detailKey = `${target.participationId}:${target.weekNumber}:${keyNonce}`;
+  const weeksKey = `${target.participationId}:${keyNonce}`;
+  const detail = loadedDetail?.key === detailKey ? loadedDetail : null;
+  const memberWeeks = loadedWeeks?.key === weeksKey ? loadedWeeks.weeks : null;
+
+  // LOADED DATA CARRIES THE KEY IT WAS LOADED FOR.
+  //
+  // Both of these effects used to begin `setX(null)` to clear the previous
+  // member's data — a synchronous setState inside an effect, which
+  // `react-hooks/set-state-in-effect` flags as a cascading render. Stamping
+  // the key onto the value instead means staleness is DERIVED: nothing is
+  // reset, and another member's weeks can never show for even one frame,
+  // which on a money screen matters more than the lint rule that found it.
   useEffect(() => {
     let cancelled = false;
-    setDetail(null);
     getCellDetail({
       participationId: target.participationId,
       weekNumber: target.weekNumber,
     }).then((result) => {
       if (cancelled) return;
       if (result.ok) {
-        setDetail(result.data);
+        setDetail({ ...result.data, key: detailKey });
         setNote(result.data.note);
       } else setError(result.error);
     });
     return () => {
       cancelled = true;
     };
-  }, [target.participationId, target.weekNumber]);
+  }, [target.participationId, target.weekNumber, keyNonce, detailKey]);
 
-  const amount = parseDollarsToCents(dollars);
-  const amountValid = amount !== null && amount >= 1;
-  const isPartial = amountValid && amount! < remaining;
-  const previewValid = preview !== null && preview.amount === amount;
-
-  function resetPreview() {
-    setPreview(null);
-    setError(null);
-    setOk(null);
-  }
-
-  async function handlePreview() {
-    if (!amountValid) return;
-    setBusy("preview");
-    setError(null);
-    setOk(null);
-    try {
-      const result = await previewAllocation({
-        participationId: target.participationId,
-        amount: amount!,
-      });
+  // THEIR WHOLE WINDOW, for the shared entry. The panel is opened from ONE
+  // cell, but recording is not a per-cell act — "$2,000, that's four weeks"
+  // is the common case, and it was impossible from here.
+  useEffect(() => {
+    let cancelled = false;
+    getCatchUpWeeks(target.participationId).then((result) => {
+      if (cancelled) return;
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      if (result.data.allocations.length === 0 || result.data.unallocated > 0) {
-        setPreview(null);
-        setError(
-          result.data.allocations.length === 0
-            ? `Nothing to record — ${target.memberName}'s weeks are already covered.`
-            : `Only ${formatMoney(result.data.totalApplied)} fits their remaining weeks — the rest would land nowhere, so the whole payment would be refused. Reduce the amount.`,
-        );
-        return;
-      }
-      setPreview({
-        text: describeAllocation(result.data),
-        amount: amount!,
-        landsEarlier: result.data.allocations
-          .filter((a) => a.weekNumber < target.weekNumber)
-          .map((a) => a.weekNumber),
-        coversThisWeek:
-          result.data.allocations.find((a) => a.weekNumber === target.weekNumber)?.applied ?? 0,
+      setLoadedWeeks({
+        key: weeksKey,
+        weeks: result.data.weeks.map((w) => ({
+          weekNumber: w.weekNumber,
+          amountDue: w.amountDue,
+          amountPaid: w.amountAlreadyPaid,
+          isSkipped: w.isSkipped,
+          isDeferred: w.isDeferred,
+        })),
       });
-    } catch {
-      setError("Could not reach the server — nothing was previewed.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function handleCommit() {
-    if (!previewValid || !idempotencyKey) return;
-    setBusy("save");
-    setError(null);
-    try {
-      const result = await recordPayment({
-        participationId: target.participationId,
-        amount: preview!.amount,
-        method,
-        idempotencyKey,
-        notes: notes.trim() || `Toward week ${target.weekNumber}`,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      const where = describeAllocation({ allocations: result.data.allocations, unallocated: 0 });
-      const message = `Recorded ${formatMoney(result.data.totalApplied)} for ${target.memberName} — ${where}.`;
-      // KEEP IT HERE TOO, not only in the parent. Every caller of this panel
-      // closed it on save and rendered the confirmation at the top of its own
-      // screen — the top of a 27×20 grid, or of a long member page. The cell
-      // he clicked was nowhere near it (§2.10, rule 6 beat 3).
-      setOk(message);
-      onSaved(`✓ ${message}`);
-      setPreview(null);
-      setKeyNonce((n) => n + 1);
-    } catch {
-      setError(
-        "Could not reach the server — the payment was NOT confirmed. Check their weeks before entering it again.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [target.participationId, keyNonce, weeksKey]);
 
   /** `fn` returns its refusal, or nothing on success (UI_STANDARDS 6b). */
   function ask(spec: ConfirmSpec, fn: () => Promise<string | null | void>) {
@@ -317,117 +268,30 @@ export function WeekActionPanel({
         </p>
       )}
 
-      {/* ————— Record: prefilled to this week's due, editable for a partial ————— */}
-      {!detail?.weekIsSkipped && (
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                Amount received
-              </span>
-              <AmountInput
-                value={dollars}
-                onChange={(v) => {
-                  setDollars(v);
-                  resetPreview();
-                }}
-                ariaLabel={`Amount toward week ${target.weekNumber} in dollars`}
-                className="w-32"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                Method
-              </span>
-              <Select<Method>
-                value={method}
-                onChange={(v) => {
-                  setMethod(v);
-                  resetPreview();
-                }}
-                ariaLabel="Payment method"
-                className="w-28"
-                options={[
-                  { value: "ZELLE", label: "Zelle" },
-                  { value: "CASH", label: "Cash" },
-                  { value: "OTHER", label: "Other" },
-                ]}
-              />
-            </label>
-            <label className="block grow">
-              <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                Note (optional)
-              </span>
-              <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={handlePreview}
-              disabled={!amountValid || busy !== null}
-              className={buttonCls.secondary}
-            >
-              {busy === "preview" ? "Checking…" : "Preview"}
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {remaining > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setDollars(String(remaining / 100));
-                  resetPreview();
-                }}
-                className={buttonCls.ghost + " !text-xs"}
-              >
-                Full week — {formatMoney(remaining)}
-              </button>
-            )}
-            {isPartial && (
-              <span className="text-amber-800 dark:text-amber-400">
-                Partial: {formatMoney(amount!)} of {formatMoney(remaining)} due on week{" "}
-                {target.weekNumber}.
-              </span>
-            )}
-            {dollars.trim() !== "" && !amountValid && (
-              <span className="text-red-700 dark:text-red-400">Enter a valid dollar amount.</span>
-            )}
-          </div>
-
-          {previewValid && (
-            <div
-              className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 px-3.5 py-2.5 text-sm"
-              data-testid="week-panel-preview"
-            >
-              <p className="text-gray-800 dark:text-gray-200">
-                <strong className="tabular-nums">{formatMoney(preview!.amount)}</strong>:{" "}
-                {preview!.text}
-              </p>
-              {preview!.landsEarlier.length > 0 && (
-                <p className="mt-1 font-semibold text-amber-800 dark:text-amber-400">
-                  Heads up — oldest debt is paid first (2.15), so this money lands on week
-                  {preview!.landsEarlier.length === 1 ? " " : "s "}
-                  {preview!.landsEarlier.join(", ")} before week {target.weekNumber}.
-                  {preview!.coversThisWeek === 0
-                    ? ` Nothing reaches week ${target.weekNumber}.`
-                    : ` Only ${formatMoney(preview!.coversThisWeek)} reaches week ${target.weekNumber}.`}
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={handleCommit}
-                disabled={busy !== null || !idempotencyKey}
-                className={buttonCls.primary + " mt-2"}
-              >
-                {busy === "save" ? "Recording…" : "Confirm and record"}
-              </button>
-            </div>
-          )}
-        </div>
+      {/* ————— RECORDING MONEY IS ONE INTERACTION, EVERYWHERE (2.19) —————
+          This panel had its own amount field, its own preview and its own
+          commit — a second payment route beside the one the Patterns view
+          uses. Two routes to one action is exactly what 2.19 forbids, and it
+          is how the two drift: a partial-payment rule fixed here would not
+          reach there.
+          `PaymentEntry` is now the only one. The clicked week arrives ticked,
+          and everything else it offers — sweeping a run, the quick amounts,
+          the live remainder — comes with it. */}
+      {!detail?.weekIsSkipped && memberWeeks !== null && (
+        <PaymentEntry
+          participationId={target.participationId}
+          memberName={target.memberName}
+          weeks={memberWeeks}
+          preselect={[target.weekNumber]}
+          onRecorded={(message) => {
+            setOk(message.replace(/^✓\s*/, ""));
+            onSaved(message);
+            setKeyNonce((n) => n + 1);
+          }}
+        />
+      )}
+      {!detail?.weekIsSkipped && memberWeeks === null && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">Loading their weeks…</p>
       )}
 
       {/* ————— Receipts on this week, each undoable ————— */}

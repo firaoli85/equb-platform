@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ConsistencyStrip, type MemberStrip } from "@/components/charts/consistency-strip";
+import type { MemberStrip } from "@/components/charts/consistency-strip";
 import { SegmentedToggle, usePersistedChoice } from "@/components/ui/view-toggle";
 import { consistencyFromStatus } from "@/lib/chart";
 import type { MemberFilter } from "@/lib/members-view";
 import type { PaymentGrid } from "@/lib/payments-view";
 import { PaymentsGrid } from "./payments-grid";
 import { PaymentsMembers } from "./payments-members";
+import { PatternsView } from "./patterns-view";
 
 // ONE payments screen with three representations of the same truth:
 //   MEMBERS  (default) — the workspace: one row per member, click a week to act.
@@ -105,7 +106,14 @@ export function PaymentsScreen({
           <PaymentsMembers data={data} filter={filter} onFilterChange={setFilter} />
         )}
         {view === "grid" && <PaymentsGrid data={data} filter={filter} onFilterChange={setFilter} />}
-        {view === "patterns" && <ConsistencyStrip members={stripsFrom(data.grid)} />}
+        {/* PATTERNS NOW DOES SOMETHING. It answered "who is slipping" and
+            then offered nothing to act on: every dot linked to the week board,
+            which is the wrong destination — he has found a PERSON. A dot now
+            opens the SAME payment entry the other two views use, with that
+            week ticked; dragging across a run ticks the whole run. */}
+        {view === "patterns" && (
+          <PatternsView grid={data.grid} strips={stripsFrom(data.grid)} />
+        )}
       </div>
     </div>
   );
