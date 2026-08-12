@@ -8,7 +8,7 @@ import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { contribution } from "@/lib/contribution";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { finalPosition, finalPositionSentence } from "@/lib/final-position";
-import { formatMoney } from "@/lib/format";
+import { formatDateLongUTC, formatMoney } from "@/lib/format";
 import { ownWeekNumber } from "@/lib/member-window";
 import { effectiveFinishWeek } from "@/lib/participation-close";
 
@@ -178,7 +178,20 @@ export async function getMyPortal() {
         received,
         weeklyAmount: stopped.weeklyAmount,
         weeksCommitted: stopped.weeksCommitted,
+        // 2.6: the cycle's real unit and fee, never a constant.
+        unitAmount: stopped.cycle.unitAmount,
+        feePercent: stopped.cycle.feePercent,
       });
+      // MONEY IS RETURNED AT THE END OF THE CYCLE, not on stopping — paying
+      // someone out early takes it from the members still contributing. The
+      // date is the CYCLE's finish (its last planned week), resolved from the
+      // stored row (2.14/2.7), not their own stopping date.
+      const cycleFinishDate =
+        resolveWeekDate({
+          weekNumber: stopped.cycle.plannedWeeks,
+          stored: storedWeekDates(stopped.cycle.weeks),
+          cycleStartDate: stopped.cycle.startDate,
+        })?.date ?? null;
 
       return {
         ok: true as const,
@@ -203,7 +216,13 @@ export async function getMyPortal() {
                 ? { on: drawnWeek?.date.toISOString() ?? null, received }
                 : null,
             position,
-            sentence: finalPositionSentence(position, ORGANIZER_NAME, formatMoney),
+            cycleFinishes: cycleFinishDate?.toISOString() ?? null,
+            sentence: finalPositionSentence(
+              position,
+              ORGANIZER_NAME,
+              formatMoney,
+              cycleFinishDate === null ? null : formatDateLongUTC(cycleFinishDate),
+            ),
           },
         },
       };

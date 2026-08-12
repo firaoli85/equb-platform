@@ -40,6 +40,7 @@ import {
   isCloseReason,
   weeksLeavingExpectation,
 } from "@/lib/participation-close";
+import { feeOnReturn } from "@/lib/final-position";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
@@ -262,7 +263,19 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
         // Money he is HOLDING that is theirs: what a member who was never
         // drawn paid in. No fee is withheld — a fee is only ever taken from a
         // payout and they never had one (lib/final-position.ts).
-        owedBack: alreadyPaidOut > 0 ? 0 : paidInByThem,
+        owedBack:
+          alreadyPaidOut > 0
+            ? 0
+            : Math.max(
+                0,
+                paidInByThem -
+                  feeOnReturn({
+                    weeklyAmount: p.weeklyAmount,
+                    weeksCommitted: p.weeksCommitted,
+                    unitAmount: cycle.unitAmount,
+                    feePercent: cycle.feePercent,
+                  }),
+              ),
 
         reason: closeReasonText(
           isCloseReason(p.closeReason) ? p.closeReason : "OTHER",

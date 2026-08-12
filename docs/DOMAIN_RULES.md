@@ -71,6 +71,56 @@ number is its own payout of `$1,000 × 20 = $20,000` gross, `$400` fee, `$19,600
 Fee percent is configuration (2.6), read at calculation time. `2` is the current value,
 not a constant in code.
 
+### The fee follows the COMMITMENT, not attendance
+
+> **The fee is fixed by what a member committed to. Stopping early never reduces it. Only
+> a change to the contribution RATE moves it.**
+
+**Worked:** join for 20 weeks at `$500` → payout `$10,000`, fee **`$200`**.
+
+| What happens | The fee |
+|---|---|
+| They pay all 20 weeks | `$200` |
+| They stop at week 12 | **`$200`** — stopping does not reduce it |
+| They stop at week 1 | **`$200`** |
+| They are never drawn at all | **`$200`** |
+| Their rate changes to `$250`/week | **`$100`** — 20 × `$250` = `$5,000` |
+
+**This paragraph exists because the rule above it was read the other way.** "Charged per
+member payout … *because they receive three payouts*" answers **how many** fees a
+multi-number member pays — one per number. It does **not** say a fee is owed only when a
+payout actually lands. Read that way, a member who stopped undrawn was returned their
+money in full; the correct figure withholds the fee on their whole commitment.
+
+The fee is the organizer's charge for running the member's **place** in the cycle. The
+place existed and was held for them for as long as they committed to it, whether or not
+the wheel reached them before they stopped.
+
+**Worked (the live case):** Tsion paid in `$4,700` against a 20-week `$500` commitment and
+was never drawn. Fee on the commitment `$200` → she is owed **`$4,500`**.
+
+**A member who paid in LESS than their commitment fee** is returned nothing — the amount is
+floored at zero. Whether the organizer chases the uncovered remainder is his ruling (2.2)
+and the software does not turn it into a debt on its own.
+
+### Money is returned at the END OF THE CYCLE
+
+> **A member who stops early waits until the cycle finishes. Paying them out on the day
+> they stop takes the money from the members still contributing.**
+
+Both surfaces say so with the date, never just "will be arranged":
+
+> *"You paid in $4,700. You were not drawn. $4,500 is owed to you after the $200 fee —
+> Firaoli will settle this when the cycle finishes on Sunday, September 27, 2026."*
+
+The organizer's own screen carries the same instruction from his side — *"Settle it when
+the cycle finishes, not before"* — so neither of them can act on it early by accident.
+
+**Pinned by:** `lib/final-position.test.ts` → *"the fee follows the COMMITMENT, not how much
+of it they attended"*, *"the fee changes when the RATE changes, and only then"*, *"sums per
+lucky number, so it cannot drift from the portal"*, *"states the figure, the fee, and WHEN
+it will be settled"*, *"returns nothing when the commitment fee exceeds what they paid in"*.
+
 **Pinned by:** `lib/money.test.ts` → *"calculateFee"*, *"calculateNet"*, *"calculateGross"*;
 `lib/wheel.test.ts` → *"calculatePayout — one payout per number, each pays their own fee"*.
 

@@ -166,6 +166,9 @@ export default async function PersonPage({
             .reduce((sum, po) => sum + po.netAmount, 0),
           weeklyAmount: active.weeklyAmount,
           weeksCommitted: active.weeksCommitted,
+          // 2.6: the cycle's real unit and fee, never a constant.
+          unitAmount: active.cycle.unitAmount,
+          feePercent: active.cycle.feePercent,
         })
       : null;
 

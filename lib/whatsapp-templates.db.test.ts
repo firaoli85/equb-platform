@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { config } from "dotenv";
 import { afterAll, describe, expect, it } from "vitest";
 import {
@@ -78,3 +79,114 @@ describe("the database bodies still match what Meta approved", () => {
     ).toBeNull();
   });
 });
+
+// ————————————————————————————————————————————————————————————————
+// EVERY ENUM VALUE THE SCHEMA KNOWS MUST BE WRITABLE.
+//
+// THE DEFECT THIS EXISTS FOR, and the reason it belongs HERE and not in a unit
+// test. `ACCEPTED` was added to MessageSendStatus in schema.prisma and the
+// generated client accepted it happily. The DATABASE had not had the migration
+// applied. So:
+//
+//   * 1,503 tests stayed green — every one of them mocks Prisma, and a mock
+//     will cheerfully store any string you hand it.
+//   * `npx tsc --noEmit` was clean — the type was real, it was the TABLE that
+//     was not.
+//   * Then a real BEHIND_NOTICE went out, Twilio accepted it, and
+//     messageLog.create THREW on the way to recording it. The message reached
+//     the member; the row that proves it did not exist.
+//
+// No amount of mocked testing can see that gap, because the gap IS the
+// difference between the mock and the database. 2.24 names behavioural
+// verification against the live DB for exactly this class.
+//
+// Every value is attempted for real and rolled back, so this leaves nothing
+// behind while proving the write would have worked.
+// ————————————————————————————————————————————————————————————————
+
+/**
+ * The enum's values read from schema.prisma itself — NOT from a list typed
+ * here. A hand-kept copy would have to be updated by the same person who adds
+ * a value, which is precisely the step that gets missed; reading the schema
+ * means a new value is covered the moment it is declared.
+ */
+function schemaEnumValues(enumName: string): string[] {
+  const schema = readFileSync("prisma/schema.prisma", "utf8");
+  // Located by INDEX, not by a regex built from a template literal. `\s` in a
+  // template literal is not an escape — it collapses to a bare "s" — so
+  // `enum\s+${name}` silently becomes `enum s+MessageSendStatus` and matches
+  // nothing. The first version of this did exactly that and threw "enum not
+  // found" against a schema that plainly contained it.
+  const start = schema.indexOf(`enum ${enumName} {`);
+  if (start === -1) throw new Error(`enum ${enumName} not found in prisma/schema.prisma`);
+  const open = schema.indexOf("{", start);
+  const close = schema.indexOf("}", open);
+  if (close === -1) throw new Error(`enum ${enumName} block is unterminated`);
+
+  return schema
+    .slice(open + 1, close)
+    .split("\n")
+    .map((line) => line.trim())
+    // Doc comments (/** … */, /// …) and blank lines are not values.
+    .filter((line) => /^[A-Z_][A-Z0-9_]*$/.test(line));
+}
+
+describe("the DATABASE accepts every MessageSendStatus the schema declares", () => {
+  const values = schemaEnumValues("MessageSendStatus");
+
+  it("finds the enum values in the schema", () => {
+    // A guard that silently tested nothing would be the same failure again.
+    expect(values.length, "No MessageSendStatus values parsed from schema.prisma.").toBeGreaterThan(
+      0,
+    );
+    expect(values).toContain("ACCEPTED");
+    expect(values).toContain("SENT");
+    expect(values).toContain("FAILED");
+  });
+
+  for (const value of values) {
+    it(`${value} is writable against the live database`, async () => {
+      // A real person and template, so the insert is refused for the RIGHT
+      // reason if it is refused at all — a foreign-key error would tell us
+      // nothing about the enum.
+      const person = await prisma.person.findFirst({ select: { id: true } });
+      const template = await prisma.messageTemplate.findFirst({ select: { id: true, key: true } });
+      expect(person, "No Person row to attach a test MessageLog to.").not.toBeNull();
+      expect(template, "No MessageTemplate row to attach a test MessageLog to.").not.toBeNull();
+
+      // ROLLED BACK. The write is proven and then undone, so this never adds a
+      // row to the organizer's message log — a test that leaves debris in the
+      // record of what was said to whom would be its own 2.10 problem.
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await tx.messageLog.create({
+            data: {
+              personId: person!.id,
+              templateId: template!.id,
+              templateKey: template!.key,
+              body: `enum writability probe — ${value}`,
+              channel: "WHATSAPP",
+              toPhone: "+10000000000",
+              trigger: "MANUAL",
+              status: value as "SENT" | "ACCEPTED" | "FAILED",
+              providerSid: null,
+              error: null,
+            },
+          });
+          // Force the rollback. The insert above has already been executed by
+          // Postgres, so a refusal of the enum value would have thrown before
+          // reaching this line.
+          throw new RollbackProbe();
+        }),
+      ).rejects.toThrow(RollbackProbe);
+    });
+  }
+});
+
+/** Thrown to roll a probe transaction back. Never an error worth reporting. */
+class RollbackProbe extends Error {
+  constructor() {
+    super("rollback");
+    this.name = "RollbackProbe";
+  }
+}

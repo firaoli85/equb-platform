@@ -19,39 +19,54 @@
 // A member who has stopped is exactly the person who cannot compute this, and
 // the organizer should not be doing it on paper either.
 
-// ————————————————— DOES THE FEE APPLY TO SOMEONE NEVER DRAWN? —————————————————
+// ————————————————— THE FEE FOLLOWS THE COMMITMENT —————————————————
 //
-// NO — and this is a deliberate reading of the rules, not an assumption.
+// THE ORGANIZER'S RULING, and a correction to what was built first.
 //
-// The fee is defined against the PAYOUT, everywhere it is defined:
+// The fee is fixed by what a member COMMITTED TO, not by how much of it they
+// actually attended:
 //
-//   2.14  "Fee | 2% of gross"; "Payout | (weekly amount × their weeks) − fee"
-//   DOMAIN_RULES rule 2  "Fee is 2% of gross. Payout is gross minus fee. Each
-//                        lucky number pays its own fee." — and, decisively:
-//                        "The fee is charged PER MEMBER PAYOUT, not once on the
-//                        pot — a member holding three numbers pays three fees,
-//                        BECAUSE THEY RECEIVE THREE PAYOUTS."
+//   Join for 20 weeks at $500  → payout $10,000, fee $200. Always $200.
+//   Stop at week 12            → the fee is STILL $200. Stopping does not
+//                                reduce it.
+//   Change the RATE to $250    → 20 × $250 = $5,000, so the fee becomes $100.
 //
-// The fee is never charged on a contribution. It is deducted from a payout at
-// the moment one is made. A member who was never drawn has never had a payout,
-// so no fee has ever been taken from them and none is owed now — deducting one
-// would charge them for a service they did not receive, and would be the only
-// place in the platform where a fee existed without a payout behind it.
+// Only the contribution RATE moves the fee. Attendance never does.
 //
-// The whole-cycle arithmetic agrees: the organizer's fee income is the sum of
-// the fees on the payouts actually made. A slot that never paid out never
-// earned him a fee, so returning that member's money in full costs him nothing
-// he had earned — he was only ever holding it.
+// WHAT WAS BUILT FIRST, AND WHY IT WAS WRONG. DOMAIN_RULES rule 2 says the fee
+// is "charged per member payout ... because they receive three payouts", and I
+// read that as "no payout, no fee" — so an undrawn member was returned their
+// money in full. That reading takes a sentence about HOW MANY fees a
+// multi-number member pays (one per number) and turns it into a claim about
+// WHETHER a fee is owed at all. The fee is the organizer's charge for running
+// the member's place in the cycle; the place existed and was held for them
+// whether or not the wheel reached them. Rule 2 now says so outright.
 //
-// THE ORGANIZER MAY RULE OTHERWISE (2.2 — his discretion, his group). If he
-// does, `feeOnReturn` below is the single place it changes, and the sentence
-// will state the deduction rather than hiding it.
+// ONE DERIVATION. This computes through `feePreview`, which sums PER LUCKY
+// NUMBER through the same `calculatePayout` the draw, the portal and the
+// archive use. At 2% the per-number and total-first roads happen to meet; at a
+// percent that does not divide evenly they drift by a cent or two, and the
+// organizer quoting one figure while the member reads another is exactly the
+// failure that module exists to prevent.
 
-/** Cents of fee to withhold when returning an undrawn member's money. */
-export function feeOnReturn(): number {
-  // Zero, per the reading above. A function rather than a literal so the
-  // organizer's ruling has one place to land, and so this stays greppable.
-  return 0;
+import { feePreview } from "./fee-preview";
+
+/**
+ * The fee withheld when returning an undrawn member's money: the fee on their
+ * whole COMMITMENT, unreduced by stopping early.
+ *
+ * Returns 0 only when the inputs cannot describe a commitment at all — never
+ * as a judgement that no fee is due.
+ */
+export function feeOnReturn(input: {
+  weeklyAmount: number;
+  weeksCommitted: number;
+  /** The cycle's real unit — never hardcoded (2.6). */
+  unitAmount: number;
+  /** The cycle's real fee percent — never hardcoded (2.6). */
+  feePercent: number;
+}): number {
+  return feePreview(input)?.fee ?? 0;
 }
 
 export type FinalPosition =
@@ -59,7 +74,7 @@ export type FinalPosition =
       direction: "owed-to-them";
       /** Everything they paid in. */
       paidIn: number;
-      /** Withheld on return. Zero — see feeOnReturn. */
+      /** The fee on their whole COMMITMENT — stopping does not reduce it. */
       fee: number;
       /** What the group owes them. */
       amount: number;
@@ -98,11 +113,16 @@ export function finalPosition(input: {
   received: number;
   weeklyAmount: number;
   weeksCommitted: number;
+  /** The cycle's real unit — never hardcoded (2.6). */
+  unitAmount: number;
+  /** The cycle's real fee percent — never hardcoded (2.6). */
+  feePercent: number;
 }): FinalPosition {
   const drawn = input.received > 0;
 
   if (!drawn) {
-    const fee = feeOnReturn();
+    // The fee on their WHOLE COMMITMENT — stopping early does not reduce it.
+    const fee = feeOnReturn(input);
     const amount = Math.max(0, input.paidIn - fee);
     if (amount === 0) {
       // They were never drawn and paid nothing in. Nothing moves either way,
@@ -140,12 +160,25 @@ export function finalPositionSentence(
   position: FinalPosition,
   organizerName: string,
   money: (cents: number) => string,
+  /**
+   * When the cycle finishes, already formatted. MONEY IS RETURNED AT THE END
+   * OF THE CYCLE, NOT ON STOPPING — paying someone out early takes it from the
+   * members still contributing. Saying only "will arrange it" left them
+   * expecting it now, so the date is part of the sentence, not a footnote.
+   */
+  cycleFinishes: string | null,
 ): string {
+  const when =
+    cycleFinishes === null
+      ? `${organizerName} will settle this when the cycle finishes`
+      : `${organizerName} will settle this when the cycle finishes on ${cycleFinishes}`;
+
   switch (position.direction) {
     case "owed-to-them":
       return (
         `You paid in ${money(position.paidIn)}. You were not drawn. ` +
-        `${money(position.amount)} is owed to you — ${organizerName} will arrange it.`
+        `${money(position.amount)} is owed to you after the ${money(position.fee)} fee — ` +
+        `${when}.`
       );
     case "they-owe":
       return (
@@ -177,8 +210,9 @@ export function finalPositionAdminLine(
     case "owed-to-them":
       return (
         `You owe ${memberName} ${money(position.amount)} — they paid in ${money(position.paidIn)} ` +
-        `and were never drawn. No fee applies: a fee is only ever taken from a payout, and ` +
-        `they never had one.`
+        `and were never drawn, less the ${money(position.fee)} fee on their commitment. ` +
+        `Settle it when the cycle finishes, not before: paying it out now takes it from the ` +
+        `members still contributing.`
       );
     case "they-owe":
       return (
