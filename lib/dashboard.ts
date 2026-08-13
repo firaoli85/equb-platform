@@ -12,6 +12,14 @@ import {
 } from "./derived";
 import { calculateFinishWeek } from "./money";
 import { inWindow as inMemberWindow, type WindowBreak } from "./participation-close";
+// The WELCOME half of the gate, asked rather than re-implemented: the
+// dashboard row and the portal door must never disagree about who is waiting
+// (5.10). `lib/agreement.ts` reaches nothing but node:crypto, so this stays
+// clear of lib/client-bundle-safety.test.ts.
+import { agreementOutstanding } from "./agreement";
+
+const MS_PER_DAY = 86_400_000;
+const utcDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
 
 function assertCents(name: string, cents: number): void {
   if (!Number.isSafeInteger(cents) || cents < 0) {
@@ -385,6 +393,111 @@ export type AttentionMember = {
   /** Cents owed across their elapsed window, deferred weeks excluded. */
   amountOwed: number;
 };
+
+/**
+ * SOMEONE WHO NEEDS AN ACTION THAT IS NOT ABOUT MONEY BEING LATE.
+ *
+ * Kept apart from {@link AttentionMember} for the same reason `stopped` is:
+ * the list is read to decide what to DO, and "chase them for $1,500" and "they
+ * have never started" are not the same job. Folding them together would put a
+ * member who owes nothing yet in a row that says how much they owe.
+ */
+export type StandingIssue = {
+  personId: string;
+  participationId: string;
+  name: string;
+  kind:
+    /** Welcomed, and the portal is shut until they sign. Waiting on THEM. */
+    | "unsigned"
+    /**
+     * No money has ever been received against this participation. Waiting on
+     * the organizer, and it is genuinely ambiguous which way: either they have
+     * not paid, or they paid and it was never recorded. The row says the fact
+     * and leaves the judgement (2.2).
+     */
+    | "never-paid";
+  /** Committed weeks × weekly amount — what "not started" is worth, in cents. */
+  commitment: number;
+  /** How long they have been in this state, in whole days. Null when unknown. */
+  daysWaiting: number | null;
+};
+
+/**
+ * Members who need an action that the money columns cannot show.
+ *
+ * WHY THIS IS NOT PART OF `memberAttention`. That function answers one
+ * question — who is behind, and by how much — from payments alone, and it
+ * drops anyone whose behind-count is zero. Both states here are invisible to
+ * it by construction:
+ *
+ *   a welcomed member who has not signed may be perfectly up to date;
+ *   a member who has paid NOTHING is not "behind" until a week of theirs has
+ *   closed its window, so a new joiner sits at zero-behind, zero-owed, and
+ *   falls off every list on the dashboard while doing nothing at all.
+ *
+ * The second one is the reason this exists. A member committed to ten weeks at
+ * $1,000 who has never paid appeared on no screen the organizer opens.
+ */
+export function standingIssues(input: {
+  participations: readonly {
+    id: string;
+    personId: string;
+    name: string;
+    weeklyAmount: number;
+    weeksCommitted: number;
+    status: "ACTIVE" | "CLOSED";
+    /** Set by the welcome send; null means never welcomed. */
+    agreementRequiredAt: Date | null;
+    lastSignedAt: Date | null;
+    /** Cents received against this participation, ever. */
+    totalPaid: number;
+    /** When they joined the cycle — what `daysWaiting` counts from. */
+    joinedAt: Date | null;
+  }[];
+  today: Date;
+}): StandingIssue[] {
+  const issues: StandingIssue[] = [];
+  for (const p of input.participations) {
+    // A STOPPED PARTICIPATION IS NOT AN OUTSTANDING ACTION. They are reported
+    // in `stopped`, which says what stopping cost — and neither "sign this"
+    // nor "chase the first payment" is a thing to do about someone who has
+    // left. The gate makes the same exclusion for the same reason.
+    if (p.status !== "ACTIVE") continue;
+
+    const days = (from: Date) =>
+      Math.max(0, Math.floor((utcDay(input.today) - utcDay(from)) / MS_PER_DAY));
+
+    // ORDER MATTERS, AND IT IS THE GATE'S ORDER. A member who was welcomed and
+    // has not signed is reported as unsigned even when they have also never
+    // paid: he asked them personally, and that is the request he is waiting on.
+    if (
+      agreementOutstanding({ requiredAt: p.agreementRequiredAt, lastSignedAt: p.lastSignedAt })
+    ) {
+      issues.push({
+        personId: p.personId,
+        participationId: p.id,
+        name: p.name,
+        kind: "unsigned",
+        commitment: p.weeklyAmount * p.weeksCommitted,
+        daysWaiting: p.agreementRequiredAt ? days(p.agreementRequiredAt) : null,
+      });
+      continue;
+    }
+    if (p.totalPaid === 0) {
+      issues.push({
+        personId: p.personId,
+        participationId: p.id,
+        name: p.name,
+        kind: "never-paid",
+        commitment: p.weeklyAmount * p.weeksCommitted,
+        daysWaiting: p.joinedAt ? days(p.joinedAt) : null,
+      });
+    }
+  }
+  // Biggest commitment first: what is at stake is the reason to act, and it is
+  // the only figure both kinds share.
+  return issues.sort((a, b) => b.commitment - a.commitment || a.name.localeCompare(b.name));
+}
 
 /**
  * Members behind, worst first (by amount owed, then weeks).

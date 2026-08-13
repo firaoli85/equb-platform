@@ -7,6 +7,7 @@ import {
   receivedByMember,
   receiptsByWeek,
   memberAttention,
+  standingIssues,
   weekReceipts,
   weekMemberStatus,
   type DashboardParticipation,
@@ -551,5 +552,99 @@ describe("the this-week screen groups by the derived status", () => {
 
   it("notes the mark on the ROW instead", () => {
     expect(src).toMatch(/m\.markedLate && <Pill[^>]*>you marked this<\/Pill>/);
+  });
+});
+
+// WHO NEEDS AN ACTION THE MONEY COLUMNS CANNOT SHOW. Both states are
+// invisible to memberAttention by construction: an unsigned member may be
+// fully paid up, and a member who has paid NOTHING is not "behind" until a
+// week of theirs closes — a new joiner sits at zero-behind and fell off every
+// list. That fall-through is the defect this list exists to close.
+describe("standingIssues — welcomed-but-unsigned, and never-paid-at-all", () => {
+  const TODAY = new Date(Date.UTC(2026, 7, 13));
+  const henok = {
+    id: "part-henok",
+    personId: "person-henok",
+    name: "Henok",
+    weeklyAmount: 100_000,
+    weeksCommitted: 10,
+    status: "ACTIVE" as const,
+    agreementRequiredAt: null as Date | null,
+    lastSignedAt: null as Date | null,
+    totalPaid: 0,
+    joinedAt: new Date(Date.UTC(2026, 7, 3)),
+  };
+  const payer = {
+    ...henok,
+    id: "part-payer",
+    personId: "person-payer",
+    name: "Tizita",
+    totalPaid: 650_000,
+  };
+
+  // THE LIVE CASE, the one found on real data: committed to ten weeks at
+  // $1,000, never paid a cent, on no list anywhere.
+  it("reports a member who has never paid, with what is at stake", () => {
+    const issues = standingIssues({ participations: [henok, payer], today: TODAY });
+    expect(issues).toEqual([
+      {
+        personId: "person-henok",
+        participationId: "part-henok",
+        name: "Henok",
+        kind: "never-paid",
+        commitment: 1_000_000,
+        daysWaiting: 10,
+      },
+    ]);
+  });
+
+  it("reports a welcomed member who has not signed, and for how long", () => {
+    const welcomed = {
+      ...payer,
+      agreementRequiredAt: new Date(Date.UTC(2026, 7, 6)),
+    };
+    const issues = standingIssues({ participations: [welcomed], today: TODAY });
+    expect(issues).toEqual([
+      {
+        personId: "person-payer",
+        participationId: "part-payer",
+        name: "Tizita",
+        kind: "unsigned",
+        commitment: 1_000_000,
+        daysWaiting: 7,
+      },
+    ]);
+  });
+
+  // One row per person, and the gate's order: he ASKED them, so unsigned is
+  // the fact he is waiting on — never-paid would double-report the same body.
+  it("an unwelcomed unsigned unpaid member is one row, not two, and it is the asked one", () => {
+    const both = { ...henok, agreementRequiredAt: new Date(Date.UTC(2026, 7, 6)) };
+    const issues = standingIssues({ participations: [both], today: TODAY });
+    expect(issues).toHaveLength(1);
+    expect(issues[0].kind).toBe("unsigned");
+  });
+
+  it("a signature answers the welcome, and the member leaves the list", () => {
+    const signed = {
+      ...payer,
+      agreementRequiredAt: new Date(Date.UTC(2026, 7, 6)),
+      lastSignedAt: new Date(Date.UTC(2026, 7, 7)),
+    };
+    expect(standingIssues({ participations: [signed], today: TODAY })).toEqual([]);
+  });
+
+  // FALSIFIABLE: drop the ACTIVE check and this fails — a stopped member has
+  // left, and neither "sign this" nor "chase the first payment" is an action
+  // about them. They are `stopped`'s job (2.18).
+  it("never reports a stopped participation", () => {
+    const stopped = { ...henok, status: "CLOSED" as const };
+    expect(standingIssues({ participations: [stopped], today: TODAY })).toEqual([]);
+  });
+
+  it("orders by commitment — what is at stake is the reason to act", () => {
+    const small = { ...henok, id: "p-s", personId: "pp-s", name: "Zed", weeklyAmount: 25_000 };
+    const issues = standingIssues({ participations: [small, henok], today: TODAY });
+    expect(issues.map((i) => i.name)).toEqual(["Henok", "Zed"]);
   });
 });

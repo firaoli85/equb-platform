@@ -228,6 +228,83 @@ export function agreementOutstanding(input: {
 }
 
 /**
+ * WHY a signature is owed, or null. **The gate's only owner.**
+ *
+ * There are now TWO ROUTES into being required to sign, and they are
+ * independent — neither is a special case of the other:
+ *
+ *   `welcome-sent`         the organizer sent WHATSAPP_WELCOME, which sets
+ *                          `agreementRequiredAt`. {@link agreementOutstanding}
+ *                          owns this half and is unchanged.
+ *
+ *   `no-payment-recorded`  nothing has ever been received against this
+ *                          participation. A member who has committed and paid
+ *                          nothing has agreed to nothing either, and the
+ *                          portal shows an empty account that says nothing
+ *                          about what they owe. Signing is what turns a name
+ *                          in the directory into a member.
+ *
+ * WHY THE SECOND ROUTE IS BOUNDED, and this is the load-bearing part. It
+ * applies ONLY to a live participation in a running cycle:
+ *
+ *   a member who has PAID ANYTHING     — the route does not reach them, ever.
+ *                                        This is what keeps all 27 existing
+ *                                        members out of it: they have all paid.
+ *   a STOPPED participation            — they cannot pay now, so "has paid
+ *                                        nothing" would be a permanent
+ *                                        sentence rather than a prompt.
+ *   a member of a CLOSED cycle         — 2.18: closed members keep access to
+ *                                        their own record. Locking them out of
+ *                                        the history the platform kept FOR them
+ *                                        is the opposite of what that says.
+ *
+ * The last two are why this cannot be a two-line addition to
+ * `agreementOutstanding`: that function answers a question about two
+ * timestamps, and these are facts about a participation.
+ *
+ * ONCE THEY SIGN, THE SECOND ROUTE IS DONE WITH THEM — it asks for a
+ * signature, not for a payment, so any signature satisfies it. A later
+ * welcome can still gate them again through the first route, which is the
+ * changed-terms mechanism and is meant to keep working.
+ */
+export type AgreementRequirement = "welcome-sent" | "no-payment-recorded";
+
+export function agreementRequirement(input: {
+  requiredAt: Date | null;
+  lastSignedAt: Date | null;
+  /** Has any money ever been received against THIS participation? */
+  hasEverPaid: boolean;
+  /** Their participation is ACTIVE — not stopped, not closed out. */
+  participationLive: boolean;
+  /** Their cycle is still running. */
+  cycleOpen: boolean;
+}): AgreementRequirement | null {
+  // THE WELCOME ROUTE IS ASKED FIRST, and deliberately without any of the
+  // bounds below. A member who was sent the welcome was asked, personally, by
+  // the organizer — stopping or the cycle closing does not un-ask it, and
+  // silently dropping that requirement would lose a decision he made.
+  if (agreementOutstanding({ requiredAt: input.requiredAt, lastSignedAt: input.lastSignedAt })) {
+    return "welcome-sent";
+  }
+  if (input.hasEverPaid) return null;
+  if (input.lastSignedAt !== null) return null;
+  if (!input.participationLive || !input.cycleOpen) return null;
+  return "no-payment-recorded";
+}
+
+/**
+ * What to tell a member gated by {@link agreementRequirement}, above the
+ * document. Two routes, two true sentences — a member who was never sent
+ * anything must not be told to check a message that does not exist.
+ */
+export function requirementReason(requirement: AgreementRequirement): string {
+  return requirement === "welcome-sent"
+    ? "You were sent a welcome message. Please read your agreement and sign it to open your account."
+    : "There is no payment recorded on your account yet. Please read your agreement and sign it — " +
+      "once you have, your account opens and your weeks appear here as they are paid.";
+}
+
+/**
  * What the signing screen says it is recording, in the member's own words.
  *
  * ONE SENTENCE, and it is honest. It names what is kept and does not imply

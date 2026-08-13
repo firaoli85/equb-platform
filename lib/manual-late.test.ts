@@ -344,6 +344,8 @@ describe("a late notice becomes sendable the moment the week is marked", () => {
     participation: "live" as const,
     noMessages: false,
     hasPhone: true,
+    welcomeSentAt: null,
+    hasEverPaid: true,
   };
   const lateNotice = (over: { weeksBehind: number; amountOutstanding: number }) =>
     applicableTypes({ ...state, ...over }).find((t) => t.key === "LATE_NOTICE")!;

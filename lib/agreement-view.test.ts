@@ -101,3 +101,38 @@ describe("the two callers speak two different types", () => {
     expect(signingState({ requiredAt: undefined, signedAt: undefined })).toBe("not-asked");
   });
 });
+
+// THE SECOND ROUTE'S CHIP (organizer ruling, Aug 2026). Gated without having
+// been asked: no welcome, nothing ever paid, nothing signed.
+describe("gated by having paid nothing", () => {
+  const MAY = new Date("2026-05-17T10:00:00Z");
+  const unpaid = {
+    requiredAt: null,
+    signedAt: null,
+    hasEverPaid: false,
+    participationLive: true,
+    cycleOpen: true,
+  };
+
+  it("is WAITING-UNPAID — its own state, because the fix is a different one", () => {
+    expect(signingState(unpaid)).toBe("waiting-unpaid");
+  });
+
+  // FALSIFIABLE: default hasEverPaid to false instead and this fails — a
+  // caller that says nothing about payment must get the welcome-route answer,
+  // not 27 amber chips.
+  it("callers that do not know about payments keep their old answers", () => {
+    expect(signingState({ requiredAt: null, signedAt: null })).toBe("not-asked");
+    expect(signingState({ requiredAt: MAY, signedAt: null })).toBe("waiting");
+  });
+
+  it("a welcome outranks it — they were ASKED, and that is the waiting that shows", () => {
+    expect(signingState({ ...unpaid, requiredAt: MAY })).toBe("waiting");
+  });
+
+  it("any signature satisfies it, and a stopped member or closed cycle is never painted", () => {
+    expect(signingState({ ...unpaid, signedAt: MAY })).toBe("not-asked");
+    expect(signingState({ ...unpaid, participationLive: false })).toBe("not-asked");
+    expect(signingState({ ...unpaid, cycleOpen: false })).toBe("not-asked");
+  });
+});

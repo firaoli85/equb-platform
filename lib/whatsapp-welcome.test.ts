@@ -409,12 +409,18 @@ describe("sending the welcome is what requires the signature", () => {
     expect(engine).toMatch(/participationId: input\.participationId/);
     expect(read("app/actions/messages.ts")).toContain("sendStatement(");
     expect(read("app/actions/member-messaging.ts")).toContain("sendStatement(");
-    // …and neither action writes the requirement itself.
+    // …and neither action WRITES the requirement itself. Reading it is fine —
+    // the panel now shows "welcomed on {date}" from exactly this column — so
+    // the scan matches the write shape (`agreementRequiredAt:` given a value),
+    // not the bare name a `select:` also contains.
     for (const file of ["app/actions/messages.ts", "app/actions/member-messaging.ts"]) {
-      expect(read(file), `${file} must not set the requirement itself`).not.toContain(
-        "agreementRequiredAt",
+      expect(read(file), `${file} must not set the requirement itself`).not.toMatch(
+        /agreementRequiredAt:(?!\s*true\b)/,
       );
     }
+    // The write-shape scan still catches the engine's own write — the proof
+    // it can catch anything (5.2).
+    expect(engine).toMatch(/agreementRequiredAt:(?!\s*true\b)/);
   });
 });
 
@@ -458,6 +464,8 @@ describe("the welcome is offered per member, and never pre-ticked in a batch", (
     participation: "live" as "live" | "ended" | "none",
     noMessages: false,
     hasPhone: true,
+    welcomeSentAt: null as Date | null,
+    hasEverPaid: true,
   };
   const welcome = (state: typeof base) =>
     applicableTypes(state).find((t) => t.key === "WHATSAPP_WELCOME")!;
@@ -465,13 +473,30 @@ describe("the welcome is offered per member, and never pre-ticked in a batch", (
   // FALSIFIABLE: without a case of its own the key falls through
   // applicableTypes' `default:` and the profile greys it out with "Not sent by
   // hand." — a sentence that is both wrong and unfixable by the organizer.
-  it("applies to any live member, because a second send is a second requirement", () => {
+  it("is offered to a live member who has never been welcomed, and says what sending does", () => {
     const t = welcome(base);
     expect(t.applicable).toBe(true);
     expect(t.reason).toBeNull();
+    // The consequence is ON THE CARD (organizer request): this is the one
+    // button on the panel whose effect is a locked portal, not a message.
+    expect(t.note).toContain("Not welcomed yet");
+    expect(t.note).toContain("sign");
     // It is not a chase: deferral and the chasing rules have nothing to say
     // about a welcome.
     expect(t.chasing).toBe(false);
+  });
+
+  // FALSIFIABLE: revert to `applicable: true` unconditionally — the previous
+  // ruling — and both halves fail: the offered flag and the date in the
+  // sentence.
+  it("stops being offered once sent, and shows WHEN it was sent", () => {
+    const sent = { ...base, welcomeSentAt: new Date(Date.UTC(2026, 7, 10)) };
+    const t = welcome(sent);
+    expect(t.applicable).toBe(false);
+    expect(t.reason).toContain("August 10, 2026");
+    // …and the way to deliberately re-issue is named, not closed silently.
+    expect(t.reason).toContain("Send to many");
+    expect(t.note).toBeNull();
   });
 
   it("is refused with everything else to someone with no phone or no cycle", () => {

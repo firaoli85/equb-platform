@@ -7,10 +7,12 @@ import {
   AGREEMENT_V1_BODY,
   agreementClauses,
   agreementHash,
-  agreementOutstanding,
+  agreementRequirement,
   renderAgreement,
+  requirementReason,
   unknownAgreementTokens,
   type AgreementClause,
+  type AgreementRequirement,
   type AgreementTerms,
 } from "@/lib/agreement";
 import { logAudit } from "@/lib/audit";
@@ -140,6 +142,13 @@ export type AgreementToSign = {
   memberFirstName: string;
   /** Their terms in one sentence, for the welcome line above the document. */
   welcome: string;
+  /**
+   * Which route required this, and the sentence that goes with it. A member
+   * gated for having paid nothing was never sent a message, and telling them
+   * to check one would send them looking for something that does not exist.
+   */
+  requirement: AgreementRequirement;
+  requirementReason: string;
 };
 
 /**
@@ -160,22 +169,56 @@ export async function getMyAgreement(): Promise<
     });
     if (!person) return { ok: true as const, data: null };
 
-    // The participation that was asked to sign, oldest requirement first —
-    // someone in two cycles signs one at a time rather than being shown a
-    // pile.
+    // EVERY PARTICIPATION, NOT ONLY THE ASKED ONES.
+    //
+    // The `agreementRequiredAt: { not: null }` filter that used to be here was
+    // the whole gate: a member the welcome had never reached could not be
+    // returned by this query, so no rule downstream could gate them however it
+    // was written. The second route (nothing ever paid) is about members in
+    // exactly that state, so the row has to arrive here first.
+    //
+    // Bounded by the domain rather than by a take(): one row per cycle this
+    // person has ever been in, and cycles are a handful, ever — the same
+    // exemption app/actions/member-history.ts carries in
+    // lib/bounded-queries.test.ts.
+    //
+    // `payments` is narrowed to money IN THE DATABASE rather than counted in
+    // memory: `_count` on a filtered relation is the cheapest honest answer to
+    // "has anything ever landed here", and it reads the same column every
+    // money derivation reads (2.14), so the gate cannot disagree with the
+    // portal it is standing in front of.
     const participations = await prisma.participation.findMany({
-      where: { personId: person.id, agreementRequiredAt: { not: null } },
-      orderBy: { agreementRequiredAt: "asc" },
-      include: { signatures: { orderBy: { signedAt: "desc" }, take: 1 } },
+      where: { personId: person.id, cycle: { status: { in: ["ACTIVE", "CLOSED"] } } },
+      orderBy: [{ agreementRequiredAt: "asc" }, { id: "asc" }],
+      include: {
+        signatures: { orderBy: { signedAt: "desc" }, take: 1 },
+        cycle: { select: { status: true } },
+        _count: { select: { payments: { where: { amountPaid: { gt: 0 } } } } },
+      },
     });
 
-    const owing = participations.find((p) =>
-      agreementOutstanding({
+    // Oldest requirement first — someone in two cycles signs one at a time
+    // rather than being shown a pile. `findMany`'s ordering puts the asked
+    // ones first (nulls last in Postgres ASC), so a welcome that was actually
+    // sent is answered before a no-payment requirement the member may not
+    // even know about.
+    let owing: (typeof participations)[number] | undefined;
+    let requirement: AgreementRequirement | undefined;
+    for (const p of participations) {
+      const found = agreementRequirement({
         requiredAt: p.agreementRequiredAt,
         lastSignedAt: p.signatures[0]?.signedAt ?? null,
-      }),
-    );
-    if (!owing) return { ok: true as const, data: null };
+        hasEverPaid: p._count.payments > 0,
+        participationLive: p.status === "ACTIVE",
+        cycleOpen: p.cycle.status === "ACTIVE",
+      });
+      if (found) {
+        owing = p;
+        requirement = found;
+        break;
+      }
+    }
+    if (!owing || !requirement) return { ok: true as const, data: null };
 
     const terms = await termsFor(owing.id);
     if (!terms) {
@@ -197,6 +240,8 @@ export async function getMyAgreement(): Promise<
         documentText,
         documentHash: agreementHash(documentText),
         memberFirstName: person.nameEnglishFirst,
+        requirement,
+        requirementReason: requirementReason(requirement),
         welcome:
           `You are saving ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(terms.weeklyAmount / 100)} ` +
           `a week for ${terms.weeksCommitted} ${terms.weeksCommitted === 1 ? "week" : "weeks"}, ` +
@@ -335,6 +380,12 @@ export type MemberAgreementState = {
   device: string | null;
   ip: string | null;
   outstanding: boolean;
+  /**
+   * WHICH ROUTE is holding them, or null. `outstanding` says whether the
+   * portal is shut; this says why, and the two answers come from one call so
+   * they cannot drift apart.
+   */
+  requirement: AgreementRequirement | null;
   /** Have they replaced the phone-digit PIN with one of their own? */
   hasOwnPin: boolean;
 };
@@ -366,6 +417,11 @@ export async function getMemberAgreementState(input: { personId: string }): Prom
           orderBy: { createdAt: "desc" },
           select: {
             agreementRequiredAt: true,
+            status: true,
+            cycle: { select: { status: true } },
+            // The same filtered count the gate takes, off the same column, so
+            // "has this member ever paid" is one question with one answer.
+            _count: { select: { payments: { where: { amountPaid: { gt: 0 } } } } },
             signatures: {
               orderBy: { signedAt: "desc" },
               take: 1,
@@ -386,14 +442,23 @@ export async function getMemberAgreementState(input: { personId: string }): Prom
     // THE OUTSTANDING ONE WINS. A member owing a signature is the fact the
     // organizer has to see, whichever cycle it belongs to; only when nothing
     // is owed does the most recent participation answer.
-    const outstandingOne = person.participations.find((p) =>
-      agreementOutstanding({
+    //
+    // ASKED THROUGH `agreementRequirement`, exactly as the gate asks it. When
+    // this read the welcome route alone and the gate read both, the profile
+    // could report "nothing owed" about a member the portal was refusing —
+    // the same class of contradiction the take(1) above already caused once.
+    const requirementOf = (p: (typeof person.participations)[number]) =>
+      agreementRequirement({
         requiredAt: p.agreementRequiredAt,
         lastSignedAt: p.signatures[0]?.signedAt ?? null,
-      }),
-    );
+        hasEverPaid: p._count.payments > 0,
+        participationLive: p.status === "ACTIVE",
+        cycleOpen: p.cycle.status === "ACTIVE",
+      });
+    const outstandingOne = person.participations.find((p) => requirementOf(p) !== null);
     const participation = outstandingOne ?? person.participations[0];
     const signature = participation?.signatures[0];
+    const requirement = outstandingOne ? requirementOf(outstandingOne) : null;
     return {
       ok: true as const,
       data: {
@@ -402,10 +467,8 @@ export async function getMemberAgreementState(input: { personId: string }): Prom
         version: signature?.agreementVersion.version ?? null,
         device: signature ? `${signature.browser} on ${signature.os}` : null,
         ip: signature?.ip ?? null,
-        outstanding: agreementOutstanding({
-          requiredAt: participation?.agreementRequiredAt ?? null,
-          lastSignedAt: signature?.signedAt ?? null,
-        }),
+        outstanding: requirement !== null,
+        requirement,
         hasOwnPin: person.pinHash !== null,
       },
     };

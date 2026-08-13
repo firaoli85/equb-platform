@@ -8,6 +8,7 @@ import {
   receivedByMember,
   receiptsByWeek,
   memberAttention,
+  standingIssues,
   weekMemberStatus,
   type DashboardPayment,
 } from "@/lib/dashboard";
@@ -184,6 +185,36 @@ export async function getDashboard(input?: { weekNumber?: number }) {
       elapsedThroughWeek: elapsedThroughWeek(cycle.weeks, today),
     });
 
+    // WHO NEEDS AN ACTION THAT IS NOT "THEY ARE BEHIND".
+    //
+    // One grouped read for the signatures, exactly as listPeople does it —
+    // the alternative is a join per participation carrying `documentText`,
+    // the whole signed agreement, to answer a yes/no.
+    //
+    // `totalPaid` is summed from the payments ALREADY LOADED above rather than
+    // re-queried: they are the same rows every figure on this page derives
+    // from, so the never-paid row cannot disagree with the money beside it.
+    const signedRows = await prisma.agreementSignature.groupBy({
+      by: ["participationId"],
+      _max: { signedAt: true },
+    });
+    const lastSignedAt = new Map(signedRows.map((s) => [s.participationId, s._max.signedAt]));
+    const issues = standingIssues({
+      today,
+      participations: cycle.participations.map((p) => ({
+        id: p.id,
+        personId: p.personId,
+        name: `${p.person.nameAmharic} — ${p.person.nameEnglishFirst}`,
+        weeklyAmount: p.weeklyAmount,
+        weeksCommitted: p.weeksCommitted,
+        status: p.status,
+        agreementRequiredAt: p.agreementRequiredAt,
+        lastSignedAt: lastSignedAt.get(p.id) ?? null,
+        totalPaid: p.payments.reduce((sum, r) => sum + r.amountPaid, 0),
+        joinedAt: p.createdAt,
+      })),
+    });
+
     // Weeks whose payment window has CLOSED with money still outstanding
     // (late is derived from the calendar — 2.14/2.16).
     const closedShortfalls = series
@@ -228,6 +259,10 @@ export async function getDashboard(input?: { weekNumber?: number }) {
         series,
         cash,
         attention,
+        // NEEDS AN ACTION THAT IS NOT MONEY-LATE: welcomed-but-unsigned, and
+        // never-paid-at-all. Kept apart from `attention` for the same reason
+        // `stopped` is — different fact, different next move.
+        issues,
         // MEMBERS WHO HAVE STOPPED (2.18), never folded into `attention`.
         // Someone who is behind will pay; someone who has stopped will not,
         // and a dashboard that shows them in one list is telling the organizer

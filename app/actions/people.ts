@@ -1,7 +1,7 @@
 "use server";
 
 import { CAPS } from "@/lib/paging";
-import { agreementOutstanding } from "@/lib/agreement";
+import { agreementRequirement } from "@/lib/agreement";
 import { signingState } from "@/lib/agreement-view";
 import { duplicatePhoneRefusal } from "@/lib/person-record";
 import { revalidatePath } from "next/cache";
@@ -79,6 +79,21 @@ export async function listPeople(searchTerm?: string) {
     });
     const lastSignedAt = new Map(signatures.map((s) => [s.participationId, s._max.signedAt]));
 
+    // HAS ANYTHING EVER BEEN PAID — the second route into the gate, read the
+    // same way and for the same reason: one grouped query for the directory,
+    // not a join per row.
+    //
+    // OFF `Payment.amountPaid`, NOT off the `paymentEvents` already loaded
+    // above. Those are the receipts for the ACTIVE cycle only, summed for the
+    // contributed column; the gate asks about a participation's whole life,
+    // and about the same column every money derivation reads (2.14). Two
+    // sources for one question is how the chip and the portal come to disagree.
+    const paid = await prisma.payment.groupBy({
+      by: ["participationId"],
+      _sum: { amountPaid: true },
+    });
+    const paidTotal = new Map(paid.map((p) => [p.participationId, p._sum.amountPaid ?? 0]));
+
     const data = people.map((person) => {
       const here = active
         ? (person.participations.find((p) => p.cycleId === active.id) ?? null)
@@ -95,15 +110,18 @@ export async function listPeople(searchTerm?: string) {
       //
       // Only when nothing is owed does the most recent one answer, so a member
       // who has signed still shows when and against what.
+      const signingFacts = (p: (typeof person.participations)[number]) => ({
+        requiredAt: p.agreementRequiredAt,
+        signedAt: lastSignedAt.get(p.id) ?? null,
+        hasEverPaid: (paidTotal.get(p.id) ?? 0) > 0,
+        participationLive: p.status === "ACTIVE",
+        cycleOpen: p.cycle.status === "ACTIVE",
+      });
       const owing =
-        person.participations.find(
-          (p) =>
-            p.agreementRequiredAt !== null &&
-            agreementOutstanding({
-              requiredAt: p.agreementRequiredAt,
-              lastSignedAt: lastSignedAt.get(p.id) ?? null,
-            }),
-        ) ?? null;
+        person.participations.find((p) => {
+          const f = signingFacts(p);
+          return agreementRequirement({ ...f, lastSignedAt: f.signedAt }) !== null;
+        }) ?? null;
       const latest = owing ?? person.participations[person.participations.length - 1] ?? null;
       return {
         ...person,
@@ -124,10 +142,9 @@ export async function listPeople(searchTerm?: string) {
          * Null `agreementRequiredAt` means no welcome was ever sent, which is
          * "not asked" — not "not signed". Everyone already mid-cycle is there.
          */
-        agreementSigning: signingState({
-          requiredAt: latest?.agreementRequiredAt ?? null,
-          signedAt: latest ? (lastSignedAt.get(latest.id) ?? null) : null,
-        }),
+        agreementSigning: latest
+          ? signingState(signingFacts(latest))
+          : signingState({ requiredAt: null, signedAt: null }),
       };
     });
     return { ok: true as const, data };

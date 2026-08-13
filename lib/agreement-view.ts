@@ -1,4 +1,4 @@
-import { agreementOutstanding } from "./agreement";
+import { agreementRequirement } from "./agreement";
 
 // WHERE ONE MEMBER STANDS ON SIGNING — the organizer's four cases, derived in
 // one place so the directory chip and the profile block cannot disagree.
@@ -26,6 +26,17 @@ export type SigningState =
   /** Asked, nothing signed. Their portal is closed until they sign. */
   | "waiting"
   /**
+   * NOTHING PAID, NOTHING SIGNED — gated by the second route, without any
+   * welcome having been sent.
+   *
+   * Its own state rather than a second "waiting" because the organizer's next
+   * action differs completely: a waiting member has been asked and he is
+   * waiting on them, and this member has not been asked at all — the useful
+   * move is to send the welcome, or to record the payment that has arrived
+   * and never been entered.
+   */
+  | "waiting-unpaid"
+  /**
    * They signed, and were then asked again — a second welcome sets a later
    * `agreementRequiredAt`, so the earlier signature stops answering. That is
    * the whole "terms changed" mechanism; there is no re-sign flow.
@@ -49,13 +60,38 @@ function asDate(value: Moment): Date | null {
   return value instanceof Date ? value : new Date(value);
 }
 
-export function signingState(input: { requiredAt: Moment; signedAt: Moment }): SigningState {
+export function signingState(input: {
+  requiredAt: Moment;
+  signedAt: Moment;
+  /**
+   * The second route's three facts. OPTIONAL, and they default to the shape
+   * in which that route cannot fire — a caller that does not know whether
+   * this member has paid gets exactly the welcome-route answer it used to
+   * get, rather than a guess.
+   *
+   * `hasEverPaid` defaults to TRUE for that reason and not by accident: the
+   * route is "nothing paid", so the safe unknown is "something was paid".
+   * Defaulting the other way would paint every caller's members as gated the
+   * moment this shipped.
+   */
+  hasEverPaid?: boolean;
+  participationLive?: boolean;
+  cycleOpen?: boolean;
+}): SigningState {
   const requiredAt = asDate(input.requiredAt);
   const signedAt = asDate(input.signedAt);
+  const requirement = agreementRequirement({
+    requiredAt,
+    lastSignedAt: signedAt,
+    hasEverPaid: input.hasEverPaid ?? true,
+    participationLive: input.participationLive ?? true,
+    cycleOpen: input.cycleOpen ?? true,
+  });
+  if (requirement === "no-payment-recorded") return "waiting-unpaid";
   // SENDING THE WELCOME IS WHAT REQUIRES A SIGNATURE (organizer ruling). No
   // welcome, no requirement — asked before any signature is considered, so a
   // stray signature can never make an ungated member look gated.
   if (requiredAt === null) return "not-asked";
-  if (!agreementOutstanding({ requiredAt, lastSignedAt: signedAt })) return "signed";
+  if (requirement === null) return "signed";
   return signedAt === null ? "waiting" : "waiting-again";
 }

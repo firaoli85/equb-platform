@@ -358,6 +358,27 @@ describe("GUARD — the signing gate cannot be walked around", () => {
     expect(refused, "the signer never checks whether the signature was taken").toBeGreaterThan(-1);
     expect(refused, "it navigates before reading the result").toBeLessThan(leave);
   });
+
+  // THE SECOND ROUTE'S ONE STRUCTURAL PRECONDITION (organizer ruling, Aug
+  // 2026: no payment recorded → gated until they sign). The rule itself is
+  // unit-tested in lib/agreement.test.ts; what only a source scan can hold is
+  // the QUERY above it. The original gate filtered its findMany to
+  // `agreementRequiredAt: { not: null }` — with that filter back, a member the
+  // welcome never reached cannot even arrive at the rule, and the no-payment
+  // route is dead code however correct it is.
+  //
+  // FALSIFIABLE: re-add the filter and the first assertion fails; delete the
+  // `agreementRequirement` call from the action and the second does.
+  it("the gate's query no longer pre-filters to welcomed members", () => {
+    const body = stripComments(actionBody("getMyAgreement"));
+    expect(body, "the asked-only filter is back — the no-payment route is unreachable").not.toMatch(
+      /agreementRequiredAt:\s*\{\s*not:\s*null\s*\}/,
+    );
+    expect(body, "the gate no longer asks agreementRequirement").toContain(
+      "agreementRequirement(",
+    );
+    expect(body, "the gate no longer reads whether anything was paid").toContain("hasEverPaid");
+  });
 });
 
 // ————————————————————————————————————————————————————————————————————————

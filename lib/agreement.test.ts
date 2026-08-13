@@ -5,8 +5,10 @@ import {
   agreementClauses,
   agreementHash,
   agreementOutstanding,
+  agreementRequirement,
   agreementValues,
   renderAgreement,
+  requirementReason,
   SIGNATURE_NOTICE,
   unknownAgreementTokens,
   type AgreementTerms,
@@ -264,5 +266,81 @@ describe("what the screen tells them is being recorded", () => {
   // claim what it cannot hold, and the notice must not either.
   it("claims no MAC address", () => {
     expect(SIGNATURE_NOTICE.toLowerCase()).not.toContain("mac");
+  });
+});
+
+// THE SECOND ROUTE (organizer ruling, Aug 2026): no payment recorded → the
+// agreement is required → the portal is gated until they sign. Sending the
+// welcome is one route to being gated; having paid nothing is another.
+describe("agreementRequirement — the two routes, and the bounds on the second", () => {
+  const at = (iso: string) => new Date(iso);
+  // A live member of the running cycle who has paid and was never welcomed —
+  // the state all 27 existing members are in. Everything below perturbs this.
+  const settled = {
+    requiredAt: null as Date | null,
+    lastSignedAt: null as Date | null,
+    hasEverPaid: true,
+    participationLive: true,
+    cycleOpen: true,
+  };
+
+  // THE CRITICAL PROPERTY, the one the rollout hangs on: a paying member with
+  // no welcome is not gated by either route. If this fails, the existing 27
+  // lock out on deploy.
+  it("does not reach a member who has paid anything and was never welcomed", () => {
+    expect(agreementRequirement(settled)).toBeNull();
+  });
+
+  it("gates a live unpaid member of the running cycle — the new route", () => {
+    expect(agreementRequirement({ ...settled, hasEverPaid: false })).toBe("no-payment-recorded");
+  });
+
+  // FALSIFIABLE each way: drop either guard in the implementation and its
+  // line here fails alone, naming the bound that was lost.
+  it("never reaches a stopped member, or a member of a closed cycle (2.18)", () => {
+    expect(
+      agreementRequirement({ ...settled, hasEverPaid: false, participationLive: false }),
+    ).toBeNull();
+    expect(agreementRequirement({ ...settled, hasEverPaid: false, cycleOpen: false })).toBeNull();
+  });
+
+  it("is satisfied by ANY signature — it asks for a signature, not a payment", () => {
+    expect(
+      agreementRequirement({
+        ...settled,
+        hasEverPaid: false,
+        lastSignedAt: at("2026-08-13T10:00:00Z"),
+      }),
+    ).toBeNull();
+  });
+
+  // The welcome route is untouched by every bound above: he asked personally,
+  // and stopping does not un-ask it.
+  it("the welcome route still fires whatever the payment or participation state", () => {
+    const asked = { ...settled, requiredAt: at("2026-08-12T10:00:00Z") };
+    expect(agreementRequirement(asked)).toBe("welcome-sent");
+    expect(
+      agreementRequirement({ ...asked, hasEverPaid: false, participationLive: false, cycleOpen: false }),
+    ).toBe("welcome-sent");
+  });
+
+  // …and wins when both apply: the member was ASKED, and that is the request
+  // the organizer is waiting on.
+  it("reports welcome-sent when both routes are open", () => {
+    expect(
+      agreementRequirement({
+        ...settled,
+        requiredAt: at("2026-08-12T10:00:00Z"),
+        hasEverPaid: false,
+      }),
+    ).toBe("welcome-sent");
+  });
+
+  // A member gated by the second route was never sent anything — the screen
+  // must not tell them to check a message that does not exist.
+  it("each route gets its own true sentence", () => {
+    expect(requirementReason("welcome-sent")).toContain("welcome message");
+    expect(requirementReason("no-payment-recorded")).not.toContain("message");
+    expect(requirementReason("no-payment-recorded")).toContain("no payment recorded");
   });
 });

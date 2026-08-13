@@ -40,6 +40,10 @@ const CHIP: Record<SigningState, { tone: PillTone; text: string }> = {
   // Still waiting, but for a different reason, and the list should say which
   // — the organizer sent the second welcome and needs to see it landed.
   "waiting-again": { tone: "attention", text: "Waiting · new terms" },
+  // GATED WITHOUT HAVING BEEN ASKED — no welcome was sent; nothing has ever
+  // been paid. The chip names the cause because the fix is a different one:
+  // send the welcome, or record the money that arrived and was never entered.
+  "waiting-unpaid": { tone: "attention", text: "Waiting · no payment yet" },
   // NEUTRAL BY RULING, NOT BY TASTE. A member nobody has asked has done
   // nothing wrong and nothing is outstanding, so this must not read as a
   // warning — an amber chip down 27 rows would invent 27 problems.

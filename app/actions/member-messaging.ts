@@ -41,6 +41,8 @@ export type MemberMessagingView = {
     label: string;
     applicable: boolean;
     reason: string | null;
+    /** Why this one is being OFFERED, when that is worth a sentence. */
+    note: string | null;
     chasing: boolean;
     /** The real rendered text, with their real figures (2.20/2.21). */
     preview: string | null;
@@ -155,10 +157,35 @@ export async function getMemberMessaging(input: { personId: string }) {
       ? await winnerExtrasForParticipation(prisma, participationId)
       : null;
 
+    // HAVE THEY BEEN WELCOMED, AND HAVE THEY EVER PAID — the two facts the
+    // panel could not previously see about the person it was offering to
+    // message. Read off the SAME participation the statements are about, so a
+    // member in two cycles is answered about the one in view.
+    //
+    // Both come from one row: `agreementRequiredAt` is set by the welcome send
+    // itself, and the filtered `_count` is the same "has anything landed"
+    // question the portal gate asks, off the same column (2.14).
+    const sendState = participationId
+      ? await prisma.participation.findUnique({
+          where: { id: participationId },
+          select: {
+            agreementRequiredAt: true,
+            _count: { select: { payments: { where: { amountPaid: { gt: 0 } } } } },
+          },
+        })
+      : null;
+
     const types = applicableTypes({
       name: person.nameEnglishFirst,
       weeksBehind: loaded?.standing.weeksBehind ?? 0,
       amountOutstanding: loaded?.standing.amountOutstanding ?? 0,
+      welcomeSentAt: sendState?.agreementRequiredAt ?? null,
+      // NO PARTICIPATION READS AS "HAS PAID", which is the direction that adds
+      // no sentence. The never-paid note explains a dash in a preview; with no
+      // participation there is no preview and no figures to explain, and
+      // asserting "they have never paid" about someone in no cycle would be a
+      // claim this action has not checked.
+      hasEverPaid: sendState === null || sendState._count.payments > 0,
       drawnWeek: drawn?.draw?.week.weekNumber ?? null,
       // BOTH READ OFF THE SAME RESOLUTION. `cycleClosed` is the CYCLE's status
       // and nothing else (2.9); `participation` is whether there is a live
@@ -206,6 +233,10 @@ export async function getMemberMessaging(input: { personId: string }) {
         label: LABELS[t.key] ?? t.key,
         applicable: t.applicable && blocked === null,
         reason: blocked ?? t.reason,
+        // Dropped when a platform block turns the card into a refusal: a
+        // reason for not sending and a note about why it was offered would
+        // sit on the same card arguing with each other.
+        note: blocked === null ? t.note : null,
         chasing: t.chasing,
         // RENDERED EVEN WHEN BLOCKED, on purpose: the organizer's next question
         // after "why not" is "what would it have said", and the preview is

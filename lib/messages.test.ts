@@ -473,6 +473,9 @@ describe("which message types apply to one member", () => {
     participation: "live" as "live" | "ended" | "none",
     noMessages: false,
     hasPhone: true,
+    // Never welcomed, has paid — the state all 27 existing members are in.
+    welcomeSentAt: null as Date | null,
+    hasEverPaid: true,
   };
 
   const forKey = (state: Parameters<typeof applicableTypes>[0], key: string) =>

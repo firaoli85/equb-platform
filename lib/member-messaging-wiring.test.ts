@@ -80,6 +80,13 @@ vi.mock("@/lib/prisma", () => ({
         const allowed = args?.where?.cycle?.status?.in ?? ["DRAFT", "ACTIVE", "CLOSED"];
         return participations.filter((p) => allowed.includes(p.cycle.status));
       }),
+      // The welcome/paid read: never welcomed, has paid — the state every
+      // member in these fixtures is in, so the closing-statement and refusal
+      // assertions below are undisturbed by the welcome's own applicability.
+      findUnique: vi.fn(async () => ({
+        agreementRequiredAt: null,
+        _count: { payments: 1 },
+      })),
     },
     messageLog: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     payout: { findFirst: vi.fn(async () => drawnPayout) },

@@ -68,9 +68,14 @@ export function AgreementSigner({ agreement }: { agreement: AgreementToSign }) {
         <p className="text-base font-semibold text-indigo-800 dark:text-indigo-300 text-pretty">
           {agreement.welcome}
         </p>
+        {/* WHY THEY ARE HERE — the route's own sentence, from the server. A
+            member gated for having no payment recorded was never sent a
+            message, and the copy below must not tell them to check one. */}
         <p className="text-sm text-gray-600 dark:text-gray-400 text-pretty">
-          Please read this and sign it. It is your own agreement — every figure in it is yours.
-          You will see your payments straight after.
+          {agreement.requirementReason}
+        </p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 text-pretty">
+          It is your own agreement — every figure in it is yours.
         </p>
       </header>
 

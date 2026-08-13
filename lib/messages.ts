@@ -460,6 +460,21 @@ export type ApplicableType = {
   applicable: boolean;
   /** Why not, in the organizer's words. Null when it applies. */
   reason: string | null;
+  /**
+   * Why it is being OFFERED — the counterpart of `reason`, and a separate
+   * field for a reason worth stating.
+   *
+   * `reason` answers "why can I not send this", and the UI files it under
+   * "Not applicable right now". A note answers "why is this one here", which
+   * is a different question and belongs on the card the organizer is about to
+   * press. Overloading `reason` would have put an explanation inside a
+   * refusal list, where it reads as a complaint about a type that is in fact
+   * ready to send.
+   *
+   * Null for the ordinary case: a type that applies for the obvious reason
+   * does not need a sentence about it.
+   */
+  note: string | null;
   /** True when it is a chase, which deferral and hardship suppress. */
   chasing: boolean;
 };
@@ -494,6 +509,26 @@ export function applicableTypes(state: {
   noMessages: boolean;
   /** No number on file — nothing can be delivered anywhere. */
   hasPhone: boolean;
+  /**
+   * WHEN THE WELCOME WAS LAST SENT — `Participation.agreementRequiredAt`,
+   * because sending it IS what sets that column. Null means never welcomed.
+   *
+   * Read from the requirement rather than from the message log on purpose:
+   * the log records attempts, including ones that failed at Twilio, and a
+   * welcome that did not arrive has still gated the member — the requirement
+   * is what actually happened to them.
+   */
+  welcomeSentAt: Date | null;
+  /**
+   * Has ANY money ever been received against this participation?
+   *
+   * Not a status: it only adds a sentence. A member with no payment at all is
+   * a state the chasing templates render honestly but ambiguously — the
+   * approved BEHIND_NOTICE says "last payment week —", and a dash is a
+   * character the organizer has to interpret. This is what lets the panel say
+   * it in words before he sends it.
+   */
+  hasEverPaid: boolean;
 }): ApplicableType[] {
   const blockedForAll = !state.hasPhone
     ? `${state.name} has no phone number on file, so nothing can be delivered.`
@@ -527,56 +562,113 @@ export function applicableTypes(state: {
   const chasing = (key: MessageKey) =>
     (CHASING_MESSAGE_KEYS as readonly string[]).includes(key);
 
+  // A MEMBER WHO HAS NEVER PAID AT ALL, said in words rather than as a dash.
+  //
+  // `lastPaymentWeek` renders as "—" for them, which is honest and is the one
+  // placeholder allowed to be the sentinel (lib/placeholder-kinds.ts). Honest
+  // is not the same as legible: the organizer reading a preview cannot tell a
+  // dash that means "never paid" from a dash that means something went wrong,
+  // and this is the message he is about to send to a real person.
+  const neverPaidNote = state.hasEverPaid
+    ? null
+    : `${state.name} has no payment recorded at all — not a late one, none. The dash in ` +
+      `“last payment week” is that, and the figures below are their whole position.`;
+
   return MANUAL_MESSAGE_KEYS.map((key): ApplicableType => {
     if (blockedForAll) {
-      return { key, applicable: false, reason: blockedForAll, chasing: chasing(key) };
+      return { key, applicable: false, reason: blockedForAll, note: null, chasing: chasing(key) };
     }
     if (notLive && key !== "CYCLE_CLOSING_STATEMENT") {
-      return { key, applicable: false, reason: notLive, chasing: chasing(key) };
+      return { key, applicable: false, reason: notLive, note: null, chasing: chasing(key) };
     }
     switch (key) {
       case "BEHIND_NOTICE":
         return state.weeksBehind > 0
-          ? { key, applicable: true, reason: null, chasing: true }
+          ? { key, applicable: true, reason: null, note: neverPaidNote, chasing: true }
           : {
               key,
               applicable: false,
               // Named precisely: "not applicable" invites the organizer to
               // wonder whether the screen is wrong.
-              reason: `${state.name} is not behind on any week whose window has closed.`,
+              //
+              // AND IT SAYS WHICH OF THE TWO SILENCES THIS IS. "Not behind"
+              // covers a member who has paid everything and a member who has
+              // paid nothing whose first week has not closed yet — opposite
+              // situations, and the second is the one that needs him.
+              reason: state.hasEverPaid
+                ? `${state.name} is not behind on any week whose window has closed.`
+                : `${state.name} has paid nothing yet, and no week of theirs has closed its ` +
+                  `payment window — so there is no missed week to state. This becomes ` +
+                  `sendable the day their first week closes.`,
+              note: null,
               chasing: true,
             };
       case "LATE_NOTICE":
         return state.amountOutstanding > 0
-          ? { key, applicable: true, reason: null, chasing: true }
+          ? { key, applicable: true, reason: null, note: neverPaidNote, chasing: true }
           : {
               key,
               applicable: false,
               reason: `${state.name} owes nothing right now.`,
+              note: null,
               chasing: true,
             };
       case "WHATSAPP_WELCOME":
-        // ALWAYS APPLICABLE TO A LIVE MEMBER, and that is the ruling, not a
-        // gap. Sending the welcome is what requires a signature, and the
-        // document is always live — change someone from 10 weeks to 12, send it
-        // again, and they sign the CURRENT terms. So there is no "already
-        // welcomed" state to refuse: a second send is a deliberate second
-        // requirement, which is exactly the re-sign flow that then does not
-        // need building.
+        // OFFERED TO A MEMBER WHO HAS NOT BEEN WELCOMED, AND ONLY THEN.
         //
-        // The two things that genuinely stop it — no sign-in address, and the
-        // phone-digit PIN switched off — are PLATFORM settings, not this
-        // member's state, so they are not decided here. They live in one pure
-        // rule (lib/welcome-send.ts) that the send path and every caller of
-        // this function ask separately.
-        return { key, applicable: true, reason: null, chasing: false };
+        // This type used to be unconditionally applicable, on the reasoning
+        // that a second send is a deliberate second requirement against
+        // current terms and therefore never wrong. That is still true of what
+        // a second send DOES. It was the wrong shape for the screen: a list
+        // that offers the welcome identically to all 27 members says nothing
+        // about which of them has actually been let in, and the one fact the
+        // organizer needs here — has this person been asked to sign — was the
+        // one thing the panel would not tell him.
+        //
+        // So the state is shown instead of hidden (organizer ruling): not
+        // welcomed is an action, welcomed is a record with a date on it.
+        //
+        // WHAT THIS COSTS, stated because it is a real trade. Re-sending was
+        // the whole re-sign mechanism — change someone from 10 weeks to 12,
+        // send again, they sign the new terms. That route is now closed from
+        // this panel. It is still open from the batch (“Send to many”), which
+        // resolves the same type against the same rule and is where a
+        // deliberate re-issue belongs anyway.
+        //
+        // The two things that genuinely stop a FIRST send — no sign-in
+        // address, and the phone-digit PIN switched off — are PLATFORM
+        // settings, not this member's state, so they are not decided here.
+        // They live in one pure rule (lib/welcome-send.ts) that the send path
+        // and every caller of this function ask separately.
+        if (state.welcomeSentAt === null) {
+          return {
+            key,
+            applicable: true,
+            reason: null,
+            note:
+              `Not welcomed yet — sending this asks ${state.name} to read and sign their ` +
+              `agreement before they can use the portal.`,
+            chasing: false,
+          };
+        }
+        return {
+          key,
+          applicable: false,
+          reason:
+            `${state.name} was welcomed on ${formatDateLongUTC(state.welcomeSentAt)}, so their ` +
+            `signature is already required. Sending it again would ask for a new signature ` +
+            `against current terms — do that from “Send to many” if the terms have changed.`,
+          note: null,
+          chasing: false,
+        };
       case "WINNER_ANNOUNCEMENT":
         return state.drawnWeek !== null
-          ? { key, applicable: true, reason: null, chasing: false }
+          ? { key, applicable: true, reason: null, note: null, chasing: false }
           : {
               key,
               applicable: false,
               reason: `${state.name}'s number has not been drawn yet, so there is no payout to announce.`,
+              note: null,
               chasing: false,
             };
       case "CYCLE_CLOSING_STATEMENT": {
@@ -606,7 +698,7 @@ export function applicableTypes(state: {
         // app/actions/cycle-close.ts instructs and the only path that has ever
         // worked before the status flips.
         if (state.cycleClosed || state.participation === "ended") {
-          return { key, applicable: true, reason: null, chasing: false };
+          return { key, applicable: true, reason: null, note: neverPaidNote, chasing: false };
         }
         return {
           key,
@@ -615,11 +707,18 @@ export function applicableTypes(state: {
             `${state.name} is still contributing to a cycle that is still running. A closing ` +
             `statement states their FINAL position, so it is sent when the cycle ends — from ` +
             `“Send to many”, which reaches everyone at once.`,
+          note: null,
           chasing: false,
         };
       }
       default:
-        return { key, applicable: false, reason: "Not sent by hand.", chasing: chasing(key) };
+        return {
+          key,
+          applicable: false,
+          reason: "Not sent by hand.",
+          note: null,
+          chasing: chasing(key),
+        };
     }
   });
 }

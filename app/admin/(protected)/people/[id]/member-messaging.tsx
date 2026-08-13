@@ -193,6 +193,16 @@ export function MemberMessaging({
                       </h3>
                       {type.chasing && <Pill tone="attention">chases for money</Pill>}
                     </div>
+                    {/* WHY THIS ONE IS HERE — above the preview, because it
+                        changes how the preview reads. "No payment recorded at
+                        all" is what turns the dash in "last payment week —"
+                        from a glitch into a fact, and the welcome's note is
+                        the consequence of pressing the button underneath it. */}
+                    {type.note !== null && (
+                      <p className="mx-4 mt-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                        {type.note}
+                      </p>
+                    )}
                     {/* The real text, not a description of it. */}
                     <p className="mx-4 mt-2 whitespace-pre-wrap rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-800 dark:bg-white/5 dark:text-gray-200">
                       {type.preview}
