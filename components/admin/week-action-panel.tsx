@@ -7,6 +7,7 @@ import { getCatchUpWeeks, getCellDetail } from "@/app/actions/payments-view";
 import { PaymentEntry } from "@/components/admin/payment-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatDateUTC, formatMoney } from "@/lib/format";
 import type { PickableWeek } from "@/lib/week-picking";
 import { DEFERRED_PHRASE, SKIPPED_PHRASE } from "@/lib/status-labels";
@@ -24,6 +25,20 @@ import { DEFERRED_PHRASE, SKIPPED_PHRASE } from "@/lib/status-labels";
 // The payment part is now `PaymentEntry`, embedded with the clicked week
 // ticked, so all three views share it. This panel keeps what is genuinely
 // PER-WEEK: deferral, the week note, and undoing a receipt.
+
+const IDLE: SaveState = { kind: "idle" };
+
+/**
+ * WHICH CLUSTER OF CONTROLS A MESSAGE BELONGS TO.
+ *
+ * The panel's week actions are in two places with a tall `PaymentEntry`
+ * between them: defer / mark-late in the header, and an Undo on every receipt
+ * below the payment grid. One message rendered once would put the confirmation
+ * for an Undo pressed at the bottom up in the header — the reported defect in
+ * miniature (rule 6 beat 3). The slot says which cluster it is for; the other
+ * renders nothing. It is still ONE state, so the two can never disagree.
+ */
+type ActionSlot = "week" | "receipt";
 
 export type WeekTarget = {
   participationId: string;
@@ -71,9 +86,25 @@ export function WeekActionPanel({
   const [loadedWeeks, setLoadedWeeks] = useState<{ key: string; weeks: PickableWeek[] } | null>(
     null,
   );
-  const [busy, setBusy] = useState<"save" | "week" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
+  /**
+   * The panel's own week actions — defer, the late mark, undoing a receipt.
+   * ONE state: "is it saving", "did it work" and "why not" are three readings
+   * of the same fact, and as three variables they drifted (the old `busy` even
+   * carried a "save" case nothing set any more).
+   */
+  const [save, setSave] = useState<{ slot: ActionSlot; state: SaveState }>({
+    slot: "week",
+    state: IDLE,
+  });
+  /** The note is the one control here with a Save button of its own. */
+  const [noteSave, setNoteSave] = useState<SaveState>(IDLE);
+  /**
+   * NOT A SAVE. Failing to READ the week is a different sentence from failing
+   * to write it, and it used to be printed as "Not recorded: …" — a save
+   * refusal for something the organizer never asked to save.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const busy = save.state.kind === "saving" || noteSave.kind === "saving";
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran. Set it and the dialog stays
@@ -111,7 +142,7 @@ export function WeekActionPanel({
       if (result.ok) {
         setDetail({ ...result.data, key: detailKey });
         setNote(result.data.note);
-      } else setError(result.error);
+      } else setLoadError(`This week could not be loaded: ${result.error}`);
     });
     return () => {
       cancelled = true;
@@ -126,7 +157,7 @@ export function WeekActionPanel({
     getCatchUpWeeks(target.participationId).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
-        setError(result.error);
+        setLoadError(`Their weeks could not be loaded, so nothing can be recorded: ${result.error}`);
         return;
       }
       setLoadedWeeks({
@@ -145,28 +176,53 @@ export function WeekActionPanel({
     };
   }, [target.participationId, keyNonce, weeksKey]);
 
-  /** `fn` returns its refusal, or nothing on success (UI_STANDARDS 6b). */
-  function ask(spec: ConfirmSpec, fn: () => Promise<string | null | void>) {
+  /**
+   * CONFIRM, RUN, AND REPORT — in one place, for all three week actions.
+   *
+   * `run` hands back the action's own result and decides nothing about where
+   * the outcome is shown. It used to: two of the three callers wrote their
+   * refusal into the panel's banner and returned nothing, which told this
+   * helper the action had SUCCEEDED — so the dialog closed on a refusal, and
+   * the reason surfaced in a banner above a payment grid rather than beside
+   * the button that had just been pressed (UI_STANDARDS 6b). Reporting here is
+   * the only shape in which the three cannot drift apart.
+   */
+  function ask(
+    spec: ConfirmSpec,
+    run: () => Promise<{ ok: boolean; error?: string }>,
+    report: { slot: ActionSlot; okText: string; refusalLabel: string },
+  ) {
+    const set = (state: SaveState) => setSave({ slot: report.slot, state });
     setConfirm(spec);
+    setDialogError(null);
     setOnConfirm(() => () => {
       void (async () => {
-        setBusy("week");
-        let refused: string | null = null;
+        set({ kind: "saving" });
+        // THE DIALOG STAYS OPEN WITH THE REASON IN IT, and the panel keeps its
+        // own copy so cancelling out of a refusal does not throw it away
+        // either. Closing happens only on the success path below — never in a
+        // `finally`, which runs on both.
+        const refuse = (reason: string) => {
+          setDialogError(reason);
+          set({ kind: "err", message: `${report.refusalLabel}: ${reason}` });
+        };
         try {
-          const reported = await fn();
-          if (typeof reported === "string" && reported.length > 0) refused = reported;
-        } finally {
-          setBusy(null);
-          // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
-          // refusal was thrown away with the dialog that could have shown it
-          // (UI_STANDARDS 6b).
-          if (refused === null) {
-            setConfirm(null);
-            setOnConfirm(null);
-          } else {
-            setDialogError(refused);
+          const result = await run();
+          if (!result.ok) {
+            refuse(result.error ?? "Refused — nothing changed.");
+            return;
           }
+        } catch {
+          // A THROW IS A REFUSAL WITH A REASON TOO. It used to escape this
+          // helper entirely — the `finally` closed the dialog, the exception
+          // went to the console, and the organizer saw the panel blink.
+          refuse("Could not reach the server — nothing changed.");
+          return;
         }
+        set({ kind: "ok", message: report.okText });
+        setConfirm(null);
+        setOnConfirm(null);
+        onSaved(`✓ ${report.okText}`);
       })();
     });
   }
@@ -223,18 +279,20 @@ export function WeekActionPanel({
         ),
         confirmLabel: next ? `Mark week ${target.weekNumber} late` : "Remove the mark",
       },
-      async () => {
-        const result = await setWeekLate({
+      () =>
+        setWeekLate({
           participationId: target.participationId,
           weekNumber: target.weekNumber,
           late: next,
-        });
-        if (!result.ok) return result.error;
-        onSaved(
-          next
-            ? `✓ Week ${target.weekNumber} marked late for ${target.memberName} — a late notice can be sent now.`
-            : `✓ The late mark on week ${target.weekNumber} was removed.`,
-        );
+        }),
+      {
+        slot: "week",
+        okText: next
+          ? `Week ${target.weekNumber} marked late for ${target.memberName} — a late notice can be sent now.`
+          : `The late mark on week ${target.weekNumber} was removed — the calendar decides again.`,
+        refusalLabel: next
+          ? `Week ${target.weekNumber} was NOT marked late`
+          : `The late mark on week ${target.weekNumber} was NOT removed`,
       },
     );
   }
@@ -270,21 +328,56 @@ export function WeekActionPanel({
         ),
         confirmLabel: next ? `Defer week ${target.weekNumber}` : "Chase it again",
       },
-      async () => {
-        const result = await setWeekDeferral({
+      () =>
+        setWeekDeferral({
           participationId: target.participationId,
           weekNumber: target.weekNumber,
           deferred: next,
-        });
-        if (!result.ok) setError(result.error);
-        else
-          onSaved(
-            next
-              ? `✓ Week ${target.weekNumber} deferred — not chased, still owed.`
-              : `✓ Deferral removed — week ${target.weekNumber} is chased again.`,
-          );
+        }),
+      {
+        slot: "week",
+        okText: next
+          ? `Week ${target.weekNumber} deferred for ${target.memberName} — still owed, no longer chased.`
+          : `Deferral removed — week ${target.weekNumber} is chased again for ${target.memberName}.`,
+        refusalLabel: next
+          ? `Week ${target.weekNumber} was NOT deferred`
+          : `The deferral on week ${target.weekNumber} was NOT removed`,
       },
     );
+  }
+
+  // THE NOTE IS THE ONE CONTROL HERE THAT IS NOT A CONFIRMATION. It has its
+  // own button, so it gets its own `SaveButton` and its own state — the same
+  // message, rendered at the only control it describes.
+  async function saveNote() {
+    if (detail === null || note === detail.note) return;
+    setNoteSave({ kind: "saving" });
+    try {
+      const result = await setWeekNote({
+        participationId: target.participationId,
+        weekNumber: target.weekNumber,
+        note,
+      });
+      if (!result.ok) {
+        setNoteSave({ kind: "err", message: `Not saved: ${result.error}` });
+        return;
+      }
+      const trimmed = note.trim();
+      const message = trimmed
+        ? `Saved — the note on week ${target.weekNumber} now reads “${trimmed}”.`
+        : `Saved — the note on week ${target.weekNumber} is now empty.`;
+      setNoteSave({ kind: "ok", message });
+      // WHAT WAS SAVED IS NOW THE BASELINE, so the button goes dead until the
+      // text changes again (beat 1). Without this it stays live over text the
+      // server already holds, and pressing it saves nothing twice.
+      setDetail((d) => (d && d.key === detailKey ? { ...d, note } : d));
+      onSaved(`✓ ${message}`);
+    } catch {
+      setNoteSave({
+        kind: "err",
+        message: "Could not reach the server — the note was not saved.",
+      });
+    }
   }
 
   return (
@@ -321,7 +414,7 @@ export function WeekActionPanel({
                 // dead, carrying the sentence that names the way out — the
                 // same rule as every other refusal: at the control that was
                 // pressed (UI_STANDARDS 6b).
-                disabled={busy !== null || (!detail.markedLate && detail.lateAdvice.kind === "deferred")}
+                disabled={busy || (!detail.markedLate && detail.lateAdvice.kind === "deferred")}
                 data-testid="mark-late"
                 title={
                   detail.markedLate
@@ -337,7 +430,7 @@ export function WeekActionPanel({
           <button
             type="button"
             onClick={toggleDeferral}
-            disabled={busy !== null || !detail || detail.weekIsSkipped}
+            disabled={busy || !detail || detail.weekIsSkipped}
             title={
               detail?.weekIsSkipped
                 ? "The whole week is skipped for everyone — edit it on the Weeks page"
@@ -366,21 +459,16 @@ export function WeekActionPanel({
         </p>
       )}
 
-      {error && <Alert kind="err">Not recorded: {error}</Alert>}
-      {/* THE CONFIRMATION FOR THIS PANEL, INSIDE IT (§2.10, rule 6 beat 3).
-          `ok` already existed and only ever carried "Note saved."; a recorded
-          PAYMENT went straight to the host, which closed the panel and drew
-          the message at the top of its own screen — the top of a 27×20 grid,
-          or of a long member page. The cell he clicked was nowhere near it. */}
-      {ok && (
-        <p
-          role="status"
-          data-testid="save-ok"
-          className="rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm font-semibold text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
-        >
-          ✓ {ok.replace(/^✓\s*/, "")}
-        </p>
-      )}
+      {/* A READ THAT FAILED, SAID AS A READ. This banner used to print every
+          message as "Not recorded: …", so a week that could not be LOADED
+          read as a save the organizer had never asked for. */}
+      {loadError && <Alert kind="err">{loadError}</Alert>}
+
+      {/* THE HEADER ACTIONS' OWN FEEDBACK, DIRECTLY UNDER THEM (rule 6 beat 3
+          and 4). Deferring and marking late used to say nothing here at all:
+          the message went to the host, which drew it at the top of a 27×20
+          grid or of a long member page, nowhere near the cell he clicked. */}
+      <SaveFeedback state={save.slot === "week" ? save.state : IDLE} />
 
       {/* ————— RECORDING MONEY IS ONE INTERACTION, EVERYWHERE (2.19) —————
           This panel had its own amount field, its own preview and its own
@@ -397,8 +485,12 @@ export function WeekActionPanel({
           memberName={target.memberName}
           weeks={memberWeeks}
           preselect={[target.weekNumber]}
+          // NO ECHO HERE. `PaymentEntry` carries its own `SaveButton`, which
+          // renders the receipt line beside the Record button inside this
+          // panel — the panel used to copy that same message into a second
+          // green paragraph at the top of itself, giving one save two
+          // confirmations and two `save-ok` nodes.
           onRecorded={(message) => {
-            setOk(message.replace(/^✓\s*/, ""));
             onSaved(message);
             setKeyNonce((n) => n + 1);
           }}
@@ -436,7 +528,7 @@ export function WeekActionPanel({
                 </span>
                 <button
                   type="button"
-                  disabled={busy !== null}
+                  disabled={busy}
                   onClick={() =>
                     ask(
                       {
@@ -462,13 +554,11 @@ export function WeekActionPanel({
                         ),
                         confirmLabel: "Undo receipt",
                       },
-                      async () => {
-                        const result = await deletePaymentEvent({ eventId: r.eventId });
-                        if (!result.ok) setError(result.error);
-                        else
-                          onSaved(
-                            `✓ Undone — ${formatMoney(r.eventAmount)} receipt deleted and weeks recalculated.`,
-                          );
+                      () => deletePaymentEvent({ eventId: r.eventId }),
+                      {
+                        slot: "receipt",
+                        okText: `Undone — the ${formatMoney(r.eventAmount)} receipt from ${target.memberName} was deleted and their weeks recalculated.`,
+                        refusalLabel: `The ${formatMoney(r.eventAmount)} receipt was NOT undone`,
                       },
                     )
                   }
@@ -480,49 +570,63 @@ export function WeekActionPanel({
             ))}
           </ul>
         )}
+        {/* UNDER THE UNDO BUTTONS, not up in the header. The payment grid sits
+            between the two, so a receipt undone from down here would otherwise
+            confirm itself off the top of the panel. */}
+        <SaveFeedback state={save.slot === "receipt" ? save.state : IDLE} className="mt-2" />
       </div>
 
-      {/* ————— Note on the week ————— */}
-      <div className="flex items-end gap-2">
-        <label className="grow">
+      {/* ————— Note on the week —————
+          A FORM, because this is a text field: Enter is how anyone finishes
+          typing, and the SaveButton press is the same submit. */}
+      <form
+        // WRAPPING, because the confirmation renders beside the button. A
+        // one-line row would squeeze the note field to nothing the moment a
+        // sentence appears next to "Save note"; here the button and its
+        // message drop to their own line instead.
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void saveNote();
+        }}
+      >
+        <label className="grow basis-64">
           <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
             Note on week {target.weekNumber}
           </span>
           <input
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => {
+              setNote(e.target.value);
+              // A confirmation for the previous text must not sit beside text
+              // that no longer matches it.
+              setNoteSave(IDLE);
+            }}
             className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-2.5 py-1.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
           />
         </label>
-        <button
-          type="button"
-          disabled={busy !== null || detail === null || note === (detail?.note ?? "")}
-          onClick={() => {
-            void (async () => {
-              setBusy("week");
-              const result = await setWeekNote({
-                participationId: target.participationId,
-                weekNumber: target.weekNumber,
-                note,
-              });
-              setBusy(null);
-              if (!result.ok) setError(result.error);
-              else {
-                setOk("✓ Note saved.");
-                onSaved("✓ Note saved.");
-              }
-            })();
-          }}
-          className={buttonCls.secondary + " !px-3 !py-1.5 !text-xs"}
-        >
-          Save note
-        </button>
-      </div>
+        {/* The note's own button, so the note's own confirmation renders here
+            rather than in a banner the whole panel shares. */}
+        <SaveButton
+          state={noteSave}
+          onSave={() => void saveNote()}
+          onStateSettled={() => setNoteSave(IDLE)}
+          label="Save note"
+          savingLabel="Saving…"
+          tone="secondary"
+          disabled={detail === null || busy}
+          dirty={note !== (detail?.note ?? "")}
+          notDirtyHint="The note has not changed."
+          className="pb-0.5"
+        />
+      </form>
 
       <ConfirmDialog
         spec={confirm}
         error={dialogError}
-        busy={busy === "week"}
+        // The dialog is working when ITS action is — derived from the one save
+        // state rather than from a second boolean that could disagree with it.
+        busy={save.state.kind === "saving"}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
           setDialogError(null);

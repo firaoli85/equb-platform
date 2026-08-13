@@ -5,6 +5,7 @@ import { addWinnerToWeek, movePayoutToWeek, poolCandidates } from "@/app/actions
 import type { ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/controls";
 import { buttonCls } from "@/components/ui/primitives";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatMoney } from "@/lib/format";
 import {
   addWinnerPreview,
@@ -27,6 +28,8 @@ import {
 // EVERY ACTION STATES ITS CONSEQUENCES IN REAL MONEY FIRST. The sentences come
 // from lib/week-winners.ts, so the confirmation and the arithmetic can never
 // drift apart.
+
+const IDLE: SaveState = { kind: "idle" };
 
 /** A destination week, carrying the live state its label states. */
 export type MoveTargetWeek = {
@@ -90,7 +93,19 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
   const [chosenNumber, setChosenNumber] = useState("");
   const [movingPayoutId, setMovingPayoutId] = useState("");
   const [targetWeekId, setTargetWeekId] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  /**
+   * THIS EDITOR'S OWN REFUSALS, AT ITS OWN CONTROL (rule 6 beat 4).
+   *
+   * Only ever a refusal, never a confirmation, and that is not an oversight:
+   * the WRITE belongs to the parent's `ask`, which reports the success under
+   * this card through its own `SaveFeedback`. What lands here is what never
+   * reached a confirmation at all — a pool that would not load, or a choice
+   * `addWinnerRefusal` / `movePayoutRefusal` answered immediately. Those used
+   * to print at the TOP of the editor while "Review…" is at the bottom of the
+   * open panel, so pressing it looked like nothing happening: the dialog he
+   * expected simply never opened, with the reason out of sight above.
+   */
+  const [save, setSave] = useState<SaveState>(IDLE);
   const [, startLoad] = useTransition();
 
   // The pool is only needed once the organizer asks to add someone.
@@ -99,7 +114,7 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
     startLoad(async () => {
       const result = await poolCandidates({ weekId: week.weekId });
       if (!result.ok) {
-        setLoadError(result.error);
+        setSave({ kind: "err", message: `The pool could not be loaded: ${result.error}` });
         return;
       }
       setCandidates(result.data.candidates);
@@ -122,7 +137,7 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
       drawnNumberIds: new Set(week.payouts.map((p) => p.luckyNumberId)),
     });
     if (refusal) {
-      setLoadError(refusal);
+      setSave({ kind: "err", message: `Not added: ${refusal}` });
       return;
     }
     const preview = addWinnerPreview({ week, candidate, feePercent });
@@ -159,7 +174,7 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
     };
     const refusal = movePayoutRefusal({ from: week, to, payout: moving });
     if (refusal) {
-      setLoadError(refusal);
+      setSave({ kind: "err", message: `Not moved: ${refusal}` });
       return;
     }
     const preview = movePayoutPreview({
@@ -212,19 +227,16 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
 
   return (
     <div className="border-t border-gray-100 dark:border-gray-800/60 px-5 py-3">
-      {loadError && (
-        <p role="alert" className="mb-2 text-xs font-semibold text-red-700 dark:text-red-400">
-          {loadError}
-        </p>
-      )}
-
+      {/* The refusal used to render HERE, above everything, while the button
+          that earns it sits at the foot of whichever panel is open. It now
+          renders in the panel, beside "Review…" — see below. */}
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={busy || week.undrawn}
           onClick={() => {
             setOpen(open === "add" ? "none" : "add");
-            setLoadError(null);
+            setSave(IDLE);
           }}
           className={buttonCls.secondary + " !text-xs"}
         >
@@ -236,7 +248,7 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
             disabled={busy}
             onClick={() => {
               setOpen(open === "move" ? "none" : "move");
-              setLoadError(null);
+              setSave(IDLE);
             }}
             className={buttonCls.ghost + " !text-xs"}
           >
@@ -261,7 +273,7 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
               value={chosenNumber}
               onChange={(v) => {
                 setChosenNumber(v);
-                setLoadError(null);
+                setSave(IDLE);
               }}
               ariaLabel={`Member and lucky number to add to week ${week.weekNumber}`}
               className="w-full"
@@ -295,6 +307,9 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
           >
             Review…
           </button>
+          {/* THE REASON, UNDER THE BUTTON THAT EARNED IT. `basis-full` so it
+              takes its own line rather than squeezing the number picker. */}
+          <SaveFeedback state={save} className="basis-full" />
           {candidates !== null && candidates.length === 0 && (
             <p className="basis-full text-xs text-gray-600 dark:text-gray-400">
               Every number in this cycle has already been drawn — there is nobody left to add.
@@ -312,7 +327,12 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
             </span>
             <Select
               value={movingPayoutId}
-              onChange={setMovingPayoutId}
+              // A refusal describes the pair that was chosen. Choose a
+              // different one and it no longer describes anything on screen.
+              onChange={(v) => {
+                setMovingPayoutId(v);
+                setSave(IDLE);
+              }}
               ariaLabel="Winner to move"
               className="w-56"
               options={[
@@ -330,7 +350,10 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
             </span>
             <Select
               value={targetWeekId}
-              onChange={setTargetWeekId}
+              onChange={(v) => {
+                setTargetWeekId(v);
+                setSave(IDLE);
+              }}
               ariaLabel="Destination week"
               className="w-40"
               options={[
@@ -350,6 +373,8 @@ export function WeekWinnerEditor({ week, cycleName, otherWeeks, busy, ask }: Pro
           >
             Review…
           </button>
+          {/* Same message, same place: under the button that was pressed. */}
+          <SaveFeedback state={save} className="basis-full" />
           <p className="basis-full text-xs text-gray-600 dark:text-gray-400">
             Every week is offered with its real state — free weeks as free, drawn weeks with their
             total. Moving into a free week creates the draw there. A week holding a committed

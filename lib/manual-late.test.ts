@@ -300,19 +300,29 @@ describe("the command centre sees the mark too", () => {
   });
 
   it("this week's breakdown shows them as LATE, not as merely unpaid", () => {
+    // AN OPEN WEEK, so the MARK is the only thing that can make it late —
+    // which is what this test is about. Once the window shuts the calendar
+    // makes it late on its own, and that case is pinned in dashboard.test.ts.
+    const open = { weekDate: WEEK_START, today: MONDAY };
     const rows = weekMemberStatus({
       weekNumber: 3,
+      ...open,
       participations: [participation],
       payments: [pay(3, { markedLate: true })],
     });
     expect(rows[0].status).toBe("LATE");
+    // The mark rides along as a NOTE, so a screen can say how it became late
+    // without making it a category of its own.
+    expect(rows[0].markedLate).toBe(true);
 
     const unmarked = weekMemberStatus({
       weekNumber: 3,
+      ...open,
       participations: [participation],
       payments: [pay(3)],
     });
     expect(unmarked[0].status).toBe("UNPAID");
+    expect(unmarked[0].markedLate).toBe(false);
   });
 
   it("the this-week screen has a group for it", () => {
@@ -327,6 +337,11 @@ describe("a late notice becomes sendable the moment the week is marked", () => {
     name: "Henok",
     drawnWeek: null,
     cycleClosed: false,
+    // A LIVE participation in the running cycle — the only state in which a
+    // late notice is offered at all (rule 17: stopped is not behind). Added
+    // when applicableTypes stopped inferring the cycle's status from the
+    // absence of a participation; see lib/messaging-subject.ts.
+    participation: "live" as const,
     noMessages: false,
     hasPhone: true,
   };

@@ -73,6 +73,19 @@ export type SettingDefaults = {
    * payments in transit into permanent debts. 0 switches the wait off.
    */
   closingWaitDays: number;
+  /**
+   * Where a member signs in — the address WHATSAPP_WELCOME tells them to open.
+   *
+   * DEFAULT EMPTY, AND DELIBERATELY NOT GUESSED. The obvious alternative is to
+   * derive it from the request host or from APP_BASE_URL, and both are wrong
+   * for the same reason: this string goes into a message that cannot be
+   * recalled, and a host that happens to be serving the admin right now
+   * (a preview deploy, localhost, a Vercel branch URL) is not the address the
+   * organizer wants 27 members to keep. Empty means "not decided", the welcome
+   * refuses to send while it is empty (lib/welcome-send.ts), and the organizer
+   * decides once.
+   */
+  portalUrl: string;
 };
 
 export const SETTING_DEFAULTS: SettingDefaults = {
@@ -88,6 +101,7 @@ export const SETTING_DEFAULTS: SettingDefaults = {
   adminSessionIdleMinutes: SESSION_LIMIT_DEFAULTS.adminIdleMinutes,
   adminSessionMaxHours: SESSION_LIMIT_DEFAULTS.adminMaxHours,
   closingWaitDays: CLOSING_WAIT_DAYS_DEFAULT,
+  portalUrl: "",
 };
 
 /**
@@ -150,11 +164,17 @@ export const SETTING_LABELS: Record<SettingKey, string> = {
   adminSessionIdleMinutes: "Organizer session — idle minutes",
   adminSessionMaxHours: "Organizer session — maximum hours",
   closingWaitDays: "Wait before a cycle can be closed (days)",
+  portalUrl: "Member sign-in address",
 };
 
 /** A setting's value as a person reads it — never `true`/`false`. */
 export function settingValueLabel(value: unknown): string {
   if (typeof value === "boolean") return value ? "on" : "off";
+  // AN EMPTY TEXT SETTING IS A STATE, NOT A BLANK. `portalUrl` ships empty, so
+  // the first change to it would have been recorded as "Member sign-in address:
+  //  → https://…" — a summary with a hole in it, which reads as a rendering
+  // fault rather than as the fact that there was no address before.
+  if (typeof value === "string" && value.trim() === "") return "(not set)";
   return String(value);
 }
 

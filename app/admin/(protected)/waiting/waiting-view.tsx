@@ -10,7 +10,8 @@ import { AssignPayout } from "@/app/admin/(protected)/people/[id]/assign-payout"
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { Select } from "@/components/ui/controls";
-import { Alert, buttonCls, EmptyState, Pill } from "@/components/ui/primitives";
+import { buttonCls, EmptyState, Pill } from "@/components/ui/primitives";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatMoney } from "@/lib/format";
 import { motionTokens, springs } from "@/lib/motion-tokens";
@@ -43,6 +44,12 @@ const METHODS = [
   { value: "OTHER", label: "Other" },
 ] as const;
 
+const IDLE: SaveState = { kind: "idle" };
+
+function methodLabel(value: string): string {
+  return METHODS.find((m) => m.value === value)?.label ?? value;
+}
+
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -60,11 +67,24 @@ function useRowMotion(index: number) {
 }
 
 export function WaitingView({ data }: { data: WaitingData }) {
-  const router = useRouter();
   const reduce = useReducedMotion();
   const [filter, setFilter] = useState<Filter>("awaiting-payment");
   const [sort, setSort] = useState<WaitingSort>("longest");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  /**
+   * FEEDBACK SCOPED TO THE ROW THAT WAS PRESSED (UI_STANDARDS rule 6).
+   *
+   * This was ONE `msg` banner at the very top of the page. Confirming a
+   * collection on the twelfth row wrote its confirmation above the three stat
+   * cards, off the top of the screen — rule 6's original defect exactly, and
+   * here it is money leaving the organizer's hands with nothing at the button
+   * to say it left. Each row now carries its own `SaveState`, keyed by the
+   * record the button acts on.
+   */
+  const [rowSave, setRowSave] = useState<Record<string, SaveState>>({});
+  function reportFor(key: string) {
+    return (state: SaveState) => setRowSave((m) => ({ ...m, [key]: state }));
+  }
 
   const owedRows = useMemo(
     () => sortWaiting(data.awaitingPayment, sort),
@@ -76,9 +96,27 @@ export function WaitingView({ data }: { data: WaitingData }) {
   const showOwed = filter !== "awaiting-turn";
   const showTurn = filter !== "awaiting-payment";
 
+  // THE ONE MESSAGE THAT HAS NOWHERE LEFT TO GO.
+  //
+  // Success DELETES the control here: a collected payout leaves
+  // `awaitingPayment` and a fully assigned member leaves `awaitingTurn`, so
+  // the refresh that proves the action worked also unmounts the row the
+  // button sat on. When the row is gone there is no "at the control" left,
+  // so that one confirmation surfaces here. This is NOT the banner it
+  // replaces: only a message whose own row has disappeared can reach it, and
+  // every other message — every refusal, in particular — stays on its row.
+  const liveRows = new Set<string>([
+    ...data.awaitingPayment.map((r) => r.payoutId),
+    ...data.awaitingTurn.map((r) => r.participationId),
+  ]);
+  const stranded = Object.entries(rowSave).filter(
+    ([key, state]) => !liveRows.has(key) && (state.kind === "ok" || state.kind === "err"),
+  );
+  const strandedState = stranded.length > 0 ? stranded[stranded.length - 1][1] : null;
+
   return (
     <div className="space-y-6">
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+      {strandedState && <SaveFeedback state={strandedState} />}
 
       {/* ————— The two totals. Never added together. ————— */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -182,11 +220,8 @@ export function WaitingView({ data }: { data: WaitingData }) {
                   row={row}
                   index={i}
                   reduce={reduce ?? false}
-                  onDone={(text) => {
-                    setMsg({ kind: "ok", text });
-                    router.refresh();
-                  }}
-                  onError={(text) => setMsg({ kind: "err", text })}
+                  save={rowSave[row.payoutId] ?? IDLE}
+                  report={reportFor(row.payoutId)}
                 />
               ))}
             </ul>
@@ -225,10 +260,8 @@ export function WaitingView({ data }: { data: WaitingData }) {
                   row={row}
                   index={i}
                   reduce={reduce ?? false}
-                  onAssigned={(text) => {
-                    setMsg({ kind: "ok", text });
-                    router.refresh();
-                  }}
+                  save={rowSave[row.participationId] ?? IDLE}
+                  report={reportFor(row.participationId)}
                 />
               ))}
             </ul>
@@ -245,27 +278,27 @@ function OwedRow({
   row,
   index,
   reduce,
-  onDone,
-  onError,
+  save,
+  report,
 }: {
   row: AwaitingPaymentRow;
   index: number;
   reduce: boolean;
-  onDone: (text: string) => void;
-  onError: (text: string) => void;
+  save: SaveState;
+  report: (state: SaveState) => void;
 }) {
+  const router = useRouter();
   const motionProps = useRowMotion(index);
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<"ZELLE" | "CASH" | "OTHER">(row.method ?? "ZELLE");
   const [paidAt, setPaidAt] = useState(todayIso());
-  const [busy, setBusy] = useState(false);
 
   // Waiting a fortnight is the point where a pending payout stops being
   // normal and starts being a problem the organizer should see at a glance.
   const stale = (row.daysWaiting ?? 0) >= 14;
 
   async function collect() {
-    setBusy(true);
+    report({ kind: "saving" });
     try {
       const result = await updatePayout({
         payoutId: row.payoutId,
@@ -276,17 +309,26 @@ function OwedRow({
         method,
         paidAt,
       });
-      if (!result.ok) onError(`Not recorded: ${result.error}`);
-      else {
-        setOpen(false);
-        onDone(
-          `✓ ${row.name} collected ${formatMoney(row.netAmount)} (#${row.number}) — recorded as ${METHODS.find((m) => m.value === method)?.label} on ${paidAt}.`,
-        );
+      if (!result.ok) {
+        // THE PANEL STAYS OPEN, holding the reason beside the button that was
+        // pressed, with the method and the date still chosen for the retry.
+        // There is no `finally` clearing anything: a refusal thrown away is
+        // UI_STANDARDS 6b's exact failure.
+        report({ kind: "err", message: `Not recorded: ${result.error}` });
+        return;
       }
+      // CLOSE ONLY ON SUCCESS — and the confirmation carries the figures,
+      // because this is money the organizer has just said left his hands.
+      setOpen(false);
+      report({
+        kind: "ok",
+        message:
+          `${row.name} collected ${formatMoney(row.netAmount)} (#${row.number}) — ` +
+          `recorded as ${methodLabel(method)} on ${paidAt}.`,
+      });
+      router.refresh();
     } catch {
-      onError("Could not reach the server — nothing was recorded.");
-    } finally {
-      setBusy(false);
+      report({ kind: "err", message: "Could not reach the server — nothing was recorded." });
     }
   }
 
@@ -312,7 +354,7 @@ function OwedRow({
           <p className="mt-0.5 text-xs tabular-nums text-gray-600 dark:text-gray-400">
             {row.weekNumber !== null ? `Drawn week ${row.weekNumber}` : "No draw recorded"} ·{" "}
             {stale ? "pending" : `pending ${waitedLabel(row.daysWaiting)}`}
-            {row.method ? ` · ${METHODS.find((m) => m.value === row.method)?.label}` : ""}
+            {row.method ? ` · ${methodLabel(row.method)}` : ""}
           </p>
         </div>
 
@@ -336,6 +378,12 @@ function OwedRow({
         >
           {open ? "Close" : "Mark collected"}
         </button>
+
+        {/* The panel below closes on success, taking its SaveButton — and the
+            confirmation with it — so the row keeps saying it here, on the line
+            under the control, until the refresh removes the row itself. While
+            the panel is open the message belongs to the button inside it. */}
+        {!open && <SaveFeedback state={save} className="basis-full" />}
       </div>
 
       <AnimatePresence initial={false}>
@@ -376,14 +424,16 @@ function OwedRow({
                   bounds={moneyReceivedBounds()}
                 />
               </label>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void collect()}
-                className={buttonCls.primary + " !py-2"}
-              >
-                {busy ? "Recording…" : `Record ${formatMoney(row.netAmount)} collected`}
-              </button>
+              {/* The confirmation and the refusal render HERE, beside the
+                  button that moves the money — never at the top of a list this
+                  row may be twelve deep in (rule 6). */}
+              <SaveButton
+                state={save}
+                onSave={() => void collect()}
+                onStateSettled={() => report(IDLE)}
+                label={`Record ${formatMoney(row.netAmount)} collected`}
+                savingLabel="Recording…"
+              />
               <p className="basis-full text-[11px] text-gray-500 dark:text-gray-400">
                 This is the same record Collections writes — it moves the payout from pending to
                 collected and leaves an audit entry.
@@ -402,13 +452,16 @@ function TurnRow({
   row,
   index,
   reduce,
-  onAssigned,
+  save,
+  report,
 }: {
   row: AwaitingTurnRow;
   index: number;
   reduce: boolean;
-  onAssigned: (text: string) => void;
+  save: SaveState;
+  report: (state: SaveState) => void;
 }) {
+  const router = useRouter();
   const motionProps = useRowMotion(index);
   const [open, setOpen] = useState(false);
   const progress =
@@ -478,6 +531,13 @@ function TurnRow({
         >
           {open ? "Close" : "Assign payout"}
         </button>
+
+        {/* A successful assignment closes the panel, so `AssignPayout`'s own
+            confirmation is unmounted with it. The row is the smallest thing
+            that survives, so it repeats the message here beside its control.
+            A REFUSAL never reaches this: `AssignPayout` keeps the panel open
+            holding the reason at the button that caused it (6b). */}
+        {!open && <SaveFeedback state={save} className="basis-full" />}
       </div>
 
       {/* The manual-payout flow already built (2.19: no second money route),
@@ -502,7 +562,8 @@ function TurnRow({
                 preselectNumbers={row.numbers}
                 onAssigned={(text) => {
                   setOpen(false);
-                  onAssigned(text);
+                  report({ kind: "ok", message: text });
+                  router.refresh();
                 }}
               />
             </div>

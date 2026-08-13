@@ -50,28 +50,32 @@ export function DrawEditor({
     spec: ConfirmSpec,
     fn: (typedPhrase: string) => Promise<{ ok: boolean; error?: string }>,
     okText: string,
+    /**
+     * How this action's refusal starts, so the state is unmistakable before
+     * the reason is read: "Not moved: week 4 already has a draw." A bare
+     * server sentence can be read as a description of what happened.
+     */
+    notDone: string,
   ) {
     setConfirm(spec);
     setOnConfirm(() => (typedPhrase: string) => {
       void (async () => {
-        setBusy(true);
-        setMsg(null);
+        setSave({ kind: "saving" });
         /** The refusal, if any — the dialog closes only while this stays null. */
         let refused: string | null = null;
         try {
           const result = await fn(typedPhrase);
           if (!result.ok) {
-            refused = result.error ?? "Failed.";
-            setMsg({ kind: "err", text: refused });
+            refused = `${notDone}: ${result.error ?? "the server refused without a reason."}`;
+            setSave({ kind: "err", message: refused });
           }
           else {
-            setMsg({ kind: "ok", text: okText });
+            setSave({ kind: "ok", message: okText });
             router.refresh();
           }
         } catch {
-          setMsg({ kind: "err", text: "Could not reach the server — nothing confirmed." });
+          setSave({ kind: "err", message: "Could not reach the server — nothing confirmed." });
         } finally {
-          setBusy(false);
           // CLOSE ONLY ON SUCCESS. This used to close whatever happened, so a
           // refusal was thrown away with the dialog that could have shown it
           // (UI_STANDARDS 6b).
@@ -126,7 +130,8 @@ export function DrawEditor({
                 confirmLabel: "Move the draw",
               },
               () => moveDraw({ drawId: draw.id, weekId: targetWeekId }),
-              "✓ Draw moved — settlements were re-applied to the new week.",
+              `Moved to ${target?.label ?? "the new week"} — week ${draw.weekNumber}'s settled contribution is owed again, and the new week is settled from the payout.`,
+              "Not moved",
             );
           }}
           className={buttonCls.secondary + " !px-3 !py-1.5 !text-xs"}
@@ -165,7 +170,8 @@ export function DrawEditor({
                 confirmLabel: "Change winner",
               },
               () => changeDrawSlot({ drawId: draw.id, slotId: targetSlotId }),
-              "✓ Winner changed.",
+              `Winner changed — ${target?.label ?? "the new slot"} now wins week ${draw.weekNumber}.`,
+              "Not changed",
             );
           }}
           className={buttonCls.secondary + " !px-3 !py-1.5 !text-xs"}
@@ -215,7 +221,8 @@ export function DrawEditor({
                 requirePhrase: undo.highStakes ? cycleName : undefined,
               },
               (typedPhrase) => undoDraw({ drawId: draw.id, typedName: typedPhrase }),
-              `✓ Week ${undo.weekNumber}'s draw undone — the numbers are back on the wheel.`,
+              `Week ${undo.weekNumber}'s draw undone — ${undo.payoutCount} payout record${undo.payoutCount === 1 ? "" : "s"} totalling ${formatMoney(undo.totalNet)} removed, ${undo.numbersReturning.map((n) => `#${n}`).join(", ")} back on the wheel.`,
+              "Not undone",
             )
           }
           className={buttonCls.danger + " !px-3 !py-1.5 !text-xs"}
@@ -223,9 +230,11 @@ export function DrawEditor({
           Undo the draw
         </button>
       </div>
-      {msg && (
+      {/* Under the row of buttons it belongs to — the control that was pressed
+          is an inch above it, and a refusal also stays inside the dialog. */}
+      {(save.kind === "ok" || save.kind === "err") && (
         <div className="mt-2">
-          <Alert kind={msg.kind}>{msg.text}</Alert>
+          <SaveFeedback state={save} />
         </div>
       )}
       <ConfirmDialog

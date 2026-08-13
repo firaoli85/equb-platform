@@ -20,6 +20,7 @@ import {
   type StandingFacts,
 } from "./messages";
 import { resolveWeekDate, storedWeekDates } from "./commitment";
+import type { Prisma } from "./generated/prisma/client";
 import { calculateFinishWeek, currentWeekNumber } from "./money";
 import { toE164 } from "./phone";
 import { prisma } from "./prisma";
@@ -36,8 +37,11 @@ import {
   APPROVED_TEMPLATES,
   buildContentVariables,
   checkRequiredExtras,
+  draftNotSubmittedRefusal,
   isApprovedTemplateKey,
+  isDraftTemplateKey,
 } from "./whatsapp-templates";
+import { portalUrlValue, welcomeSendCheck } from "./welcome-send";
 
 /**
  * Can a STATEMENT reach a member over WhatsApp? YES, as of this build.
@@ -162,6 +166,21 @@ export async function loadStandingFacts(participationId: string): Promise<Loaded
         stored: storedWeekDates(participation.cycle.weeks),
         cycleStartDate: participation.cycle.startDate,
       })?.date ?? null,
+    // The other end of the same window, resolved the same way (2.14): the day
+    // that actually belonged to their start week, from the stored row. The
+    // welcome says "from {startDate} to {finishDate}", and a member who joined
+    // at week 14 must read two dates — never "week 14", which is the
+    // organizer's frame (UI_STANDARDS 8c).
+    startDate:
+      resolveWeekDate({
+        weekNumber: participation.startWeek,
+        stored: storedWeekDates(participation.cycle.weeks),
+        cycleStartDate: participation.cycle.startDate,
+      })?.date ?? null,
+    // ONE READ, SHARED BY THE PREVIEW AND THE SEND. Every surface that renders
+    // a message goes through this function, so the address the organizer reads
+    // before pressing send is by construction the address that leaves.
+    portalUrl: portalUrlValue(await getSetting("portalUrl")),
     weeksCredited: standing.weeksCredited,
     weeksBehind: standing.weeksBehind,
     amountOutstanding: standing.amountOutstanding,
@@ -204,6 +223,16 @@ async function deliver(input: {
   key: MessageKey;
   trigger: SendTrigger;
   extras?: MessageExtras;
+  /**
+   * The participation this message is ABOUT, when there is one.
+   *
+   * Only WHATSAPP_WELCOME uses it, and it uses it for the one thing in this
+   * function that writes outside MessageLog: a delivered welcome sets
+   * `agreementRequiredAt` on that participation, in the same transaction as
+   * the log row. Optional because sendStatementToPerson has a person and may
+   * have no participation at all (the lockout notice).
+   */
+  participationId?: string;
 }): Promise<SendOutcome> {
   const { person } = input;
   const decision = sendDecision({
@@ -230,6 +259,33 @@ async function deliver(input: {
   // delivered, and this is the choice about whether to.
   if (!(await getSetting("whatsappEnabled"))) {
     return { status: "SKIPPED", reason: WHATSAPP_DISABLED_REASON };
+  }
+
+  // ————— THE WELCOME'S TWO REFUSALS, at the boundary —————
+  //
+  // The batch and the member profile both ask this same rule before offering
+  // the button, which is where the organizer can act on it. This is the copy
+  // that MATTERS: a UI check is a courtesy, and the send path is the only place
+  // that cannot be gone around. The welcome makes two promises about the
+  // platform — an address to open and a PIN that works — and both fail silently
+  // when they are wrong, so both refuse rather than warn.
+  if (input.key === "WHATSAPP_WELCOME") {
+    // THIS MEMBER'S OWN OVERRIDE, read here rather than threaded through four
+    // callers. It is one extra read on the rarest send in the platform, and it
+    // is the only block that can be true for a single person while everyone
+    // else is fine — so the boundary is exactly where it has to be asked.
+    const override = await prisma.person.findUnique({
+      where: { id: input.person.id },
+      select: { pinLoginAllowed: true, nameEnglishFirst: true },
+    });
+    const check = welcomeSendCheck({
+      portalUrl: portalUrlValue(await getSetting("portalUrl")),
+      defaultPinFromPhone: await getSetting("defaultPinFromPhone"),
+      pinLoginEnabled: await getSetting("pinLoginEnabled"),
+      memberPinLoginAllowed: override?.pinLoginAllowed ?? null,
+      memberName: override?.nameEnglishFirst,
+    });
+    if (!check.ok) return { status: "SKIPPED", reason: check.reason };
   }
 
   // ————— THE EXTRAS BOUNDARY — checked BEFORE anything renders —————
@@ -292,12 +348,28 @@ async function deliver(input: {
   // nowhere, which is the honest outcome. What it must NEVER do is fail: this
   // fires while a member is locked out of their account, and a throw here would
   // turn a lockout into an error on top of a lockout.
+  // CAPTURED BEFORE THE GUARD BELOW NARROWS IT AWAY.
+  //
+  // The requirement write further down compared `input.key` to
+  // "WHATSAPP_WELCOME" AFTER this guard had narrowed the type to
+  // ApprovedTemplateKey — so the comparison could never be true, and
+  // `tsc` said so. The branch was unreachable in the type system exactly as
+  // it is unreachable at runtime, for the same underlying reason: the welcome
+  // has no approved template yet.
+  const isWelcome = input.key === "WHATSAPP_WELCOME";
+
   if (!isApprovedTemplateKey(input.key)) {
+    // TWO ABSENCES, TWO SENTENCES. LOCKOUT_NOTICE has no approved template and
+    // never will — that is a decision, and the organizer has nothing to do
+    // about it. WHATSAPP_WELCOME is written and waiting on a submission, and
+    // the next action is somebody's. Reading the first sentence about the
+    // second would make a queued template look like a closed door.
     return {
       status: "SKIPPED",
-      reason:
-        `${input.key} has no Meta-approved WhatsApp template, so it cannot be sent. ` +
-        `It was rendered and recorded, not delivered.`,
+      reason: isDraftTemplateKey(input.key)
+        ? draftNotSubmittedRefusal(input.key)
+        : `${input.key} has no Meta-approved WhatsApp template, so it cannot be sent. ` +
+          `It was rendered and recorded, not delivered.`,
     };
   }
 
@@ -347,7 +419,11 @@ async function deliver(input: {
       : "ACCEPTED"
     : "ACCEPTED";
 
-  await prisma.messageLog.create({
+  // ANNOTATED, not inferred. Hoisting this out of the `create(...)` call to
+  // share a transaction below removes the contextual type that kept `trigger`
+  // and `status` as literals; the annotation puts it back, so the enums still
+  // check exactly as they did inline.
+  const logRow: Prisma.MessageLogCreateArgs = {
     data: {
       personId: person.id,
       templateId: template?.id ?? null,
@@ -368,7 +444,46 @@ async function deliver(input: {
       providerSid: result.ok ? result.sid : null,
       error: result.ok ? null : result.error,
     },
-  });
+  };
+
+  // ————— SENDING THE WELCOME IS WHAT REQUIRES A SIGNATURE —————
+  //
+  // The organizer's ruling, and the whole mechanism behind the agreement gate
+  // in app/me/layout.tsx. There is no exemption list and no date comparison:
+  // `agreementRequiredAt` null means this member was never sent a welcome and
+  // is therefore not gated, which is exactly how the 27 members already
+  // mid-cycle stay untouched.
+  //
+  // ONLY ON A REAL SEND. `result.ok` is the condition, so a FAILED row sets
+  // nothing — the agreement is owed by a member who was TOLD, and a member
+  // whose welcome never left was not told. Gating them anyway would lock
+  // someone out of the portal on the strength of a message that does not exist.
+  //
+  // A TIMESTAMP RATHER THAN A FLAG, which is what removes the re-sign problem:
+  // send the welcome again after changing someone from 10 weeks to 12 and this
+  // writes a LATER moment, so their earlier signature stops answering and they
+  // sign the current terms. `updateMany` with `status: "ACTIVE"` rather than a
+  // plain update because a participation closed between the send and this line
+  // must not be gated — and because a missing row must not throw here, after
+  // the message has already gone.
+  //
+  // ONE TRANSACTION, so the record of what was said and the obligation it
+  // created cannot exist without each other. As it stands the pair is
+  // UNREACHABLE — WHATSAPP_WELCOME has no approved template, so the skip above
+  // returns before any of this — and it is written now so that registering the
+  // ContentSid is the only remaining step rather than the first of two.
+  const participationId = input.participationId;
+  if (isWelcome && result.ok && participationId !== undefined) {
+    await prisma.$transaction([
+      prisma.messageLog.create(logRow),
+      prisma.participation.updateMany({
+        where: { id: participationId, status: "ACTIVE" },
+        data: { agreementRequiredAt: new Date() },
+      }),
+    ]);
+  } else {
+    await prisma.messageLog.create(logRow);
+  }
 
   return result.ok
     ? { status: logged, body }
@@ -390,6 +505,11 @@ export async function sendStatement(input: {
     key: input.key,
     trigger: input.trigger,
     extras: input.extras,
+    // THE BATCH AND THE PER-MEMBER SEND BOTH ARRIVE HERE, which is why the
+    // welcome's requirement is set inside deliver() and not in either caller:
+    // app/actions/messages.ts and app/actions/member-messaging.ts would
+    // otherwise each need their own copy, and one of them would not get one.
+    participationId: input.participationId,
   });
 }
 
@@ -433,6 +553,9 @@ export async function sendStatementToPerson(input: {
     key: input.key,
     trigger: input.trigger,
     extras: input.extras,
+    // Undefined when they are in no active cycle, which is honest: with no
+    // participation there is nothing to hang an agreement requirement on.
+    participationId: active?.id,
   });
 }
 

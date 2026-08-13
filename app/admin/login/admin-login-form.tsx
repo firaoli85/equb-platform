@@ -3,38 +3,63 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { signInAdmin } from "@/app/actions/auth";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 
 // Sign-in happens in a SERVER ACTION (audit H2), not in the browser: a
 // session cookie written by JavaScript can never be httpOnly, and this is
 // the organizer's session. The server action routes the write through the
 // hardened cookie policy, exactly like the member sign-in paths.
 
+// EXEMPT FROM SaveButton — A SIGN-IN IS NOT A SAVE (UI_STANDARDS rule 6).
+//
+// Nothing on this screen is a record he is editing, so two of the four beats
+// have no meaning here: there is no dirty state to gate the button on (beat
+// 1), and SUCCESS IS THE NEXT PAGE (beat 3) — `router.push("/admin/cycle")`
+// takes the form off screen, so a "✓ Saved" beside the button would be a
+// confirmation for a screen he has already left. It also stays a real
+// <form onSubmit>: Enter is how anyone finishes typing a password.
+//
+// What it DOES owe is beat 4 / rule 6b — THE REFUSAL, AT THE CONTROL, in the
+// server's own words ("Email or password is incorrect.", "This account is not
+// the organizer."). That is the `SaveFeedback` directly under the Sign in
+// button, and it is why a `SaveState` is used here at all. It used to be a
+// hand-rolled `role="alert"` paragraph ABOVE the button, which pushed the
+// button down out from under the cursor at the moment it appeared.
+
 export function AdminLoginForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // ONE state for the attempt. `busy` is DERIVED from it — a second boolean
+  // for the same fact is a second thing that can disagree with the message.
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const busy = save.kind === "saving";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setPending(true);
+    setSave({ kind: "saving" });
     try {
       const result = await signInAdmin({ email, password });
       if (!result.ok) {
-        setError(result.error);
+        // Both fields keep what he typed: a refusal costs him a retry, never
+        // a retype (beat 4 — "the state left intact").
+        setSave({ kind: "err", message: `Not signed in: ${result.error}` });
         return;
       }
       // The server action already set the session cookie on its response, so
       // this navigation and the refresh both carry it.
+      //
+      // Deliberately still "saving" here: the navigation is in flight and the
+      // button must not take a second press that would open a second session.
+      // It is released only by this page being replaced.
       router.push("/admin/cycle");
       router.refresh();
     } catch {
-      setError("Could not reach the server. Try again.");
-    } finally {
-      setPending(false);
+      setSave({
+        kind: "err",
+        message: "Not signed in: could not reach the server. Try again.",
+      });
     }
   }
 
@@ -125,18 +150,19 @@ export function AdminLoginForm() {
           {showPassword ? "Password is visible" : "Password is hidden"}
         </span>
       </div>
-      {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800">
-          {error}
-        </p>
-      )}
       <button
         type="submit"
-        disabled={pending || !email || !password}
+        disabled={busy || !email || !password}
+        aria-busy={busy}
         className="w-full rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
       >
-        {pending ? "Signing in…" : "Sign in"}
+        {busy ? "Signing in…" : "Sign in"}
       </button>
+      {/* THE REASON, AT THE BUTTON THAT WAS PRESSED (rule 6b) — below it, so
+          it cannot move the button as it appears. `SaveFeedback` is the same
+          slot every other refusal on the platform uses, and a failure never
+          auto-clears: it stays until he acts on it. */}
+      <SaveFeedback state={save} />
     </form>
   );
 }

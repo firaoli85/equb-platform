@@ -9,6 +9,7 @@ import {
 } from "@/app/actions/participation-close";
 import { CLOSE_REASONS, type CloseReason } from "@/lib/participation-close";
 import { Alert, buttonCls, inputCls } from "@/components/ui/primitives";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatMoney } from "@/lib/format";
 
 // SOMEONE HAS STOPPED, AND THE BOOKS SHOULD SAY SO (2.18).
@@ -65,9 +66,33 @@ export function CloseParticipation({
   const [reason, setReason] = useState<CloseReason | "">("");
   const [note, setNote] = useState("");
   const [typed, setTyped] = useState("");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [pending, start] = useTransition();
+  /**
+   * ONE STATE FOR BOTH WRITES — the close and the way back (UI_STANDARDS
+   * rule 6).
+   *
+   * It was a `msg` banner at the TOP of this panel plus a second copy of the
+   * refusal near the button, and a `pending` boolean for the same fact as
+   * "saving". The panel is tall — the week field, the consequence list, four
+   * reason radios and the typed-name box sit between the top and the button —
+   * so the banner was the off-screen message rule 6 exists for, and the
+   * duplicate could disagree with it. `busy` is DERIVED from this state, so
+   * there is no second copy to fall out of step.
+   */
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  /**
+   * Working out the consequences is not a save, so it does not belong in the
+   * save state: its failure belongs where the FIGURES would have been, and it
+   * must never look like a refusal from a button nobody has pressed.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /**
+   * The writes still run inside a transition, so the `router.refresh()` that
+   * follows stays non-urgent. Its pending flag is deliberately not taken —
+   * `busy` below is the ONE name for "a write is in flight".
+   */
+  const [, startWrite] = useTransition();
   const [loading, startLoad] = useTransition();
+  const busy = save.kind === "saving";
 
   const weekNum = Number.parseInt(week, 10);
   const weekValid = Number.isSafeInteger(weekNum) && weekNum >= 1;
@@ -83,11 +108,11 @@ export function CloseParticipation({
         ...(weekValid ? { closingAtWeek: weekNum } : {}),
       });
       if (!result.ok) {
-        setMsg({ kind: "err", text: result.error });
+        setLoadError(result.error);
         setPreview(null);
         return;
       }
-      setMsg(null);
+      setLoadError(null);
       setPreview(result.data as Preview);
       setWeek((w) => (w === "" ? String((result.data as Preview).plan.closingAtWeek) : w));
     });
@@ -96,6 +121,114 @@ export function CloseParticipation({
   const nameOk = typed.trim().toLowerCase() === personName.trim().toLowerCase();
   const noteNeeded = reason === "OTHER" && note.trim() === "";
   const canClose = Boolean(preview) && reason !== "" && !noteNeeded && nameOk && weekValid;
+  // A dead button with no explanation reads as a broken app. This says which
+  // of the four things is still missing, on hover, in that order.
+  const notReadyHint = !weekValid
+    ? "Enter the last week they were part of."
+    : !preview
+      ? "Still working out what this changes."
+      : reason === ""
+        ? "Choose why they stopped — it goes on the record."
+        : noteNeeded
+          ? "Add the short factual note."
+          : `Type ${personName} to confirm.`;
+
+  // ————————————————— The two writes —————————————————
+
+  function handleReactivate() {
+    startWrite(async () => {
+      setSave({ kind: "saving" });
+      try {
+        const result = await reactivateParticipation({ participationId });
+        if (!result.ok) {
+          setSave({ kind: "err", message: `Not reopened: ${result.error}` });
+          return;
+        }
+        // WHAT CAME BACK, IN FIGURES. Reactivating is forward-only (2.18) and
+        // the organizer reads this to check the restart week is the one he
+        // meant — not to be told that something unspecified worked.
+        const p = result.data.plan;
+        setSave({
+          kind: "ok",
+          message:
+            (p.weeksReturning > 0
+              ? `${p.memberName} is expected again from week ${p.fromWeek} — ` +
+                `${p.weeksReturning} week${p.weeksReturning === 1 ? "" : "s"}, ` +
+                `${formatMoney(p.amountReturning)}.`
+              : `${p.memberName} is contributing again, but their commitment had already run ` +
+                `out — no weeks come back.`) +
+            (p.weeksStayingClosed > 0
+              ? ` The ${p.weeksStayingClosed} week${p.weeksStayingClosed === 1 ? "" : "s"} they ` +
+                `were away stay closed.`
+              : "") +
+            (p.numbersReturningToPool.length > 0
+              ? ` ${p.numbersReturningToPool.map((n) => `#${n}`).join(", ")} back on the wheel.`
+              : ""),
+        });
+        router.refresh();
+      } catch {
+        // A thrown call used to leave the button un-busy with nothing said —
+        // the organizer's "it did nothing" with no reason to quote (6b).
+        setSave({
+          kind: "err",
+          message: "Could not reach the server — nothing was changed.",
+        });
+      }
+    });
+  }
+
+  function handleClose() {
+    if (reason === "") return;
+    startWrite(async () => {
+      setSave({ kind: "saving" });
+      try {
+        const result = await closeParticipation({
+          participationId,
+          closingAtWeek: weekNum,
+          reason,
+          note: note.trim() || undefined,
+          typedName: typed,
+        });
+        if (!result.ok) {
+          // THE PANEL STAYS OPEN holding the reason, with the week, the
+          // reason and the typed name all still in place to retry. A refusal
+          // thrown away with the panel is UI_STANDARDS 6b's exact failure.
+          setSave({ kind: "err", message: `Not recorded: ${result.error}` });
+          return;
+        }
+        // THE FIGURES HE JUST COMMITTED TO, read back. This ends what a real
+        // person is expected to pay and writes a balance onto their record —
+        // "Saved." would leave him checking all of it himself.
+        const p = result.data.plan;
+        setSave({
+          kind: "ok",
+          message:
+            `${p.memberName} stopped at week ${p.closingAtWeek} in ${p.cycleName} — ` +
+            (p.weeksLeaving > 0
+              ? `${p.weeksLeaving} week${p.weeksLeaving === 1 ? "" : "s"}, ` +
+                `${formatMoney(p.amountLeaving)}, no longer expected.`
+              : `week ${p.closingAtWeek} was already their last, so nothing stops being expected.`) +
+            (p.balanceToRecord > 0
+              ? ` ${formatMoney(p.balanceToRecord)} unpaid up to then is now on their own record.`
+              : ` They were paid up, so nothing went onto their record.`) +
+            (p.numbersLeavingPool.length > 0
+              ? ` ${p.numbersLeavingPool.map((n) => `#${n}`).join(", ")} left the wheel.`
+              : "") +
+            (p.shortfallToCover > 0
+              ? ` ${formatMoney(p.shortfallToCover)} of it is yours to cover.`
+              : ""),
+        });
+        // CLOSE ONLY ON SUCCESS.
+        setOpen(false);
+        router.refresh();
+      } catch {
+        setSave({
+          kind: "err",
+          message: "Could not reach the server — nothing was recorded.",
+        });
+      }
+    });
+  }
 
   // ————————————————— Already stopped: the way back —————————————————
 
@@ -103,7 +236,6 @@ export function CloseParticipation({
     const reasonLabel = CLOSE_REASONS.find((r) => r.key === closed.reason)?.label ?? closed.reason;
     return (
       <div className="space-y-3 rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-4 dark:border-amber-800 dark:bg-amber-950/20">
-        {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
         <div>
           <h3 className="text-sm font-black text-gray-900 dark:text-white">
             {personName} stopped
@@ -116,25 +248,18 @@ export function CloseParticipation({
             recorded. They keep their portal, read-only, showing where they stopped.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            start(async () => {
-              setMsg(null);
-              const result = await reactivateParticipation({ participationId });
-              if (!result.ok) {
-                setMsg({ kind: "err", text: result.error });
-                return;
-              }
-              setMsg({ kind: "ok", text: `✓ ${result.data.consequences.join(" ")}` });
-              router.refresh();
-            })
-          }
-          className={buttonCls.secondary + " !text-xs"}
-        >
-          {pending ? "Bringing them back…" : "They are contributing again"}
-        </button>
+        {/* The confirmation for the close that led here lands on this panel
+            too: the same `save` state survives the switch from the close flow
+            to this branch, so the message is never dropped by the re-render.
+            Beat 3 and beat 4 both render AT this button (rule 6). */}
+        <SaveButton
+          state={save}
+          onSave={handleReactivate}
+          onStateSettled={() => setSave({ kind: "idle" })}
+          label="They are contributing again"
+          savingLabel="Bringing them back…"
+          tone="secondary"
+        />
         <p className="text-xs text-gray-600 dark:text-gray-400">
           Restores their weeks from this week forward, never backwards — the weeks they were away
           stay closed, because nothing was expected from them then. Possible only while {cycleName}{" "}
@@ -148,9 +273,24 @@ export function CloseParticipation({
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className={buttonCls.secondary + " !text-xs"}>
-        {personName} has stopped contributing
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            // A freshly opened panel carries no refusal from a previous
+            // attempt — it would sit beside a button nobody has pressed yet.
+            setSave({ kind: "idle" });
+            setOpen(true);
+          }}
+          className={buttonCls.secondary + " !text-xs"}
+        >
+          {personName} has stopped contributing
+        </button>
+        {/* A successful close COLLAPSES the panel, so a confirmation living
+            inside it would go with it — for the moment before the refresh
+            lands and this becomes the "stopped" panel, it is read here. */}
+        <SaveFeedback state={save} />
+      </div>
     );
   }
 
@@ -158,8 +298,6 @@ export function CloseParticipation({
 
   return (
     <div className="space-y-3 rounded-2xl border-2 border-gray-300 p-4 dark:border-gray-700">
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-
       <div>
         <h3 className="text-sm font-black text-gray-900 dark:text-white">
           Record that {personName} has stopped
@@ -187,9 +325,14 @@ export function CloseParticipation({
         </span>
       </label>
 
-      {loading && !plan && (
+      {/* A preview that FAILED is not "still loading", and it is not a refusal
+          from the button either — the reason goes where the figures would have
+          been. */}
+      {loadError !== null ? (
+        <Alert kind="err">Could not work out what this changes: {loadError}</Alert>
+      ) : loading && !plan ? (
         <p className="text-xs text-gray-600 dark:text-gray-400">Working out what this changes…</p>
-      )}
+      ) : null}
 
       {/* WHAT HAPPENS, IN REAL FIGURES — before the reason, before the name. */}
       {plan && (
@@ -284,61 +427,36 @@ export function CloseParticipation({
         </label>
       )}
 
-      {/* THE REASON, AT THE BUTTON. `msg` also renders at the top of this
-          panel, and the panel is tall — the week field, the consequence list,
-          four reason radios and the typed-name box all sit between them. A
-          refusal shown only up there reads as nothing happening
-          (UI_STANDARDS 6b). */}
-      {msg?.kind === "err" && (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
-        >
-          {msg.text}
-        </p>
-      )}
-
+      {/* THE FEEDBACK IS PART OF THE BUTTON. It used to be a banner at the top
+          of this panel with a second copy down here — and the panel is tall:
+          the week field, the consequence list, four reason radios and the
+          typed-name box all sit between them. `SaveButton` renders both the
+          refusal and the confirmation beside the control that was pressed, so
+          there is nowhere else to put them (UI_STANDARDS 6, 6b). */}
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
+          disabled={busy}
           onClick={() => {
             setOpen(false);
             setReason("");
             setNote("");
             setTyped("");
-            setMsg(null);
+            setSave({ kind: "idle" });
           }}
           className={buttonCls.secondary + " !text-xs"}
         >
           Cancel
         </button>
-        <button
-          type="button"
-          disabled={pending || !canClose}
-          onClick={() =>
-            start(async () => {
-              if (reason === "") return;
-              setMsg(null);
-              const result = await closeParticipation({
-                participationId,
-                closingAtWeek: weekNum,
-                reason,
-                note: note.trim() || undefined,
-                typedName: typed,
-              });
-              if (!result.ok) {
-                setMsg({ kind: "err", text: result.error });
-                return;
-              }
-              setMsg({ kind: "ok", text: `✓ ${result.data.consequences.join(" ")}` });
-              setOpen(false);
-              router.refresh();
-            })
-          }
-          className={buttonCls.primary}
-        >
-          {pending ? "Recording…" : "Record that they stopped"}
-        </button>
+        <SaveButton
+          state={save}
+          onSave={handleClose}
+          onStateSettled={() => setSave({ kind: "idle" })}
+          label="Record that they stopped"
+          savingLabel="Recording…"
+          dirty={canClose}
+          notDirtyHint={notReadyHint}
+        />
       </div>
     </div>
   );

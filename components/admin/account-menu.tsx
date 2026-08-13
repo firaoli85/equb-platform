@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { unstable_rethrow, usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AnchoredPopover } from "@/components/ui/anchored-popover";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { motionTokens } from "@/lib/motion-tokens";
 import { signOutAction } from "@/app/actions/auth";
 import { useTransition } from "react";
@@ -31,6 +32,20 @@ import { NavIcon, SETTINGS_LINKS } from "./admin-sidebar";
 // Overlay behaviour is NOT reimplemented: AnchoredPopover (UI_STANDARDS 10b)
 // owns portalling, outside-click, Escape, viewport clamping and the flip. At
 // the foot of the rail it always flips above, which is exactly right.
+//
+// EXEMPT FROM UI_STANDARDS RULE 6 (the SaveButton conversion), deliberately.
+// Nothing in this menu is a save: four of the five items are links, and the
+// fifth ends the session and leaves the page. There is no record to confirm,
+// no dirty state, and a "✓ Saved" beside a control that navigates away would
+// only ever flash. Rule 6a/6c do not apply.
+//
+// RULE 6b STILL DOES, and it was missing. A sign-out that FAILS is a refusal,
+// and this menu threw it away: the promise rejected into nothing, `pending`
+// went back to false, and the item read "Sign out" again as though the press
+// had never happened — while the organizer was still signed in and had every
+// reason to believe he was not. `SaveFeedback` now carries that reason beside
+// the item that was pressed. The state lives on the MENU, not on the panel,
+// so closing and reopening shows it again rather than losing it.
 
 export function AccountMenu({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname();
@@ -39,6 +54,10 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Only ever "idle" or "err". The transition already owns "is it working" —
+  // a second flag for the same fact is what drifts — so this state exists
+  // solely to hold a refusal that would otherwise be discarded.
+  const [signOut, setSignOut] = useState<SaveState>({ kind: "idle" });
   const menuId = useId();
 
   const onSettings = pathname.startsWith("/admin/settings");
@@ -228,7 +247,28 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
                 role="menuitem"
                 data-menu-item
                 disabled={pending}
-                onClick={() => startTransition(() => signOutAction())}
+                onClick={() => {
+                  setSignOut({ kind: "idle" });
+                  startTransition(() =>
+                    // A SUCCESSFUL SIGN-OUT REACHES THIS CATCH TOO. The action
+                    // ends in redirect(), and Next delivers that redirect to
+                    // the caller by REJECTING the action promise — see
+                    // server-action-reducer: "the action promise will be
+                    // rejected with a redirect so that it's handled by
+                    // RedirectBoundary". A bare catch here would therefore
+                    // report every successful sign-out as a failure.
+                    //
+                    // `unstable_rethrow` throws the framework's own
+                    // control-flow errors straight back, so the transition
+                    // rejects exactly as it did before this file had a catch
+                    // at all and the navigation is untouched. Only a REAL
+                    // failure survives to the line below.
+                    signOutAction().catch((e: unknown) => {
+                      unstable_rethrow(e);
+                      setSignOut({ kind: "err", message: signOutFailure(e) });
+                    }),
+                  );
+                }}
                 className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 transition-colors duration-100 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-950/40"
                 style={{ minHeight: "44px" }}
               >
@@ -248,12 +288,38 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
                 </svg>
                 {pending ? "Signing out…" : "Sign out"}
               </button>
+
+              {/* The refusal, immediately under the item that was pressed
+                  (UI_STANDARDS 6b) — and it never auto-clears. `role="none"`
+                  keeps a non-menuitem child out of the menu's item list; the
+                  message itself is still a live region, so it is announced. */}
+              {signOut.kind === "err" && (
+                <div role="none" className="px-1 pb-1">
+                  <SaveFeedback state={signOut} />
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
       </AnchoredPopover>
     </>
   );
+}
+
+/**
+ * What to say when the sign-out itself failed.
+ *
+ * It leads with the state, not the cause, because the state is the part that
+ * changes what he does next: he is STILL SIGNED IN on a machine he probably
+ * intended to walk away from. The server's own words follow — a thrown server
+ * action reaches the browser as an Error, carrying the real message in
+ * development and the framework's digest message in production. That is the
+ * reason we have, and it is more than the nothing this replaced.
+ */
+function signOutFailure(e: unknown): string {
+  const raw = e instanceof Error && e.message.trim() !== "" ? e.message.trim() : "";
+  const reason = raw === "" ? "the server did not answer." : /[.!?]$/.test(raw) ? raw : `${raw}.`;
+  return `Not signed out: ${reason} You are still signed in on this device — try again.`;
 }
 
 /** A gear. The one icon the rail did not already have. */

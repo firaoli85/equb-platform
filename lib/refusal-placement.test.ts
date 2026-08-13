@@ -133,11 +133,21 @@ describe("GUARD — every ConfirmDialog can show its own refusal", () => {
   // The property is UNCONDITIONAL closing, so that is what this reads now:
   // brace-match the finally body, remove every conditional block inside it,
   // and flag a close that survives — one that runs on both paths.
+  //
+  // AND IT MISSED HALF THE LANGUAGE. `/finally\s*\{/` matches the STATEMENT
+  // form and not the PROMISE form — `.finally(() => { setConfirm(null) })` —
+  // which is the same bug written with different punctuation. Two files
+  // escaped on exactly that: participation-editor's `ask` helper does
+  // `void run(label, fn).finally(() => { setConfirm(null) })`, so every
+  // refusal from six destructive dialogs closed the dialog it could have been
+  // shown in. A guard that reads one spelling of a construct is a guard that
+  // reports the codebase as clean because of a punctuation mark.
   it("no confirm helper closes the dialog unconditionally in a finally", () => {
     const offenders: string[] = [];
     for (const f of files) {
       const src = readFileSync(f, "utf8");
-      for (const m of src.matchAll(/finally\s*\{/g)) {
+      // Both spellings: `finally {` and `.finally(() => {` / `.finally(async () => {`.
+      for (const m of src.matchAll(/(?:\.finally\(\s*(?:async\s*)?\([^)]*\)\s*=>\s*|finally\s*)\{/g)) {
         const body = braceBody(src, m.index + m[0].length);
         if (/setConfirm\(null\)/.test(stripConditionals(body))) {
           const line = src.slice(0, m.index).split("\n").length;
@@ -200,6 +210,22 @@ describe("GUARD — every ConfirmDialog can show its own refusal", () => {
         stripConditionals(braceBody(braceless, braceless.indexOf("{") + 1)),
       ),
     ).toBe(false);
+
+    // THE PROMISE FORM, which the first two versions of this scan could not
+    // see at all. Both spellings must be recognised as the same construct.
+    const finallyForms = /(?:\.finally\(\s*(?:async\s*)?\([^)]*\)\s*=>\s*|finally\s*)\{/g;
+    const promiseForm = `      void run(label, fn).finally(() => {\n        setConfirm(null);\n      });`;
+    const hit = [...promiseForm.matchAll(finallyForms)];
+    expect(hit, "the promise form must be recognised").toHaveLength(1);
+    expect(
+      /setConfirm\(null\)/.test(
+        stripConditionals(braceBody(promiseForm, hit[0].index + hit[0][0].length)),
+      ),
+    ).toBe(true);
+
+    // …and the async promise form, and the statement form, both still match.
+    expect([...`x.finally(async () => {`.matchAll(finallyForms)]).toHaveLength(1);
+    expect([...`} finally {`.matchAll(finallyForms)]).toHaveLength(1);
 
     const thrownAway = `        await recordCarryDecision({ personId, choice });`;
     expect(/^\s*await\s+(?!Promise|prisma|tx)[a-z][A-Za-z0-9_]*\(\s*\{/.test(thrownAway)).toBe(true);

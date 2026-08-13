@@ -12,14 +12,25 @@ export const dynamic = "force-dynamic";
 // Drill-down: this week's payments — who has paid and who has not. The
 // groups use THE shared status vocabulary, so "deferred" means the same
 // thing here as on the grid, the members list and the member's own page.
+// THE SECTIONS ARE THE DERIVED STATUSES. Nothing here re-decides one.
+//
+// THE DEFECT, from live use. Week 12's window closed on 7 August; on the 13th
+// this screen said "Marked late 0 — Nobody" and listed all seven unpaid
+// members under "Have not paid". They were LATE. The heading said "Marked
+// late", so the section counted only the organizer's own mark — and the
+// comment that stood here asserted the calendar could not produce a LATE on
+// this screen, which was simply false: the week SELECTOR shows any week, and
+// most of them have closed.
+//
+// A MARK IS ONE ROUTE TO LATE, NOT A CATEGORY BESIDE IT. The row says how it
+// became late; the section says only that it is.
 const GROUPS = [
-  // FIRST, because it is the only group here the organizer put someone in by
-  // hand (2.2). The current week's window is still open, so the calendar
-  // cannot produce a LATE on this screen — every name in this group is one he
-  // marked, and burying it under "have not paid" would hide his own decision
-  // from him.
-  { key: "LATE", title: "Marked late" },
-  { key: "UNPAID", title: "Have not paid" },
+  // Late first — the only group that needs acting on.
+  { key: "LATE", title: STATUS_LABELS.LATE.text },
+  // "Have not paid yet" — the WINDOW IS STILL OPEN. The old title was "Have
+  // not paid", which reads as a verdict and is exactly how seven late members
+  // sat under it without looking wrong.
+  { key: "UNPAID", title: "Have not paid yet" },
   { key: "PARTIAL", title: "Partially paid" },
   { key: "PAID", title: "Paid" },
   { key: "DEFERRED", title: STATUS_LABELS.DEFERRED.text },
@@ -142,7 +153,14 @@ export default async function ThisWeekBreakdownPage({
                     ? STATUS_LABELS.DEFERRED.meaning
                     : key === "SKIPPED"
                       ? STATUS_LABELS.SKIPPED.meaning
-                      : undefined
+                      : // The two that were being confused. Saying what each
+                        // means is what stops "have not paid" reading as a
+                        // verdict on a week that is still open.
+                        key === "LATE"
+                        ? STATUS_LABELS.LATE.meaning
+                        : key === "UNPAID"
+                          ? "the payment window for this week is still open"
+                          : undefined
                 }
               />
               {list.length === 0 ? (
@@ -161,6 +179,11 @@ export default async function ThisWeekBreakdownPage({
                         {m.name}
                       </Link>
                       {key === "DEFERRED" && <Pill tone="attention">not chased, still owed</Pill>}
+                      {/* HOW it became late, not a separate section. Without
+                          this the organizer cannot tell his own decision from
+                          the calendar's — with it, he never has to look in two
+                          places for late members. */}
+                      {m.markedLate && <Pill tone="attention">you marked this</Pill>}
                       <span className="ml-auto text-sm tabular-nums text-gray-700 dark:text-gray-300">
                         {formatMoney(m.amountPaid)}{" "}
                         <span className="text-gray-500 dark:text-gray-400">

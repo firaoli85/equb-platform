@@ -16,8 +16,16 @@ import type { Section } from "@/components/ui/section-nav";
 // he is living in. Then paid-ahead, because it is the piece he could not see
 // and it changes how the next figure reads. Then what he should hold, then
 // what he does — the comparison only means anything after the two halves.
+//
+// WEEK DATES COME LAST, and that is a placement argument rather than a
+// ranking. ADMIN_IA §3 says this page carries "the stored dates that are
+// authoritative (rule 7), and the position they produce" — the dates are what
+// everything above stands on, but they are not what he opens the page for.
+// They are read when a figure looks wrong, which is after he has read the
+// figure. It is also the only section that WRITES, and a correction tool
+// belongs after the facts it corrects.
 
-export const POSITION_SECTIONS = ["collection", "ahead", "holding", "cash"] as const;
+export const POSITION_SECTIONS = ["collection", "ahead", "holding", "cash", "weeks"] as const;
 export type PositionSection = (typeof POSITION_SECTIONS)[number];
 
 export const DEFAULT_SECTION: PositionSection = "collection";
@@ -50,6 +58,13 @@ export function positionSections(input: {
   holdingLessThanOwed: boolean;
   /** null when no reading has been recorded yet. */
   verdictKind: "covered" | "surplus" | "short" | "exact" | null;
+  /**
+   * Weeks whose stored date does not run after the week before them
+   * (`outOfSequenceWeeks`). Audit finding 29 let the server accept one, so
+   * live rows may already carry it — and a backwards ladder moves who counts
+   * as overdue while looking like nothing at all.
+   */
+  outOfSequenceCount: number;
 }): Section[] {
   return [
     {
@@ -79,6 +94,14 @@ export function positionSections(input: {
       label: "What you hold",
       // No reading yet is worth a nudge: the comparison cannot run without it.
       attention: input.verdictKind === null || input.verdictKind === "short",
+    },
+    {
+      key: "weeks",
+      label: "Week dates",
+      // The COUNT is faults, not weeks. "20" beside a tab is a size; a number
+      // that is normally absent and occasionally 1 is a finding.
+      count: input.outOfSequenceCount || undefined,
+      attention: input.outOfSequenceCount > 0,
     },
   ];
 }

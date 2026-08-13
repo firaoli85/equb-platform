@@ -5,7 +5,8 @@ import { useState } from "react";
 import { createCycle } from "@/app/actions/cycles";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AmountInput, NumberInput, Radio } from "@/components/ui/controls";
-import { Alert, buttonCls, Card, Field } from "@/components/ui/primitives";
+import { Card, Field } from "@/components/ui/primitives";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { cycleFinishPreview, finishLine, parseWeekField } from "@/lib/commitment";
 import { defaultWithinBounds, isWithinBounds, type DateBounds } from "@/lib/date-bounds";
 import { formatDateLongUTC, formatDateUTC, formatMoney, parseDateInput, parseDollarsToCents } from "@/lib/format";
@@ -32,10 +33,20 @@ export function NewCycleForm({ startBounds }: { startBounds: DateBounds }) {
     ...INITIAL,
     startDate: defaultWithinBounds(startBounds),
   }));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [savedAsDraft, setSavedAsDraft] = useState<string | null>(null);
-  const [savedActive, setSavedActive] = useState(false);
+  // ONE state for the save; everything else is derived from it (rule 6). The
+  // four it replaces — saving / error / savedAsDraft / savedActive — rendered
+  // their message ABOVE a form of eight controls, which on this screen is also
+  // above the fold: exactly the place the organizer is not looking after
+  // pressing the button at the bottom.
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  /**
+   * An ACTIVE cycle was created and we are on our way to it.
+   *
+   * NOT a duplicate of `save`: `save` returns to idle the moment a field is
+   * edited, and a keystroke landing during the navigation must not re-arm the
+   * button and let a second cycle be created.
+   */
+  const [created, setCreated] = useState(false);
 
   const dirty = Object.entries(INITIAL).some(
     ([key, value]) => fields[key as keyof typeof INITIAL] !== value,
@@ -43,8 +54,9 @@ export function NewCycleForm({ startBounds }: { startBounds: DateBounds }) {
 
   const set = (key: keyof typeof INITIAL) => (value: string) => {
     setFields((f) => ({ ...f, [key]: value }));
-    setError(null);
-    setSavedAsDraft(null);
+    // Editing withdraws a stale message — but never the "opening it now" one:
+    // that form has already created its cycle and stays locked.
+    if (!created) setSave({ kind: "idle" });
   };
 
   // 2.22: the organizer never calculates a finish. Same pure preview and same
@@ -91,33 +103,40 @@ export function NewCycleForm({ startBounds }: { startBounds: DateBounds }) {
     (a, b) => a - b,
   );
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSavedAsDraft(null);
-
+  async function handleSubmit() {
+    // REFUSALS KNOWABLE WITHOUT A ROUND TRIP are said at the button rather
+    // than sent to the server and shown on the way back (UI_STANDARDS 6b).
     if (!weeksValid) {
-      setError(`Planned weeks must be a whole number between 1 and ${MAX_WEEKS}.`);
+      setSave({
+        kind: "err",
+        message: `Not saved: Planned weeks must be a whole number between 1 and ${MAX_WEEKS}.`,
+      });
       return;
     }
     // The picker refuses out-of-range dates, but a value can still arrive
     // through a stale state or a paste; the reason shown is the same one.
     if (!isWithinBounds(fields.startDate, startBounds)) {
-      setError(startBounds.reason ?? "That start date is not available.");
+      setSave({
+        kind: "err",
+        message: `Not saved: ${startBounds.reason ?? "That start date is not available."}`,
+      });
       return;
     }
     const unitAmount = parseDollarsToCents(fields.unitDollars);
     if (unitAmount === null || unitAmount < 1 || unitAmount > MAX_MONEY_CENTS) {
-      setError("Unit amount must be a valid dollar amount.");
+      setSave({ kind: "err", message: "Not saved: Unit amount must be a valid dollar amount." });
       return;
     }
     if (fields.numbering === "") {
-      setError("Choose how lucky numbers are assigned — fresh, or carried over.");
+      setSave({
+        kind: "err",
+        message: "Not saved: Choose how lucky numbers are assigned — fresh, or carried over.",
+      });
       return;
     }
     const feePercent = Number.parseFloat(fields.feePercent);
 
-    setSaving(true);
+    setSave({ kind: "saving" });
     try {
       const result = await createCycle({
         name: fields.name,
@@ -128,32 +147,53 @@ export function NewCycleForm({ startBounds }: { startBounds: DateBounds }) {
         numbering: fields.numbering,
       });
       if (!result.ok) {
-        setError(result.error);
+        setSave({ kind: "err", message: `Not saved: ${result.error}` });
         return;
       }
+      // THE FIGURES COME BACK FROM THE SERVER, not from the fields still on
+      // screen. The organizer reads this line to check he created what he
+      // meant to, so it has to be the record that now exists.
+      const figures = `${result.data.plannedWeeks} weeks at ${formatMoney(result.data.unitAmount)}, ${result.data.feePercent}% fee`;
       if (result.data.status === "ACTIVE") {
         // Show the confirmation, keep the button locked, then land on the
         // cycle page displaying the new cycle.
-        setSavedActive(true);
+        setCreated(true);
+        setSave({
+          kind: "ok",
+          message: `Created “${result.data.name}” — ${figures}, week 1 on ${startLabel ?? fields.startDate}. Opening it now…`,
+        });
         router.push("/admin/cycle");
         router.refresh();
       } else {
         // Reset to pristine so a second click cannot create a duplicate.
         setFields(INITIAL);
-        setSavedAsDraft(result.data.name);
+        setSave({
+          kind: "ok",
+          message: `Saved “${result.data.name}” as a draft — ${figures}, week 1 on ${startLabel ?? fields.startDate}. Another cycle is currently active, so this one did not become active.`,
+        });
       }
     } catch {
-      setError(
-        "The save could not be confirmed — check your connection and look at the cycle list before trying again.",
-      );
-    } finally {
-      setSaving(false);
+      // NOT "Not saved": the request may well have landed. Claiming otherwise
+      // is how a duplicate cycle gets created on the retry — say what to check.
+      setSave({
+        kind: "err",
+        message:
+          "The save could not be confirmed — check your connection and look at the cycle list before trying again.",
+      });
     }
   }
 
   return (
     <div className="flex flex-wrap items-start gap-6">
-      <form onSubmit={handleSubmit} className="w-full max-w-md space-y-4">
+      {/* The form stays: Enter is how anyone finishes typing a name, and it
+          must reach the same handler the SaveButton press does. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty && !created && save.kind !== "saving") void handleSubmit();
+        }}
+        className="w-full max-w-md space-y-4"
+      >
         <Field label="Name">
           <input
             type="text"
@@ -237,18 +277,19 @@ export function NewCycleForm({ startBounds }: { startBounds: DateBounds }) {
           </p>
         )}
 
-        {error && <Alert kind="err">Not saved: {error}</Alert>}
-        {savedAsDraft && (
-          <Alert kind="ok">
-            ✓ Saved “{savedAsDraft}” as a draft — another cycle is currently active, so this one
-            did not become active.
-          </Alert>
-        )}
-        {savedActive && <Alert kind="ok">✓ Cycle created — opening it now…</Alert>}
-
-        <button type="submit" disabled={!dirty || saving || savedActive} className={buttonCls.primary}>
-          {saving ? "Saving…" : "Create cycle"}
-        </button>
+        {/* Name, start date, weeks, unit amount, fee, the numbering choice and
+            the finish preview all sit above this. The confirmation renders AT
+            the button, never at the top of the form (rule 6). */}
+        <SaveButton
+          state={save}
+          onSave={() => void handleSubmit()}
+          onStateSettled={() => setSave({ kind: "idle" })}
+          label="Create cycle"
+          savingLabel="Saving…"
+          dirty={dirty}
+          disabled={created}
+          notDirtyHint="Nothing has been entered yet."
+        />
       </form>
 
       {/* ————— The money projection ————— */}

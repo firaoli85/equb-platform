@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { deleteCashReading, recordCashReading } from "@/app/actions/cycle-position";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { AmountInput } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
-import { Alert, buttonCls, Card, CardHeader, inputCls } from "@/components/ui/primitives";
+import { buttonCls, Card, CardHeader, inputCls } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import type { PositionVerdict } from "@/lib/cycle-position";
 import { Pager } from "@/components/ui/pager";
@@ -53,16 +54,47 @@ export function CashReadingPanel({
   const [cash, setCash] = useState("");
   const [readAt, setReadAt] = useState(new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // ONE STATE, KEYED BY WHICH CONTROL PRODUCED IT (rule 6, UI_STANDARDS 6b).
+  //
+  // THE REPORTED DEFECT. A `msg` banner at the TOP of this card carried the
+  // message for the Save button ~90 lines below it AND for every row's Delete
+  // ~180 lines below that. Both are off the fold on the screen this panel is
+  // used on, so a real refusal with a real reason read as the button doing
+  // nothing — the exact report rule 6b was written for.
+  //
+  // Keyed by slot, a control renders its own message and nothing else does;
+  // because it is ONE state two controls can never disagree, and `busy` is
+  // DERIVED from it rather than being a second boolean that can drift out of
+  // step with the message it is supposed to accompany.
+  const [action, setAction] = useState<{ slot: string; state: SaveState }>({
+    slot: "",
+    state: { kind: "idle" },
+  });
+  /** Derived: any action in flight locks every control, as `busy` always did. */
+  const busy = action.state.kind === "saving";
+  /** This slot's message, or nothing — so a control renders only its own. */
+  const feedbackFor = (slot: string): SaveState =>
+    action.slot === slot ? action.state : { kind: "idle" };
+  /** True while the save's confirmation is up — the Cancel button reads it. */
+  const saved = action.slot === "save" && action.state.kind === "ok";
+
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
-  /**
-   * A refusal from the action the dialog just ran. Set it and the dialog stays
-   * open with the reason inside, beside the button that caused it — never only
-   * in a banner elsewhere on the page (UI_STANDARDS 6b).
-   */
-  const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
+  /**
+   * The refusal from the delete the dialog just ran, shown INSIDE the dialog
+   * beside the button that caused it (UI_STANDARDS 6b) — and DERIVED from the
+   * row's own state rather than mirrored into a second `useState`.
+   *
+   * The mirror is how that slot goes dead. Converting a file to SaveState moves
+   * the writer into the save state, `setDialogError` is left being called with
+   * `null` from `onCancel` and nowhere else, and `lib/refusal-placement.test.ts`
+   * still passes because the `error=` prop is there. Derived, there is nothing
+   * to forget to write.
+   */
+  const dialogError =
+    action.slot.startsWith("delete:") && action.state.kind === "err"
+      ? action.state.message
+      : null;
 
   // When the two lines are given, the total follows from them — he should
   // never have to add them up himself, and a mismatch is impossible.
@@ -72,13 +104,45 @@ export function CashReadingPanel({
     split && bankCents !== null && cashCents !== null ? bankCents + cashCents : null;
   const totalCents = split ? derivedTotal : parseDollarsToCents(total);
 
+  // THE PANEL NO LONGER CLOSES ITSELF ON SUCCESS, AND THAT IS THE FIX.
+  //
+  // This function ended with `setOpen(false)`. The confirmation belongs to the
+  // button that was pressed (rule 6), the button lives inside this panel, and
+  // the panel was unmounted in the same tick the message was set — so the one
+  // message the organizer was waiting for was rendered into a tree that no
+  // longer existed. He pressed Save, the form vanished, and nothing anywhere
+  // said what had been recorded.
+  //
+  // There were two ways out: hold the panel open long enough for the
+  // confirmation to be read, or move the confirmation somewhere that survives
+  // the collapse. HOLDING IT OPEN is the one chosen, because the second is the
+  // banner this file is being converted away from — a message that outlives the
+  // control by leaving it is a message somewhere the organizer is not looking.
+  //
+  // So the panel stays. The fields are cleared, which makes the button dead
+  // again on its own terms (beat 1: nothing entered, nothing to record), the
+  // confirmation sits beside it for its six seconds, and he closes the panel
+  // when he is done — which is also what he wants when he is entering a bank
+  // reading and a cash reading one after the other.
   async function save() {
     if (totalCents === null) {
-      setMsg({ kind: "err", text: "Enter what you are holding." });
+      // Beat 1 keeps this out of reach FROM THE BUTTON — it is dead until a
+      // figure parses, and saying so in the hint is better than a round trip.
+      // The guard stays for any other caller, and it now reports AT the button
+      // instead of in the banner at the top of the card, where nothing was
+      // pressed (6b).
+      setAction({ slot: "save", state: { kind: "err", message: "Enter what you are holding." } });
       return;
     }
-    setBusy(true);
-    setMsg(null);
+    // The figures are read here, before the fields are cleared below, so the
+    // confirmation can name what was recorded rather than say "Saved".
+    const held = formatMoney(totalCents);
+    const when = formatDateUTC(new Date(`${readAt}T00:00:00.000Z`));
+    const breakdown =
+      split && bankCents !== null && cashCents !== null
+        ? ` (${formatMoney(bankCents)} bank + ${formatMoney(cashCents)} on hand)`
+        : "";
+    setAction({ slot: "save", state: { kind: "saving" } });
     try {
       const result = await recordCashReading({
         totalAmount: totalCents,
@@ -87,20 +151,69 @@ export function CashReadingPanel({
         readAt: `${readAt}T00:00:00.000Z`,
         note: note || undefined,
       });
-      if (!result.ok) setMsg({ kind: "err", text: result.error });
-      else {
-        setMsg({ kind: "ok", text: `✓ Recorded ${formatMoney(totalCents)} held on ${readAt}.` });
-        setOpen(false);
-        setTotal("");
-        setBank("");
-        setCash("");
-        setNote("");
-        router.refresh();
+      if (!result.ok) {
+        setAction({ slot: "save", state: { kind: "err", message: `Not recorded: ${result.error}` } });
+        return;
       }
+      // No leading "✓" — SaveButton draws the tick itself, and the message
+      // carried one of its own for as long as it lived in the Alert.
+      setAction({
+        slot: "save",
+        state: { kind: "ok", message: `Recorded ${held} held on ${when}${breakdown}.` },
+      });
+      setTotal("");
+      setBank("");
+      setCash("");
+      setNote("");
+      router.refresh();
     } catch {
-      setMsg({ kind: "err", text: "Could not reach the server — nothing was saved." });
-    } finally {
-      setBusy(false);
+      setAction({
+        slot: "save",
+        state: { kind: "err", message: "Could not reach the server — nothing was saved." },
+      });
+    }
+  }
+
+  /**
+   * Delete one reading. Returns the refusal, or null on success — so the dialog
+   * can close on success ALONE (6b: a dialog that closes on failure has thrown
+   * the reason away).
+   */
+  async function deleteReading(r: Reading): Promise<string | null> {
+    const slot = `delete:${r.id}`;
+    setAction({ slot, state: { kind: "saving" } });
+    try {
+      const res = await deleteCashReading({ id: r.id });
+      if (!res.ok) {
+        // The row is still on screen, so its own slot is where this belongs —
+        // and `dialogError` derives from it, so the open dialog shows it too.
+        const refused = `Not deleted: ${res.error}`;
+        setAction({ slot, state: { kind: "err", message: refused } });
+        return refused;
+      }
+      // THE ROW IS ABOUT TO DISAPPEAR, AND ITS FEEDBACK SLOT WITH IT.
+      //
+      // The same shape as the panel collapsing over its own confirmation: a
+      // successful delete removes the very row the message would render in. So
+      // the success goes to the LIST's slot, which sits at the foot of the list
+      // where the row was and outlives it — 6b's "in that row, or in a slot
+      // pinned to it". The refusal above stays in the row, because on that path
+      // the row is still there.
+      setAction({
+        slot: "deleted",
+        state: {
+          kind: "ok",
+          message: `Deleted the ${formatMoney(r.totalAmount)} reading taken on ${formatDateUTC(
+            new Date(r.readAt),
+          )}.`,
+        },
+      });
+      router.refresh();
+      return null;
+    } catch {
+      const refused = "Could not reach the server — nothing was deleted.";
+      setAction({ slot, state: { kind: "err", message: refused } });
+      return refused;
     }
   }
 
@@ -120,7 +233,10 @@ export function CashReadingPanel({
         sub="Across bank and cash on hand. The only figure on this page you enter yourself — everything else is worked out from money already recorded."
       />
       <div className="space-y-4 px-5 pb-4">
-        {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+        {/* THE CARD BANNER IS GONE. It carried the message for the Save button
+            below and for every Delete in the list under it — one slot, for
+            controls the organizer reaches by scrolling past it. Each control
+            now renders its own message at itself. */}
 
         {/* THE ANSWER. */}
         {verdict === null ? (
@@ -203,21 +319,35 @@ export function CashReadingPanel({
               </Field>
             </div>
 
-            <div className="flex gap-2">
-              {/* Beat 2: the control says it is working. It read "Save this
-                  reading" throughout the round trip, so a slow save looked
-                  like a dead button and invited a second press. */}
-              <button
-                type="button"
-                disabled={busy || totalCents === null}
-                aria-busy={busy}
-                onClick={() => void save()}
-                className={buttonCls.primary}
-              >
-                {busy ? "Saving…" : "Save this reading"}
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* ALL FOUR BEATS FROM THE SHARED CONTROL. The hand-rolled button
+                  owned beats 1 and 2 (dead until a figure parses, "Saving…"
+                  during the round trip) and had no way to own 3 or 4 — those
+                  went to the banner at the top of the card, and then the panel
+                  closed over them. SaveButton renders both AT the button, so
+                  they cannot be put anywhere else. */}
+              <SaveButton
+                state={feedbackFor("save")}
+                onSave={() => void save()}
+                // Guarded: the six-second fade can land after a Delete has taken
+                // the slot, and an unconditional reset would blank that message.
+                onStateSettled={() =>
+                  setAction((a) => (a.slot === "save" ? { slot: "save", state: { kind: "idle" } } : a))
+                }
+                label="Save this reading"
+                dirty={totalCents !== null}
+                disabled={busy}
+                notDirtyHint={
+                  split
+                    ? "Enter both the bank figure and the cash on hand."
+                    : "Enter what you are holding first."
+                }
+              />
+              {/* "Cancel" is the wrong word once the reading is recorded — the
+                  panel stays open on purpose (see `save()`) and this closes it,
+                  it does not undo anything. */}
               <button type="button" onClick={() => setOpen(false)} className={buttonCls.ghost}>
-                Cancel
+                {saved ? "Close" : "Cancel"}
               </button>
             </div>
           </div>
@@ -261,6 +391,10 @@ export function CashReadingPanel({
                     type="button"
                     disabled={busy}
                     onClick={() => {
+                      // Clear this row's slot as the dialog opens, so a refusal
+                      // from a previous attempt is not showing inside it before
+                      // anything has been pressed.
+                      setAction({ slot: `delete:${r.id}`, state: { kind: "idle" } });
                       setConfirm({
                         title: `Delete the reading of ${formatMoney(r.totalAmount)}?`,
                         body: (
@@ -272,21 +406,17 @@ export function CashReadingPanel({
                         ),
                         confirmLabel: "Delete reading",
                       });
-                      setDialogError(null);
                       setOnConfirm(() => () => {
                         void (async () => {
-                          setBusy(true);
-                          const res = await deleteCashReading({ id: r.id });
-                          setBusy(false);
-                          if (!res.ok) {
-                            // The reading rows are the LAST block on a long
-                            // page; `msg` renders at the very top of it.
-                            setDialogError(res.error);
-                            return;
+                          const refused = await deleteReading(r);
+                          // CLOSE ONLY ON SUCCESS. On a refusal the dialog
+                          // stays open and `dialogError` — derived from the
+                          // state `deleteReading` just wrote — is already
+                          // showing the reason inside it (6b).
+                          if (refused === null) {
+                            setConfirm(null);
+                            setOnConfirm(null);
                           }
-                          router.refresh();
-                          setConfirm(null);
-                          setOnConfirm(null);
                         })();
                       });
                     }}
@@ -294,6 +424,12 @@ export function CashReadingPanel({
                   >
                     Delete
                   </button>
+                  {/* THIS row's refusal, in THIS row. The reading rows are the
+                      last block on a long page and the banner that used to
+                      carry this was at the very top of the card. `basis-full`
+                      so the reason gets the row's full width instead of being
+                      squeezed in after the figures. */}
+                  <SaveFeedback state={feedbackFor(`delete:${r.id}`)} className="basis-full" />
                 </li>
               ))}
             </ul>
@@ -310,6 +446,12 @@ export function CashReadingPanel({
             </p>
           </div>
         )}
+
+        {/* THE LIST'S OWN SLOT: the confirmation for a row that has just been
+            deleted. It sits at the foot of the list, where the row was, and it
+            is deliberately OUTSIDE the block above — deleting the last reading
+            takes that block away with it, and the message would go too. */}
+        <SaveFeedback state={feedbackFor("deleted")} />
       </div>
 
       <ConfirmDialog
@@ -318,7 +460,6 @@ export function CashReadingPanel({
         busy={busy}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
-          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

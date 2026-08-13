@@ -34,6 +34,7 @@ const SETTING_PAGES: Record<SettingKey, string> = {
   adminSessionMaxHours: "/admin/settings/access",
   whatsappEnabled: "/admin/settings/messaging",
   notifyOnLockout: "/admin/settings/messaging",
+  portalUrl: "/admin/settings/messaging",
   closingWaitDays: "/admin/settings/cycle",
   // Presentation mode has no settings row of its own — it is the pill in the
   // header, on every page. The index is the honest destination.

@@ -204,8 +204,11 @@ describe("closing drops the expectation, and NOTHING else", () => {
       { ...members[0], breaks: stoppedAfter(12), name: "Meheret" },
       { ...members[1], name: "Abebe" },
     ];
-    const before = weekMemberStatus({ weekNumber: 12, participations: named, payments });
-    const after = weekMemberStatus({ weekNumber: 13, participations: named, payments });
+    // This test is about WHO APPEARS, not what their status is, so the clock
+    // is irrelevant to it — any consistent pair does.
+    const clock = { weekDate: new Date("2026-08-09T00:00:00Z"), today: new Date("2026-08-10T00:00:00Z") };
+    const before = weekMemberStatus({ weekNumber: 12, ...clock, participations: named, payments });
+    const after = weekMemberStatus({ weekNumber: 13, ...clock, participations: named, payments });
     expect(before.map((r) => r.name)).toEqual(["Abebe", "Meheret"]);
     expect(after.map((r) => r.name)).toEqual(["Abebe"]);
   });

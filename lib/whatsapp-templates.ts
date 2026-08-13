@@ -29,6 +29,11 @@
 //
 // Adding LOCKOUT_NOTICE to this record without an approved ContentSid would
 // make it look sendable. Do not.
+//
+// WHATSAPP_WELCOME IS DRAFTED AND ALSO ABSENT, for a different reason: it is
+// written, agreed, and simply has not been SUBMITTED yet. It lives in
+// DRAFT_TEMPLATES below, which has no contentSid field at all — see the comment
+// there for why an entry with a blank one would be the dangerous shape.
 
 import type { MessageExtras, PlaceholderName } from "./messages";
 import { isMoneyPlaceholder, mayRenderAsNoValue, NO_VALUE } from "./placeholder-kinds";
@@ -190,6 +195,99 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
     requiredExtras: [],
   }),
 };
+
+// ————————————————— DRAFTED, NOT SUBMITTED —————————————————
+//
+// WHATSAPP_WELCOME is the sixth Content template. Its wording is agreed and it
+// has NOT been sent to Meta, so no ContentSid exists for it and nothing can
+// carry it to a member yet.
+//
+// WHY IT IS NOT A SIXTH ENTRY ABOVE WITH AN EMPTY ContentSid.
+//
+// `APPROVED_TEMPLATES` means one thing — "Meta approved this exact wording" —
+// and everything downstream reads it that way. `isApprovedTemplateKey` narrows
+// to it, `deliver()` posts `APPROVED_TEMPLATES[key].contentSid` to Twilio, and
+// `buildContentVariables` exists at all only because Twilio answers a MISSING
+// variable by substituting the SAMPLE submitted at approval. A blank ContentSid
+// would put a request on the wire with no template behind it, at the one layer
+// whose failure mode is "a real member reads Sara and $7,000.00 as fact".
+//
+// So the draft has NO `contentSid` FIELD. Not empty — absent, so the send path
+// cannot reach it even by mistake: `DraftTemplate` has nothing to read.
+//
+// This is the same ruling as LOCKOUT_NOTICE one step earlier. That one has no
+// draft either, because it must never be submitted at all; this one has a draft
+// because it is waiting in a queue.
+
+export type DraftTemplateKey = "WHATSAPP_WELCOME";
+
+export type DraftTemplate = {
+  key: DraftTemplateKey;
+  /**
+   * The body AS IT WILL BE SUBMITTED, in {{n}} form.
+   *
+   * Written here rather than only in docs/WHATSAPP_TEMPLATES.md so the sentence
+   * exists once. The doc is what a person reads before submitting; this is what
+   * the app renders and logs, and two hand-typed copies of one sentence drift.
+   */
+  draftBody: string;
+  variableOrder: readonly PlaceholderName[];
+  /** Derived from draftBody, exactly as an approved entry's namedBody is. */
+  namedBody: string;
+};
+
+function draft(entry: Omit<DraftTemplate, "namedBody">): DraftTemplate {
+  return { ...entry, namedBody: toNamedBody(entry.draftBody, entry.variableOrder) };
+}
+
+export const DRAFT_TEMPLATES: Record<DraftTemplateKey, DraftTemplate> = {
+  WHATSAPP_WELCOME: draft({
+    key: "WHATSAPP_WELCOME",
+    // Six variables, each separated by fixed text, opening and closing on fixed
+    // text — the two shape rules in docs/WHATSAPP_TEMPLATES.md that would
+    // otherwise burn the template name on a rejection.
+    // "WHEN YOU SIGN IN", NOT "THE FIRST TIME YOU SIGN IN".
+    //
+    // The organizer may send this to a member who has been in the group for
+    // months and has signed in many times — that is the intended way to bring
+    // an existing member into signing. For them the agreement arrives on their
+    // NEXT visit, not their first, and "the first time you sign in" describes
+    // a moment that is already years behind them. The PIN sentence already
+    // covers both cases the same way; this one now does too.
+    draftBody:
+      "Hi {{1}}, welcome to your Equb. You are saving {{2}} a week for {{3}}, from {{4}} to {{5}}. " +
+      "Sign in at {{6}} with your phone number. If you have set your own PIN use it, otherwise your " +
+      "PIN is the last 4 digits of your phone number. When you sign in you will be asked to read " +
+      "and sign your agreement.",
+    variableOrder: ["name", "weeklyAmount", "weeksCommitted", "startDate", "finishDate", "portalUrl"],
+  }),
+};
+
+export const DRAFT_TEMPLATE_KEYS = Object.keys(DRAFT_TEMPLATES) as DraftTemplateKey[];
+
+/** Is this key drafted-but-unsubmitted? The counterpart of isApprovedTemplateKey. */
+export function isDraftTemplateKey(key: string): key is DraftTemplateKey {
+  return Object.hasOwn(DRAFT_TEMPLATES, key);
+}
+
+/**
+ * Why a drafted template did not leave — for the organizer, who pressed send.
+ *
+ * "No Meta-approved WhatsApp template" is the true sentence for LOCKOUT_NOTICE
+ * and a misleading one here: it reads as a permanent property of the message,
+ * when in fact this template is finished and queued behind a submission. The
+ * organizer's next action differs completely between those two states, so the
+ * two states get different sentences.
+ */
+export function draftNotSubmittedRefusal(key: DraftTemplateKey): string {
+  return (
+    `${key} is written but has not been submitted to Meta, so no approved template exists to ` +
+    `carry it and nothing was sent. WhatsApp delivers this kind of message only as an approved ` +
+    `template — see docs/WHATSAPP_TEMPLATES.md for the exact wording to submit. ` +
+    `Until it is approved, sending it also requires nobody's signature: the agreement is owed by ` +
+    `a member who was TOLD, and this member was not told.`
+  );
+}
 
 export type RequiredExtrasResult =
   | { ok: true }

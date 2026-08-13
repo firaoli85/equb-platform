@@ -631,3 +631,139 @@ The registry pairs a ContentSid with the exact approved body, and
 **Do not update `approvedBody` before approval.** It would make the app show and
 log wording that Twilio is not sending — the precise failure the registry exists
 to prevent.
+
+---
+
+# WHATSAPP_WELCOME — the sixth template
+
+**Status: DRAFTED, NOT SUBMITTED. Nothing has been sent to Meta. There is no
+ContentSid, the template is deliberately absent from `APPROVED_TEMPLATES`, and
+every attempt to send it is refused in `deliver()` with
+`draftNotSubmittedRefusal`.**
+
+The wording below is agreed and lives in code as
+`DRAFT_TEMPLATES.WHATSAPP_WELCOME` (`lib/whatsapp-templates.ts`), written once
+in `{{n}}` form with the `{name}` form derived from it. It is the editable
+MessageTemplate row's starting body, so the organizer can read and edit it under
+Messages today — an edit is legitimate here precisely because Meta does not own
+this sentence yet.
+
+## Why it is not in `APPROVED_TEMPLATES`
+
+That record means "Meta approved this exact wording", and the send path reads it
+that way: `deliver()` posts `APPROVED_TEMPLATES[key].contentSid`. A sixth entry
+with a blank ContentSid would put a request on the wire with no template behind
+it — at the one layer whose failure mode is Twilio substituting the **approval
+samples** and a real member reading "Sara" and "$7,000.00" as fact.
+
+So `DraftTemplate` has **no `contentSid` field at all**. Not empty — absent, so
+the send path cannot reach it even by mistake.
+
+This is the same ruling as `LOCKOUT_NOTICE` one step earlier. That one has no
+draft either, because it must never be submitted; this one has a draft because
+it is waiting in a queue.
+
+## Body
+
+```
+Hi {{1}}, welcome to your Equb. You are saving {{2}} a week for {{3}}, from {{4}} to {{5}}. Sign in at {{6}} with your phone number. If you have set your own PIN use it, otherwise your PIN is the last 4 digits of your phone number. When you sign in you will be asked to read and sign your agreement.
+```
+
+Six variables, each separated by fixed text; the body opens and closes on fixed
+text. Both shape rules from the top of this document are satisfied.
+
+**"When you sign in", not "the first time you sign in".** The organizer may send
+this to a member who has been in the group for months — that is the intended way
+to bring an existing member into signing. For them the agreement arrives on their
+NEXT visit, and "the first time you sign in" describes a moment already long
+past. The PIN sentence covers both cases the same way, and so must this one.
+
+| Var | Fills from `placeholderValues()` | Notes |
+|---|---|---|
+| `{{1}}` | `name` | `standing.name` — first name |
+| `{{2}}` | `weeklyAmount` | via `formatMoney` |
+| `{{3}}` | **`weeksCommitted`** — NEW | **their own count, pluralised**: "10 weeks", "1 week" |
+| `{{4}}` | **`startDate`** — NEW | the stored date of their start week (2.14) |
+| `{{5}}` | `finishDate` | **already exists** — 2.22, their own finish date |
+| `{{6}}` | **`portalUrl`** — NEW | the `portalUrl` setting, read at send time |
+
+No cycle week number appears anywhere in it. `{{3}}`, `{{4}}` and `{{5}}` are
+the member's own count and the member's own two dates, which is exactly the
+frame UI_STANDARDS 8c reserves for them — the rework above exists because the
+five approved templates broke that rule, and this one is drafted already
+obeying it.
+
+## Rendered
+
+> Hi Henok, welcome to your Equb. You are saving $1,000 a week for 10 weeks,
+> from Sunday, August 16, 2026 to Sunday, October 18, 2026. Sign in at
+> https://equb.example.org with your phone number. If you have set your own PIN
+> use it, otherwise your PIN is the last 4 digits of your phone number. When you
+> sign in you will be asked to read and sign your agreement.
+
+*(A member joining at week 14 of Cycle 1 2026 for 10 weeks. He is never shown
+"week 14" or "week 23".)*
+
+## Category
+
+UTILITY, on the same two-part test as the five: it is non-promotional, and it is
+entirely about this recipient's own account — their weekly amount, their own
+window, and how to reach their own record. It sells nothing and invites nothing.
+"welcome" is a greeting here, not an offer; there is no invitation to join, no
+next cycle, and no request for a rating.
+
+## Two hard send blocks, and why they are refusals
+
+The rule is one pure function, `welcomeSendCheck` in
+[lib/welcome-send.ts](../lib/welcome-send.ts), asked by `deliver()`, by
+`prepareBatch`/`sendBatch`, by the member profile, and by the messaging settings
+form.
+
+1. **`portalUrl` is empty → refuse.** The message exists to give a member a way
+   in. Without an address it gives them a sentence with a dash in it, and a
+   welcome with no way in is worse than no welcome — the member believes they
+   have been told everything.
+2. **`defaultPinFromPhone` is OFF → refuse.** The message states the fallback
+   PIN as fact. With the setting off those digits are rejected at sign-in, so
+   the welcome hands a new member a password that does not work and their first
+   act on the platform is a failure they cannot explain.
+
+Both are refusals rather than warnings because both fail **silently**: the send
+succeeds, the log says ACCEPTED, and the only evidence is a member who never
+signs in.
+
+## Sending it is what requires a signature
+
+On a successful send, `deliver()` sets `Participation.agreementRequiredAt` for
+that participation **in the same transaction as the MessageLog row**, so the
+record of what was said and the obligation it created cannot exist without each
+other. Only a real send does it — a FAILED row sets nothing, because the
+agreement is owed by a member who was told.
+
+**That pair is unreachable while this template is unsubmitted**, since the
+no-approved-template skip returns first. It is written now so that registering
+the ContentSid is the only remaining step rather than the first of two.
+
+## New placeholders this template needs
+
+| Placeholder | Derived from | Lookup needed? |
+|---|---|---|
+| `weeksCommitted` | `standing.weeksCommitted`, pluralised | no |
+| `startDate` | the stored date of their start week | already loaded — the cycle's week rows |
+| `portalUrl` | the `portalUrl` setting | one settings read, in `loadStandingFacts` |
+
+`portalUrl` is threaded through `loadStandingFacts` rather than fetched at each
+render site so the address in the organizer's **preview** and the address in the
+**sent message** are the same string by construction.
+
+## To submit it
+
+1. Create the Content template in Twilio with the body above, category UTILITY.
+2. Supply sample values from the rendered example — and note the `.00` warning
+   above: `formatMoney` produces `$1,000`, not `$1,000.00`.
+3. On approval, move the entry from `DRAFT_TEMPLATES` to `APPROVED_TEMPLATES`
+   with its `contentSid` and `approvedBody` **in the same commit**, and add its
+   `requiredExtras` (there are none — every variable comes from standing or a
+   setting). The drift guard then covers it like the other five.
+4. Nothing else changes: the blocks, the requirement write, and the placeholders
+   are already in place.

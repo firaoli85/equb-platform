@@ -197,3 +197,62 @@ describe("GUARD — the 'Rules with no test' list stays honest", () => {
     expect(section).toMatch(/\*\*CLOSED\*\*/);
   });
 });
+
+// A DOCUMENTED COMMAND THAT DOES NOT EXIST IS WORSE THAN NO DOCUMENTATION.
+//
+// Ground Truth now tells the organizer to run `npm run db:migrate` after a
+// migration, and says `predev`/`prebuild`/`postinstall` keep the Prisma client
+// fresh. Those are claims about package.json, and package.json is edited far
+// more often than the document is re-read.
+//
+// THE DEFECT THIS EXISTS FOR. A stale Prisma client broke a page four times in
+// one session — a property "missing" from a model the schema plainly has,
+// which reads as a code defect and is not one. Deleting `predev` to shave two
+// seconds off a dev start would bring all four back, silently.
+describe("the Prisma-client scripts the working practice promises", () => {
+  const pkg = JSON.parse(
+    readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const scripts = pkg.scripts ?? {};
+
+  it("regenerates before dev, before build, and after install", () => {
+    for (const hook of ["predev", "prebuild", "postinstall"]) {
+      expect(scripts[hook], `${hook} must regenerate the client`).toContain("prisma generate");
+    }
+  });
+
+  // The one that matters most: `predev` fires only when the server BOOTS, so
+  // it does nothing for a migration applied while `next dev` is running.
+  // Binding generate to the migration is what removes the forgettable step.
+  it("binds generate to the migration itself, not only to the dev start", () => {
+    expect(scripts["db:migrate"]).toBeDefined();
+    expect(scripts["db:migrate"]).toContain("prisma migrate deploy");
+    expect(scripts["db:migrate"]).toContain("prisma generate");
+  });
+
+  it("Ground Truth names the command that exists", () => {
+    const practice = readFileSync(
+      join(import.meta.dirname, "..", "EQUB_GROUND_TRUTH.md"),
+      "utf8",
+    );
+    const named = [...practice.matchAll(/npm run ([a-z:]+)/g)].map((m) => m[1]);
+    const missing = [...new Set(named)].filter((s) => !(s in scripts));
+    expect(missing, `documented but not in package.json: ${missing.join(", ")}`).toEqual([]);
+    // Non-vacuity: it must actually have found some commands to check.
+    expect(named.length).toBeGreaterThan(0);
+  });
+
+  // The restart half cannot be automated, so the document has to carry it —
+  // regenerating the files underneath a running Next server does not evict the
+  // client already in its module graph.
+  it("says the dev server must be restarted, which no script can do", () => {
+    const practice = readFileSync(
+      join(import.meta.dirname, "..", "EQUB_GROUND_TRUTH.md"),
+      "utf8",
+    );
+    // `\s+` rather than a literal space: the sentence wraps across lines in
+    // the markdown, and a guard that breaks on re-wrapping is a guard that
+    // gets deleted the first time someone reflows a paragraph.
+    expect(practice).toMatch(/Restart\s+the\s+dev\s+server\s+before\s+testing/i);
+  });
+});

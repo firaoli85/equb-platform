@@ -11,6 +11,7 @@ import {
   signInWithPin,
   signInWithWhatsAppCode,
 } from "@/app/actions/auth";
+import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { auth, firebaseMissingClientConfig, RECAPTCHA_CONTAINER_ID } from "@/lib/firebase/client";
 import { motionTokens } from "@/lib/motion-tokens";
 import {
@@ -31,6 +32,28 @@ import {
 // Today that is PIN, the WhatsApp code (Twilio Verify sends a pre-approved
 // template, so it needs no 24-hour service window and works), and SMS where
 // Firebase is configured.
+//
+// UI_STANDARDS RULE 6 — WHAT IS A SAVE ON THIS SCREEN, AND WHAT IS NOT.
+//
+// SIGNING IN IS NOT A SAVE, so the phone lookup, the PIN pad, the WhatsApp
+// code and the SMS code are all EXEMPT from `SaveButton`. Two of its four
+// beats have no meaning on them: nothing is being edited, so there is no
+// dirty state to gate a button on (beat 1), and SUCCESS IS THE NEXT PAGE
+// (beat 3) — `goToPortal()` replaces the whole document, so a "✓ Saved"
+// beside the button would confirm a screen the member has already left.
+//
+// What they DO owe is beat 4 / rule 6b: THE REFUSAL, AT THE CONTROL, in the
+// server's own words — the lockout sentence from signInWithPin, the Twilio
+// refusal from requestWhatsAppCode, the Firebase mapping in lib/sms-login.
+// That is what `ErrorMsg` carries, and it now renders directly UNDER the
+// button that was pressed rather than above it: an alert that appears above
+// a button pushes the button down, out from under the thumb, at the exact
+// moment it appears.
+//
+// EXACTLY ONE THING HERE IS A SAVE: "Save my PIN" on the last step writes a
+// credential that outlives this session and every later sign-in reads. It
+// gets the real thing — `SaveButton`, which owns all four beats and leaves
+// nowhere else to put the message (components/ui/save-button.tsx).
 
 type Lookup = {
   phone: string;
@@ -154,8 +177,13 @@ export function LoginFlow() {
   const [promptSetPin, setPromptSetPin] = useState(false);
   const [usedDefault, setUsedDefault] = useState(false);
   const [newPin, setNewPin] = useState("");
-  const [newPinError, setNewPinError] = useState<string | null>(null);
-  const [savingPin, startSavePin] = useTransition();
+  // THE ONE SAVE ON THIS SCREEN (rule 6). ONE state, where there used to be a
+  // (savingPin, newPinError) pair: "is it saving?" is DERIVED from it below,
+  // never kept a second time. Two records of one fact are two records that can
+  // disagree — the pad staying live while the button says "Saving…" is exactly
+  // that disagreement.
+  const [pinSave, setPinSave] = useState<SaveState>({ kind: "idle" });
+  const savingPin = pinSave.kind === "saving";
 
   // OTP state
   const [otpStep, setOtpStep] = useState<"idle" | "sending" | "sent" | "verifying">("idle");
@@ -297,20 +325,39 @@ export function LoginFlow() {
     window.location.assign("/me");
   }
 
-  function saveOwnPin() {
+  /**
+   * The save (rule 6). Every message it produces renders at the button, which
+   * is the only place `SaveButton` can put one.
+   */
+  async function saveOwnPin() {
     if (newPin.length < MIN_PIN || savingPin) return;
-    startSavePin(async () => {
-      try {
-        const result = await setMyPin({ pin: newPin });
-        if (!result.ok) {
-          setNewPinError(result.error);
-          return;
-        }
-        goToPortal();
-      } catch {
-        setNewPinError("Could not reach the server. Try again.");
+    setPinSave({ kind: "saving" });
+    try {
+      const result = await setMyPin({ pin: newPin });
+      if (!result.ok) {
+        // THE SERVER'S OWN REASON, prefixed so the state is unmistakable
+        // ("PIN must be 4 to 8 digits.", "Not signed in."). The digits stay
+        // in the pad: a refusal costs a retry, never a retype.
+        setPinSave({ kind: "err", message: `Not saved: ${result.error}` });
+        return;
       }
-    });
+      // WHAT HAPPENED, WITH THE FIGURE — how many digits are now their PIN.
+      // Never the digits themselves, and a member-facing count rather than
+      // any cycle week number (8c).
+      setPinSave({
+        kind: "ok",
+        message: usedDefault
+          ? `Saved — your new ${newPin.length}-digit PIN is set. Your phone's last 4 digits will not sign you in any more.`
+          : `Saved — your new ${newPin.length}-digit PIN is set. Use it the next time you sign in.`,
+      });
+      // The confirmation is set BEFORE the handoff on purpose: the portal is a
+      // full document load, so the message stands at the button for as long as
+      // the member is still looking at this screen. Success is then the portal
+      // itself — see the note above `goToPortal`.
+      goToPortal();
+    } catch {
+      setPinSave({ kind: "err", message: "Not saved: could not reach the server. Try again." });
+    }
   }
 
   // ── SMS code (Firebase Phone Auth) ──────────────────────────────
@@ -572,8 +619,6 @@ export function LoginFlow() {
                 </p>
               </div>
 
-              {phoneError && <ErrorMsg msg={phoneError} />}
-
               <button
                 type="submit"
                 disabled={phonePending || !phoneInput.trim()}
@@ -582,6 +627,12 @@ export function LoginFlow() {
               >
                 {phonePending ? "Looking up…" : "Continue"}
               </button>
+
+              {/* EXEMPT from SaveButton (no save here) but not from rule 6b:
+                  the reason sits UNDER the button that was pressed. Above it,
+                  the alert appearing shoved the button down out from under
+                  the thumb at the moment it appeared. */}
+              {phoneError && <ErrorMsg msg={phoneError} />}
             </form>
           </div>
         )}
@@ -719,12 +770,6 @@ export function LoginFlow() {
               <PinDots length={pin.length} />
             </div>
 
-            {pinError && (
-              <p role="alert" className="text-center text-sm text-red-600 dark:text-red-400">
-                {pinError}
-              </p>
-            )}
-
             <DigitPad
               value={pin}
               onChange={(next) => {
@@ -744,6 +789,16 @@ export function LoginFlow() {
             >
               {verifying ? "Signing in…" : "Sign in"}
             </button>
+
+            {/* Rule 6b at the control that was pressed: the server's own
+                sentence — a wrong PIN, a locked account and when it lifts,
+                PIN sign-in switched off. It used to render above the pad,
+                one full digit pad away from the button. */}
+            {pinError && (
+              <p role="alert" className="text-center text-sm text-red-600 dark:text-red-400">
+                {pinError}
+              </p>
+            )}
 
             <div className="space-y-2 text-center">
               <button
@@ -787,27 +842,32 @@ export function LoginFlow() {
               </div>
             </div>
 
-            {newPinError && <ErrorMsg msg={newPinError} />}
-
             <DigitPad
               value={newPin}
               onChange={(next) => {
                 if (savingPin) return;
                 setNewPin(next.slice(0, MAX_PIN));
-                setNewPinError(null);
+                // Typing again retracts a refusal: it was about digits that
+                // are no longer the ones on screen.
+                setPinSave({ kind: "idle" });
               }}
               disabled={savingPin}
             />
 
-            <button
-              type="button"
-              onClick={saveOwnPin}
-              disabled={savingPin || newPin.length < MIN_PIN}
-              style={{ touchAction: "manipulation" }}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-50 text-white font-bold rounded-xl transition-colors text-sm"
-            >
-              {savingPin ? "Saving…" : "Save my PIN"}
-            </button>
+            {/* THE SAVE. `SaveButton` owns all four beats and renders its own
+                message inside this control group, so the confirmation cannot
+                end up above the pad where a thumb on the button never sees it.
+                `flex-col` + `[&>button]:w-full` keeps the portal's full-width
+                button shape and stacks the message directly under it. */}
+            <SaveButton
+              state={pinSave}
+              onSave={() => void saveOwnPin()}
+              label="Save my PIN"
+              savingLabel="Saving…"
+              dirty={newPin.length >= MIN_PIN}
+              notDirtyHint={`Enter at least ${MIN_PIN} digits first.`}
+              className="flex-col [&>button]:w-full [&>button]:py-3"
+            />
 
             {/* ALWAYS skippable, including after a phone-digit default. The
                 ruling is explicit: never forced. A member who skips is
@@ -844,8 +904,6 @@ export function LoginFlow() {
               </p>
             </div>
 
-            {otpError && <ErrorMsg msg={otpError} />}
-
             {otpStep === "idle" || otpStep === "sending" ? (
               <button
                 type="button"
@@ -879,6 +937,10 @@ export function LoginFlow() {
               </form>
             )}
 
+            {/* Rule 6b — under whichever button was pressed, the send or the
+                verify, because the two swap places in the same slot. */}
+            {otpError && <ErrorMsg msg={otpError} />}
+
             <div className="text-center">
               <button
                 type="button"
@@ -908,8 +970,6 @@ export function LoginFlow() {
                     : "We'll text a 6-digit code to your number."}
               </p>
             </div>
-
-            {smsError && <ErrorMsg msg={smsError} />}
 
             {smsStep === "idle" || smsStep === "sending" ? (
               <button
@@ -943,6 +1003,10 @@ export function LoginFlow() {
                 </button>
               </form>
             )}
+
+            {/* Rule 6b — the mapped Firebase reason (lib/sms-login), under
+                whichever button was pressed. */}
+            {smsError && <ErrorMsg msg={smsError} />}
 
             <div className="text-center">
               <button

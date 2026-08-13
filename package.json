@@ -4,10 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "predev": "prisma generate",
     "build": "next build",
+    "prebuild": "prisma generate",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "db:migrate": "prisma migrate deploy && prisma generate",
+    "db:generate": "prisma generate",
     "postinstall": "prisma generate",
     "check:position": "tsx scripts/audit-position-figures.mts"
   },

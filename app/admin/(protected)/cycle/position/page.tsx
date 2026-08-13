@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { getCyclePosition } from "@/app/actions/cycle-position";
 import { CashReadingPanel } from "./cash-reading-panel";
+import { WeekDatePanel } from "./week-date-panel";
+import { getWeekDates } from "./week-dates-data";
+import { outOfSequenceWeeks } from "./week-dates";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
 import { StatCard } from "@/components/ui/stat-card";
+import { parseIsoDay } from "@/lib/date-bounds";
 import { formatDateUTC, formatMoney } from "@/lib/format";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { parsePage } from "@/lib/paging";
@@ -19,8 +23,13 @@ export const dynamic = "force-dynamic";
 //
 // "Am I in negative, am I using someone else's money, or am I on track."
 //
-// Every figure is derived (2.14) and drills down to who makes it up. The one
-// stored fact on the page is the cash reading he enters himself.
+// Every figure is derived (2.14) and drills down to who makes it up. TWO
+// things here are STORED, and they are therefore the only two that can be
+// wrong: the cash reading he enters himself, and the week dates under "Week
+// dates" — which decide on their own which weeks have elapsed, and so who is
+// late, who is behind, and what reads as overdue (rule 7). Both are correctable
+// on this page for the same reason: a derived figure fixes itself the moment
+// the money is right, a stored one has to be fixed by hand.
 
 export default async function CyclePositionPage({
   searchParams,
@@ -46,6 +55,13 @@ export default async function CyclePositionPage({
   const d = result.data;
   const c = d.collection;
   const h = d.holding;
+  // The stored week rows (rule 7). Loaded on EVERY section, not only its own,
+  // and the second read of the participation graph that costs is bought
+  // deliberately: the nav's attention dot is a claim about the whole page, and
+  // a week dated out of sequence has to be visible from Collection — that is
+  // where he will be standing when the figure it moved looks wrong.
+  const weekDates = await getWeekDates();
+  const weekRows = weekDates.ok ? weekDates.data.weeks : [];
   const sections = positionSections({
     owedByCount: c.owedBy.length,
     shortfall: c.shortfall,
@@ -57,8 +73,15 @@ export default async function CyclePositionPage({
     toCover: c.toCover,
     holdingLessThanOwed: h.shouldBeHolding < h.paidEarly + h.drawnNotHandedOut,
     verdictKind: d.verdict?.kind ?? null,
+    outOfSequenceCount: outOfSequenceWeeks(weekRows).length,
   });
   const href = (key: string) => `?section=${key}`;
+  const firstWeek = weekRows[0] ?? null;
+  const lastWeek = weekRows[weekRows.length - 1] ?? null;
+  const dayOf = (iso: string | undefined) => {
+    const parsed = iso === undefined ? null : parseIsoDay(iso);
+    return parsed === null ? null : formatDateUTC(parsed);
+  };
 
   return (
     <main className="space-y-6">
@@ -396,11 +419,44 @@ export default async function CyclePositionPage({
         </>
       )}
 
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        Every figure above except your entered reading is derived from the money already
-        recorded — nothing here is stored, so it can never drift from the dashboard
-        {c.elapsedThroughWeek > 0 && ` or from week ${c.elapsedThroughWeek}'s own records`}.
-      </p>
+      {/* ————— THE STORED DATES — what everything above stands on ————— */}
+      {section === "weeks" && (
+        <>
+          <SectionHeading title="The dates every figure above is measured from">
+            A week&apos;s own stored date is the truth for that week (rule 7). Elapsed, late and
+            behind all come from it plus the payment window — never from counting weeks off the
+            cycle&apos;s start date, because that date is editable and correcting it must never
+            move anyone&apos;s arrears.
+            {firstWeek && lastWeek && (
+              <>
+                {" "}
+                Week {firstWeek.weekNumber} fell on {dayOf(firstWeek.date)} and week{" "}
+                {lastWeek.weekNumber} on {dayOf(lastWeek.date)}.
+              </>
+            )}
+          </SectionHeading>
+          <div className="animate-fade-in-up-2">
+            {weekDates.ok ? (
+              <WeekDatePanel weeks={weekDates.data.weeks} todayIso={weekDates.data.todayIso} />
+            ) : (
+              <p className="text-sm text-red-800 dark:text-red-400" role="alert">
+                {weekDates.error}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* The footer is a claim about DERIVED figures, so it does not belong on
+          the one section whose subject is a stored fact — saying "nothing here
+          is stored" above the stored week dates would be plainly untrue. */}
+      {section !== "weeks" && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Every figure above except your entered reading is derived from the money already
+          recorded — nothing here is stored, so it can never drift from the dashboard
+          {c.elapsedThroughWeek > 0 && ` or from week ${c.elapsedThroughWeek}'s own records`}.
+        </p>
+      )}
     </main>
   );
 }

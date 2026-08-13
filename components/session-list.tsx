@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { signOutEverywhereElse } from "@/app/actions/sessions";
 import type { SessionView } from "@/app/actions/sessions";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 
 // "WHERE YOU ARE SIGNED IN" (ruling 4) — shared by the member portal and the
 // organizer's settings, because the need is identical: see every live
@@ -74,26 +75,48 @@ export function SessionList({
   now: number;
 }) {
   const router = useRouter();
-  const [pending, start] = useTransition();
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  // ONE STATE, AND IT RENDERS AT THE BUTTON (UI_STANDARDS rule 6).
+  //
+  // The outcome used to be a hand-rolled `msg` box at the TOP of this
+  // component — above every session row, and on a phone with four sign-ins
+  // listed that is well above the fold from the button at the bottom. It is
+  // the reported defect exactly: press, nothing happens, the confirmation was
+  // rendered somewhere you were not looking. The refusal had a second problem:
+  // it went out under `role="status"`, so a screen reader heard "could not
+  // sign the others out" at the same polite weight as a success.
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const busy = save.kind === "saving";
 
   const others = sessions.filter((s) => !s.isCurrent).length;
 
+  async function endOtherSessions() {
+    setSave({ kind: "saving" });
+    try {
+      const result = await signOutEverywhereElse();
+      if (!result.ok) {
+        setSave({ kind: "err", message: `Not signed out: ${result.error}` });
+        return;
+      }
+      const { endedCount } = result.data;
+      setSave({
+        kind: "ok",
+        message:
+          endedCount === 0
+            ? "Nothing to sign out — those sessions had already ended. You are still signed in here."
+            : `Signed out of ${endedCount} other device${endedCount === 1 ? "" : "s"}. You are still signed in here.`,
+      });
+      router.refresh();
+    } catch {
+      setSave({
+        kind: "err",
+        message:
+          "Not signed out: could not reach the server. Assume the other sessions are still live.",
+      });
+    }
+  }
+
   return (
     <div className="space-y-3">
-      {msg && (
-        <p
-          role="status"
-          className={`rounded-xl px-3 py-2 text-xs ${
-            msg.kind === "ok"
-              ? "bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-100 dark:border-green-900"
-              : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-900"
-          }`}
-        >
-          {msg.text}
-        </p>
-      )}
-
       {sessions.length === 0 ? (
         <p className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-4 py-4 text-sm text-gray-600 dark:text-gray-400">
           No other sign-ins recorded yet. This device will appear here after your next sign-in.
@@ -143,30 +166,18 @@ export function SessionList({
 
       {others > 0 && (
         <div className="flex flex-wrap items-center gap-3">
+          {/* SaveFeedback rather than SaveButton: this button's own classes are
+              tuned for the member portal (40px target, touch-action) and the
+              generic Save styling would drop that. */}
           <button
             type="button"
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
-                setMsg(null);
-                const result = await signOutEverywhereElse();
-                if (!result.ok) {
-                  setMsg({ kind: "err", text: result.error });
-                  return;
-                }
-                setMsg({
-                  kind: "ok",
-                  text: `Signed out of ${result.data.endedCount} other device${
-                    result.data.endedCount === 1 ? "" : "s"
-                  }. You are still signed in here.`,
-                });
-                router.refresh();
-              })
-            }
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void endOtherSessions()}
             className="rounded-xl bg-gray-900 dark:bg-white px-4 py-2.5 text-xs font-bold text-white dark:text-gray-900 hover:opacity-90 active:scale-[0.98] transition-[opacity,transform] disabled:opacity-50"
             style={{ touchAction: "manipulation", minHeight: "40px" }}
           >
-            {pending ? "Signing out…" : "Sign out everywhere else"}
+            {busy ? "Signing out…" : "Sign out everywhere else"}
           </button>
           <p className="text-xs text-gray-600 dark:text-gray-400">
             Ends the other {others === 1 ? "session" : `${others} sessions`} immediately. This
@@ -174,6 +185,14 @@ export function SessionList({
           </p>
         </div>
       )}
+
+      {/* OUTSIDE the `others > 0` guard, on purpose. A success removes the last
+          other session, so on the next render that guard is false and the
+          button is gone — and a confirmation nested inside it would be carried
+          off with the button, leaving the same "I pressed it and saw nothing"
+          this rule exists to stop. It renders at the foot either way: directly
+          under the control while there is one, in its place once there is not. */}
+      <SaveFeedback state={save} className="text-xs" />
     </div>
   );
 }

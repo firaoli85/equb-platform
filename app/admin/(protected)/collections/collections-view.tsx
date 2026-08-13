@@ -10,7 +10,8 @@ import { WeekWinnerEditor } from "@/components/admin/week-winner-editor";
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
 import { AmountInput, Select } from "@/components/ui/controls";
-import { Alert, buttonCls, Card, Pill } from "@/components/ui/primitives";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
+import { buttonCls, Card, Pill } from "@/components/ui/primitives";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import type { UndoDrawConsequences } from "@/lib/undo-draw";
 import { removeWinnerPreview, previewSentences, type WeekWinners } from "@/lib/week-winners";
@@ -66,6 +67,38 @@ export type WeekOption = {
   totalNet: number;
 };
 
+const IDLE: SaveState = { kind: "idle" };
+
+/**
+ * WHERE ONE ACTION'S FEEDBACK LANDS, and what a refusal is called there.
+ *
+ * Six mutating actions live on this page — undo a draw, remove a winner,
+ * delete a payout, mark one collected, save an edit, and the week editor's
+ * add/move. They used to share ONE `feedback` banner at the top of the view,
+ * which is rule 6's original defect one step removed: a confirmation for the
+ * "Mark collected" on week 9 rendered above week 12's card, nowhere near the
+ * button that was pressed. Each action now carries its own `SaveState` and its
+ * own words for a refusal.
+ */
+type Report = {
+  /** The control's own save state. */
+  set: (state: SaveState) => void;
+  /** How a refusal is named AT that control, e.g. "Not collected". */
+  refusalLabel: string;
+};
+
+/** Open a confirmation for one action; the reporter is already bound. */
+type Ask = (
+  spec: ConfirmSpec,
+  action: (typedPhrase: string) => Promise<{ ok: boolean; error?: string } | { ok: boolean }>,
+  okText: string,
+) => void;
+
+/** The week card a group renders as — also the feedback scope for its rows. */
+function cardKey(group: WeekGroup): string {
+  return group.drawId ?? "unlinked";
+}
+
 // READ-FIRST (2.25): rows display; actions are deliberate. The two delete
 // intentions are separate buttons with separate, computed consequences —
 // the organizer never guesses whether a number goes back on the wheel.
@@ -82,54 +115,87 @@ export function CollectionsView({
   const [openRow, setOpenRow] = useState<{ id: string; mode: "collect" | "edit" } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
-   * A refusal from the action the dialog just ran. Set it and the dialog stays
-   * open with the reason inside, beside the button that caused it — never only
-   * in a banner elsewhere on the page (UI_STANDARDS 6b).
+   * THE DIALOG'S OWN STATE — one value, never a (busy, error) pair.
+   *
+   * `busy` and `dialogError` are the same fact seen twice; kept as separate
+   * booleans they drift (a refusal with the button still spinning, or a
+   * cleared error with the dialog stuck disabled). Both are DERIVED below.
+   *
+   * `err` is what keeps the dialog open with the reason inside it, beside the
+   * button that caused it — never only in a banner elsewhere (UI_STANDARDS 6b).
    */
-  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dialogSave, setDialogSave] = useState<SaveState>({ kind: "idle" });
+  const busy = dialogSave.kind === "saving";
+  const dialogError = dialogSave.kind === "err" ? dialogSave.message : null;
   // The confirm handler carries what the organizer TYPED, so an action with
   // a server-side typed-name check gets the real value rather than a copy of
   // the expected one.
   const [onConfirm, setOnConfirm] = useState<((typed: string) => void) | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  function ask(
-    spec: ConfirmSpec,
-    action: (typedPhrase: string) => Promise<{ ok: boolean; error?: string } | { ok: boolean }>,
-    okText: string,
-  ) {
-    setConfirm(spec);
-    setDialogError(null);
-    setOnConfirm(() => (typedPhrase: string) => {
-      void (async () => {
-        setBusy(true);
-        try {
-          const result = await action(typedPhrase);
-          if (!result.ok) {
-            // THE DIALOG STAYS OPEN WITH THE REASON IN IT.
-            //
-            // This used to write the refusal into `feedback` and then close in
-            // the `finally` below. `feedback` renders once, at the top of the
-            // page above every week group — so a refusal from "Mark collected"
-            // on week 9, or from the winner editor at the foot of a week card,
-            // landed somewhere the organizer was not looking and read as the
-            // app doing nothing (UI_STANDARDS 6b).
-            setDialogError(("error" in result && result.error) || "Failed — nothing changed.");
-            return; // ← the early return is the fix: no close, nothing lost.
+  /**
+   * FEEDBACK SCOPED TO THE WEEK CARD, one entry per action.
+   *
+   * "Remove winner" and "Delete payout" DESTROY the row they were pressed on,
+   * so the row cannot hold their confirmation. The smallest thing that
+   * survives them is the week card the row sat in, and that is where the
+   * message goes — a few pixels from where the button was, not at the top of
+   * a page of twelve cards.
+   */
+  const [cardSave, setCardSave] = useState<Record<string, { card: string; state: SaveState }>>({});
+
+  function cardReport(card: string, action: string, refusalLabel: string): Report {
+    const key = `${card}:${action}`;
+    return {
+      refusalLabel,
+      set: (state) => setCardSave((m) => ({ ...m, [key]: { card, state } })),
+    };
+  }
+
+  /**
+   * Bind a control's reporter, then open its confirmation. Curried so the
+   * `ask` a child receives is still the three-argument one it declares — the
+   * reporter is decided by whoever OWNS the control, not by the child.
+   */
+  function askVia(report: Report): Ask {
+    return (spec, action, okText) => {
+      setConfirm(spec);
+      setDialogSave({ kind: "idle" });
+      setOnConfirm(() => (typedPhrase: string) => {
+        void (async () => {
+          setDialogSave({ kind: "saving" });
+          report.set({ kind: "saving" });
+          try {
+            const result = await action(typedPhrase);
+            if (!result.ok) {
+              // THE DIALOG STAYS OPEN WITH THE REASON IN IT.
+              //
+              // This used to write the refusal into a page-wide `feedback`
+              // banner and then close in a `finally`. That banner renders once,
+              // at the top of the page above every week group — so a refusal
+              // from "Mark collected" on week 9, or from the winner editor at
+              // the foot of a week card, landed somewhere the organizer was not
+              // looking and read as the app doing nothing (UI_STANDARDS 6b).
+              const reason = ("error" in result && result.error) || "Failed — nothing changed.";
+              setDialogSave({ kind: "err", message: reason });
+              // ...and the control keeps it after the dialog is dismissed, so
+              // cancelling out of a refusal no longer throws the reason away.
+              report.set({ kind: "err", message: `${report.refusalLabel}: ${reason}` });
+              return; // ← the early return is the fix: no close, nothing lost.
+            }
+            report.set({ kind: "ok", message: okText });
+            setDialogSave({ kind: "idle" });
+            setOpenRow(null);
+            setConfirm(null);
+            setOnConfirm(null);
+            router.refresh();
+          } catch {
+            const reason = "Could not reach the server — nothing was confirmed.";
+            setDialogSave({ kind: "err", message: reason });
+            report.set({ kind: "err", message: `${report.refusalLabel}: ${reason}` });
           }
-          setFeedback({ kind: "ok", text: okText });
-          setOpenRow(null);
-          setConfirm(null);
-          setOnConfirm(null);
-          router.refresh();
-        } catch {
-          setDialogError("Could not reach the server — nothing was confirmed.");
-        } finally {
-          setBusy(false);
-        }
-      })();
-    });
+        })();
+      });
+    };
   }
 
   /**
@@ -144,7 +210,9 @@ export function CollectionsView({
   function askUndoDraw(group: WeekGroup) {
     const u = group.undo;
     if (!u || !group.drawId) return;
-    ask(
+    askVia(
+      cardReport(cardKey(group), "undo", `Week ${u.weekNumber}'s draw was NOT undone`),
+    )(
       {
         title: `Undo the draw for week ${u.weekNumber}?`,
         consequence: (
@@ -193,9 +261,11 @@ export function CollectionsView({
         requirePhrase: u.highStakes ? cycleName : undefined,
       },
       (typedPhrase) => undoDraw({ drawId: group.drawId!, typedName: typedPhrase }),
-      `✓ Week ${u.weekNumber}'s draw undone — ${u.numbersReturning
+      `Week ${u.weekNumber}'s draw undone — ${u.payoutCount} payout${
+        u.payoutCount === 1 ? "" : "s"
+      } totalling ${formatMoney(u.totalNet)} removed, ${u.numbersReturning
         .map((n) => `#${n}`)
-        .join(", ")} returned to the wheel.`,
+        .join(", ")} back on the wheel, week ${u.weekNumber} drawable again.`,
     );
   }
 
@@ -232,7 +302,13 @@ export function CollectionsView({
     const payout = week.payouts.find((p) => p.payoutId === payoutId);
     if (!payout) return;
     const preview = removeWinnerPreview({ week, payout });
-    ask(
+    askVia(
+      cardReport(
+        cardKey(group),
+        "remove",
+        `${payout.memberName} (#${payout.number}) was NOT removed`,
+      ),
+    )(
       {
         title: `Remove ${payout.memberName} (#${payout.number}) from week ${week.weekNumber}?`,
         consequence: (
@@ -260,7 +336,9 @@ export function CollectionsView({
         requirePhrase: payout.status === "COLLECTED" ? payout.memberName : undefined,
       },
       () => removeWinnerFromWeek({ payoutId }),
-      `✓ #${payout.number} removed — the number is back on the wheel.`,
+      `${payout.memberName} (#${payout.number}) removed from week ${week.weekNumber} — ` +
+        `${formatMoney(payout.net)} off the week and #${payout.number} is back on the wheel` +
+        (preview.freedWeek ? `, which now holds no winner at all.` : `.`),
     );
   }
 
@@ -275,12 +353,27 @@ export function CollectionsView({
     );
   }
 
+  // THE ONE MESSAGE THAT HAS NOWHERE LEFT TO GO.
+  //
+  // Undoing a draw deletes the draw, and so deletes the week card the button
+  // sat on; the same happens to a card whose LAST payout is deleted, whose only
+  // winner is removed, or whose only winner is moved to another week. When the
+  // control and its card are both gone there is no "at the control" left, so
+  // that one confirmation surfaces here. This is NOT the old catch-all banner:
+  // only a message whose own card has disappeared can reach it, and every other
+  // message stays in the card or the row it belongs to.
+  const liveCards = new Set(groups.map(cardKey));
+  const stranded = Object.values(cardSave).filter(
+    (e) => !liveCards.has(e.card) && (e.state.kind === "ok" || e.state.kind === "err"),
+  );
+  const strandedState = stranded.length > 0 ? stranded[stranded.length - 1].state : null;
+
   return (
     <div className="space-y-5">
-      {feedback && <Alert kind={feedback.kind}>{feedback.text}</Alert>}
+      {strandedState && <SaveFeedback state={strandedState} />}
 
       {groups.map((group) => (
-        <Card key={group.drawId ?? "unlinked"}>
+        <Card key={cardKey(group)}>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pt-4 pb-2">
             <div className="min-w-0">
               <h2 className="flex flex-wrap items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
@@ -310,15 +403,36 @@ export function CollectionsView({
               </p>
             </div>
             {group.drawId && group.undo && (
-              <button
-                type="button"
-                className={buttonCls.dangerQuiet + " !text-xs"}
-                onClick={() => askUndoDraw(group)}
-              >
-                Undo the draw for week {group.weekNumber}
-              </button>
+              // Beat 4 for the undo: a refusal renders BESIDE this button, not
+              // in a banner at the top of a page of twelve week cards. Its
+              // success cannot render here — the action deletes this card —
+              // so it surfaces in the stranded slot above.
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <SaveFeedback state={cardSave[`${cardKey(group)}:undo`]?.state ?? IDLE} />
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={buttonCls.dangerQuiet + " !text-xs"}
+                  onClick={() => askUndoDraw(group)}
+                >
+                  Undo the draw for week {group.weekNumber}
+                </button>
+              </div>
             )}
           </div>
+
+          {/* THE ROW-KILLING ACTIONS REPORT HERE. "Remove winner" and "Delete
+              payout" delete the row they were pressed on, so their own row
+              cannot hold the confirmation — this card is the nearest thing that
+              outlives them, inches from where the button was. */}
+          <SaveFeedback
+            state={cardSave[`${cardKey(group)}:remove`]?.state ?? IDLE}
+            className="mx-5 mb-2"
+          />
+          <SaveFeedback
+            state={cardSave[`${cardKey(group)}:delete`]?.state ?? IDLE}
+            className="mx-5 mb-2"
+          />
 
           {/* A draw holding NO payout is a week counted as drawn while holding
               nothing — un-redrawable and unassignable. It should no longer be
@@ -354,7 +468,14 @@ export function CollectionsView({
                 open={openRow?.id === p.id ? openRow.mode : null}
                 setOpen={(mode) => setOpenRow(mode ? { id: p.id, mode } : null)}
                 busy={busy}
-                ask={ask}
+                askVia={askVia}
+                // Built here because only this scope knows which card the row
+                // sits in; "Delete payout" cannot report to the row it deletes.
+                reportDelete={cardReport(
+                  cardKey(group),
+                  "delete",
+                  `#${p.number}'s payout was NOT deleted`,
+                )}
                 onUndoDraw={group.undo && group.drawId ? () => askUndoDraw(group) : null}
                 onRemoveWinner={
                   group.weekId ? () => askRemoveWinner(group, p.id) : null
@@ -375,7 +496,19 @@ export function CollectionsView({
               // and a week freed a second ago is selectable immediately.
               otherWeeks={weeks.filter((w) => w.weekId !== group.weekId)}
               busy={busy}
-              ask={ask}
+              // Its "Review…" buttons are three-argument callers, so the
+              // reporter is bound here rather than passed through them.
+              ask={askVia(
+                cardReport(cardKey(group), "editor", `Week ${group.weekNumber} was NOT changed`),
+              )}
+            />
+          )}
+          {/* The editor renders at the FOOT of the card, so its confirmation
+              renders under it — beside the "Review…" button that opened it. */}
+          {group.weekId && (
+            <SaveFeedback
+              state={cardSave[`${cardKey(group)}:editor`]?.state ?? IDLE}
+              className="mx-5 mb-3"
             />
           )}
         </Card>
@@ -387,7 +520,9 @@ export function CollectionsView({
         busy={busy}
         onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
         onCancel={() => {
-          setDialogError(null);
+          // The reason is NOT lost with the dialog: `askVia` also wrote it to
+          // the control's own state, which stays until the next attempt.
+          setDialogSave({ kind: "idle" });
           setConfirm(null);
           setOnConfirm(null);
         }}
@@ -405,7 +540,8 @@ function PayoutLine({
   open,
   setOpen,
   busy,
-  ask,
+  askVia,
+  reportDelete,
   onUndoDraw,
   onRemoveWinner,
 }: {
@@ -419,11 +555,13 @@ function PayoutLine({
   open: "collect" | "edit" | null;
   setOpen: (mode: "collect" | "edit" | null) => void;
   busy: boolean;
-  ask: (
-    spec: ConfirmSpec,
-    action: (typedPhrase: string) => Promise<{ ok: boolean; error?: string } | { ok: boolean }>,
-    okText: string,
-  ) => void;
+  /** Bind this row's own feedback slot, then open the confirmation. */
+  askVia: (report: Report) => Ask;
+  /**
+   * Where "Delete payout" reports. Not one of this row's own states: the
+   * action deletes this row, so the confirmation has to outlive it.
+   */
+  reportDelete: Report;
   /** The alternative action, when this payout came from a real draw. */
   onUndoDraw: (() => void) | null;
   /** Remove this winner and RETURN their number to the wheel. */
@@ -435,6 +573,14 @@ function PayoutLine({
   const [fee, setFee] = useState(String(p.feeAmount / 100));
   const [net, setNet] = useState(String(p.netAmount / 100));
   const [notes, setNotes] = useState(p.notes ?? "");
+
+  // TWO STATES, NOT ONE, because they are two different actions on one row.
+  // "Marked collected" and "payout saved" are separate claims about separate
+  // money; a single shared slot would let the confirmation from one read as
+  // the confirmation from the other, which is the page-banner defect shrunk to
+  // the size of a row rather than fixed.
+  const [collectSave, setCollectSave] = useState<SaveState>({ kind: "idle" });
+  const [editSave, setEditSave] = useState<SaveState>({ kind: "idle" });
 
   /** Beat 1 of rule 6: has anything actually changed from what is stored? */
   const editDirty =
@@ -449,8 +595,17 @@ function PayoutLine({
     const grossC = parseDollarsToCents(gross);
     const feeC = parseDollarsToCents(fee);
     const netC = parseDollarsToCents(net);
-    if (grossC === null || feeC === null || netC === null) return;
-    ask(
+    if (grossC === null || feeC === null || netC === null) {
+      // A REFUSAL KNOWABLE WITHOUT THE SERVER STILL HAS TO BE SAID (6b). This
+      // returned silently: an unparseable amount left `editDirty` true, so the
+      // button was live, pressing it did nothing, and nothing said why.
+      setEditSave({
+        kind: "err",
+        message: "Not saved: gross, fee and net must each be an amount in dollars.",
+      });
+      return;
+    }
+    askVia({ set: setEditSave, refusalLabel: `#${p.number}'s payout was NOT saved` })(
       {
         title: `Save #${p.number} ${p.who}'s payout?`,
         destructive: false,
@@ -477,7 +632,9 @@ function PayoutLine({
           paidAt: date || null,
           notes: notes || undefined,
         }),
-      `✓ #${p.number}'s payout saved.`,
+      `#${p.number} ${p.who}'s payout saved — gross ${formatMoney(grossC)}, fee ${formatMoney(
+        feeC,
+      )}, net handed over ${formatMoney(netC)}.`,
     );
   }
 
@@ -560,7 +717,7 @@ function PayoutLine({
             type="button"
             disabled={busy}
             onClick={() =>
-              ask(
+              askVia(reportDelete)(
                 {
                   title: `Delete #${p.number} ${p.who}'s payout?`,
                   // THE MISS THAT PROMPTED THIS. The organizer deleted a
@@ -632,8 +789,12 @@ function PayoutLine({
                 },
                 (typedPhrase) => deletePayout({ payoutId: p.id, typedName: typedPhrase }),
                 isLastPayout
-                  ? `✓ #${p.number}'s payout deleted — week ${weekNumber} is undrawn and selectable again.`
-                  : `✓ #${p.number}'s payout deleted — the draw stands.`,
+                  ? `#${p.number} ${p.who}'s payout deleted — ${formatMoney(
+                      p.netAmount,
+                    )} no longer going out, and week ${weekNumber} is undrawn and selectable again.`
+                  : `#${p.number} ${p.who}'s payout deleted — ${formatMoney(
+                      p.netAmount,
+                    )} no longer going out. The draw stands and #${p.number} stays drawn.`,
               )
             }
             className={buttonCls.dangerQuiet + " !text-xs"}
@@ -642,6 +803,15 @@ function PayoutLine({
           </button>
         </span>
       </div>
+
+      {/* THE MESSAGE FOLLOWS ITS CONTROL. While a drawer is open the button is
+          on screen and `SaveButton` renders the message beside it, inside the
+          drawer (6b's "button in a panel" row). A SUCCESS closes the drawer, so
+          from that moment the row is what remains and the confirmation renders
+          here — pinned to the row it describes, never at the top of the page.
+          The `open !==` guard is what stops it appearing in both at once. */}
+      {open !== "collect" && <SaveFeedback state={collectSave} className="mt-2 inline-block" />}
+      {open !== "edit" && <SaveFeedback state={editSave} className="mt-2 inline-block" />}
 
       {open === "collect" && (
         <>
@@ -672,11 +842,20 @@ function PayoutLine({
               bounds={moneyReceivedBounds()}
             />
           </label>
-          <button
-            type="button"
+          {/* Beat 2 is the button's own label; beats 3 and 4 render beside it
+              here while the drawer is open, and on the row once a success has
+              closed the drawer. There is nothing to be "dirty" about — this is
+              a state change, not an edited field — so `dirty` stays default. */}
+          <SaveButton
+            state={collectSave}
+            label="Mark collected"
+            savingLabel="Marking collected…"
             disabled={busy}
-            onClick={() =>
-              ask(
+            onSave={() =>
+              askVia({
+                set: setCollectSave,
+                refusalLabel: `#${p.number} was NOT marked collected`,
+              })(
                 {
                   title: `Hand ${formatMoney(p.netAmount)} to ${p.who}?`,
                   destructive: false,
@@ -711,13 +890,11 @@ function PayoutLine({
                     paidAt: date,
                     notes: p.notes ?? undefined,
                   }),
-                `✓ #${p.number} collected — ${formatMoney(p.netAmount)} handed to ${p.who}.`,
+                `#${p.number} ${p.who} collected — ${formatMoney(p.netAmount)} handed over by ` +
+                  `${method.toLowerCase()} on ${formatDateUTC(new Date(date + "T00:00:00Z"))}.`,
               )
             }
-            className={buttonCls.primary}
-          >
-            Mark collected
-          </button>
+          />
         </div>
         </>
       )}
@@ -785,20 +962,24 @@ function PayoutLine({
                 className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
               />
             </label>
-            {/* Beat 1: dead until something differs from the payout as
-                stored. This was gated on `busy` alone, so pressing Save on an
-                untouched drawer wrote the same six values back, moved the
-                payout's settlement arithmetic through updatePayout, and left
-                an audit entry recording a change that was not one. */}
-            <button
-              type="button"
-              onClick={saveEdit}
-              disabled={busy || !editDirty}
-              title={!busy && !editDirty ? "Nothing has changed in this payout." : undefined}
-              className={buttonCls.secondary}
-            >
-              Save
-            </button>
+            {/* All four beats on one control. Beat 1: dead until something
+                differs from the payout as stored — this was gated on `busy`
+                alone, so pressing Save on an untouched drawer wrote the same
+                six values back, moved the payout's settlement arithmetic
+                through updatePayout, and left an audit entry recording a change
+                that was not one. Beats 3 and 4 render beside the button, which
+                is the whole point: this drawer sits under a row that can be
+                twelve week cards down the page. */}
+            <SaveButton
+              state={editSave}
+              onSave={saveEdit}
+              label="Save"
+              savingLabel="Saving…"
+              tone="secondary"
+              dirty={editDirty}
+              disabled={busy}
+              notDirtyHint="Nothing has changed in this payout."
+            />
           </div>
         </div>
       )}

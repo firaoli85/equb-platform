@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { dismissNewDeviceNotice } from "@/app/actions/sessions";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 
 // "NEW SIGN-IN FROM…" (ruling 5).
 //
@@ -27,7 +28,42 @@ export function NewDeviceNotice({
   message: string;
 }) {
   const [dismissed, setDismissed] = useState(false);
-  const [pending, start] = useTransition();
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const busy = save.kind === "saving";
+
+  // "THAT WAS ME" IS A WRITE, AND THE WRITE CAN BE REFUSED (rule 6b).
+  //
+  // It was fire-and-forget: `await dismissNewDeviceNotice(...)` with the result
+  // dropped on the floor. A refusal — not signed in, the row gone — hid the
+  // notice anyway, and the member found it waiting again on their next visit
+  // with nothing to explain why. For the one control in the portal whose whole
+  // job is "somebody may be in your account", silently pretending to work is
+  // the worst available failure.
+  //
+  // The optimistic hide stays: waiting on a round-trip to dismiss a notice
+  // reads as a broken button. It is now a hide that can be TAKEN BACK — a
+  // refusal brings the notice back with the server's reason beside the button
+  // that was pressed, which is both the truth and the retry.
+  //
+  // Success needs no message: the notice is gone, and there is no control left
+  // to hang one on. That IS beat 3 here.
+  async function dismiss() {
+    setDismissed(true);
+    setSave({ kind: "saving" });
+    try {
+      const result = await dismissNewDeviceNotice({ sessionId });
+      if (!result.ok) {
+        setDismissed(false);
+        setSave({ kind: "err", message: `Not dismissed: ${result.error}` });
+      }
+    } catch {
+      setDismissed(false);
+      setSave({
+        kind: "err",
+        message: "Not dismissed: could not reach the server. This notice will still be here later.",
+      });
+    }
+  }
 
   if (dismissed) return null;
 
@@ -70,20 +106,18 @@ export function NewDeviceNotice({
             </a>
             <button
               type="button"
-              disabled={pending}
-              onClick={() =>
-                start(async () => {
-                  // Hidden immediately — waiting on a round-trip to dismiss a
-                  // notice reads as a broken button.
-                  setDismissed(true);
-                  await dismissNewDeviceNotice({ sessionId });
-                })
-              }
+              disabled={busy}
+              aria-busy={busy}
+              onClick={() => void dismiss()}
               className="rounded-lg px-3 py-2 text-xs font-semibold text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors disabled:opacity-50"
               style={{ touchAction: "manipulation", minHeight: "36px" }}
             >
               That was me
             </button>
+            {/* Beside the button that was pressed, never at the top of the
+                page — and it never auto-clears, because it is the reason the
+                notice came back. */}
+            <SaveFeedback state={save} className="text-xs" />
           </div>
         </div>
       </div>

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   autoArrange,
   calculatePayout,
@@ -7,9 +9,15 @@ import {
   reshuffle,
   selectWinningSlot,
   undrawnWindowWarnings,
+  winnerPlanArityRefusal,
+  winnerPlanConfirmation,
+  winnerPlanModeLabel,
   type WheelNumber,
   type WheelParticipation,
+  type WinnerPlanMode,
 } from "./wheel";
+
+const MODES = ["ALONE", "TOGETHER", "OPEN_PARTNER"] as const satisfies readonly WinnerPlanMode[];
 
 const num = (id: string, number: number, participationId: string, amount = 100_000): WheelNumber => ({
   id,
@@ -448,5 +456,281 @@ describe("displayOrder — audit H3c: creation order never shows on the wheel", 
     });
     expect(new Set(lastSegment).size).toBeGreaterThan(1);
     expect(lastSegment.every((id) => id === "s8")).toBe(false);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// "WIN ALONE" SILENTLY PAIRED NUMBERS (2.3).
+//
+// WHY NONE OF THIS COULD HAVE PASSED BEFORE. `createWinnerPlan` validated
+// arity for TOGETHER (< 2 refused) and OPEN_PARTNER (!== 1 refused) and had
+// NO ALONE branch. It then created ONE slot and wrote EVERY picked id into
+// it whatever the mode, so #3 and #7 committed as "Win alone" went into a
+// single slot under a single plan and won the SAME week. There was no rule
+// to ask, no refusal to read, and the confirmation agreed with him on the
+// way past ("Commit #3 + #7 as ALONE?"). Every assertion below is against
+// code that did not exist; the behavioural ones state the defect they close.
+// ————————————————————————————————————————————————————————————————
+
+describe("winnerPlanArityRefusal — 'win alone' means alone (2.3)", () => {
+  it("THE DEFECT: two numbers under 'Win alone' are refused, both named", () => {
+    // The audit's exact reproduction. This input used to reach
+    // `tx.slotMember.createMany` and pair them.
+    const refusal = winnerPlanArityRefusal({ mode: "ALONE", count: 2, numbers: [7, 3] });
+    expect(refusal).not.toBeNull();
+    // His own selection read back, ordered — not a bare "2 numbers".
+    expect(refusal).toContain("#3");
+    expect(refusal).toContain("#7");
+    expect(refusal!.indexOf("#3")).toBeLessThan(refusal!.indexOf("#7"));
+    // A refusal with no way out is a dead end (UI_STANDARDS 6b). Both routes
+    // named: one at a time, or the mode that means what he did.
+    expect(refusal).toMatch(/one at a time/);
+    expect(refusal).toContain(winnerPlanModeLabel("TOGETHER"));
+    // And it quotes the control he actually used.
+    expect(refusal).toContain(winnerPlanModeLabel("ALONE"));
+  });
+
+  it("THE OTHER DIRECTION: exactly one is allowed, or the rule would just be 'no'", () => {
+    // A refusal that fires on everything is a refusal nobody can satisfy.
+    expect(winnerPlanArityRefusal({ mode: "ALONE", count: 1, numbers: [3] })).toBeNull();
+  });
+
+  it("the SAME two numbers under 'Win together' are allowed — the mode is refused, not the pick", () => {
+    // This is the whole point of 2.3's "together or separate": #3 + #7
+    // sharing a week is a legitimate plan. What was never legitimate is
+    // getting it while declaring the opposite.
+    expect(winnerPlanArityRefusal({ mode: "TOGETHER", count: 2, numbers: [3, 7] })).toBeNull();
+  });
+
+  it("refuses every count above one, not only two (sweep — §5.7)", () => {
+    for (const count of [2, 3, 4, 8, 31]) {
+      expect(winnerPlanArityRefusal({ mode: "ALONE", count }), `count ${count}`).not.toBeNull();
+    }
+  });
+
+  it("TOGETHER and OPEN_PARTNER keep exactly the arity they already had", () => {
+    expect(winnerPlanArityRefusal({ mode: "TOGETHER", count: 1, numbers: [3] })).not.toBeNull();
+    expect(winnerPlanArityRefusal({ mode: "TOGETHER", count: 2, numbers: [3, 7] })).toBeNull();
+    expect(winnerPlanArityRefusal({ mode: "TOGETHER", count: 5 })).toBeNull();
+    expect(winnerPlanArityRefusal({ mode: "OPEN_PARTNER", count: 1, numbers: [3] })).toBeNull();
+    expect(winnerPlanArityRefusal({ mode: "OPEN_PARTNER", count: 2, numbers: [3, 7] })).not.toBeNull();
+  });
+
+  it("nothing picked is refused in every mode", () => {
+    for (const mode of MODES) {
+      expect(winnerPlanArityRefusal({ mode, count: 0 }), mode).toBe("Pick at least one number.");
+    }
+  });
+
+  it("no refusal speaks the database's word for the mode", () => {
+    // "Commit #3 + #7 as ALONE?" is what he used to read. Every sentence he
+    // sees is built from the control's own label now.
+    for (const mode of MODES) {
+      for (const count of [0, 1, 2, 3]) {
+        const refusal = winnerPlanArityRefusal({
+          mode,
+          count,
+          numbers: [3, 7, 9].slice(0, count),
+        });
+        if (refusal === null) continue;
+        expect(refusal, `${mode}/${count}`).not.toMatch(/ALONE|TOGETHER|OPEN_PARTNER/);
+      }
+    }
+  });
+
+  it("falls back to a count when the caller has ids only — the action's case", () => {
+    // The server checks arity before it has resolved ids to numbers, so its
+    // sentence must still be a sentence.
+    const refusal = winnerPlanArityRefusal({ mode: "ALONE", count: 2 });
+    expect(refusal).toContain("2 numbers");
+    expect(refusal).not.toMatch(/undefined|NaN|#\D/);
+  });
+
+  it("never under-reports the selection when the labels do not cover it", () => {
+    // A ticked number deleted from another screen resolves to nothing on the
+    // setup page, so `numbers` can be shorter than `count`. "you picked #3"
+    // over a two-number selection would describe less than the button sends.
+    const refusal = winnerPlanArityRefusal({ mode: "ALONE", count: 2, numbers: [3] });
+    expect(refusal).toContain("2 numbers");
+    expect(refusal).not.toContain("#3");
+  });
+});
+
+describe("winnerPlanConfirmation — the dialog cannot describe a plan the server will not build", () => {
+  it("'Win alone' confirms ONE number winning by itself, in its week", () => {
+    const { title, effect } = winnerPlanConfirmation({
+      mode: "ALONE",
+      numbers: [3],
+      weekNumber: 12,
+    });
+    expect(title).toBe("Commit #3 to win alone?");
+    expect(effect).toContain("week 12");
+    expect(effect).toMatch(/by itself/);
+    // The distinction from "Open partner", stated rather than implied.
+    expect(effect).toMatch(/nothing else can join/);
+  });
+
+  it("'Win together' says same week, one slot — and never borrows 'alone'", () => {
+    const { title, effect } = winnerPlanConfirmation({
+      mode: "TOGETHER",
+      numbers: [7, 3],
+      weekNumber: 12,
+    });
+    expect(title).toBe("Commit #3 and #7 to win together, in the same week?");
+    expect(effect).toMatch(/one slot/);
+    expect(title).not.toMatch(/alone/i);
+  });
+
+  it("'Open partner' says a partner may be attached — the opposite of alone", () => {
+    const { effect } = winnerPlanConfirmation({
+      mode: "OPEN_PARTNER",
+      numbers: [3],
+      weekNumber: 12,
+    });
+    expect(effect).toMatch(/may attach one other number/);
+  });
+
+  it("no confirmation speaks the database's word for the mode", () => {
+    for (const mode of MODES) {
+      const { title, effect } = winnerPlanConfirmation({ mode, numbers: [3], weekNumber: 12 });
+      expect(`${title} ${effect}`, mode).not.toMatch(/ALONE|TOGETHER|OPEN_PARTNER/);
+    }
+  });
+
+  it("says so plainly when no week is assigned yet", () => {
+    for (const weekNumber of [null, undefined]) {
+      const { effect } = winnerPlanConfirmation({ mode: "ALONE", numbers: [3], weekNumber });
+      expect(effect).toMatch(/week you assign later/);
+      expect(effect).not.toMatch(/week (undefined|null)/);
+    }
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// GUARD — the rule is enforced on the SERVER, and stated at the control.
+//
+// The pure function above proves the RULE. It proves nothing about whether
+// anything asks it: the defect was never a wrong function, it was a rule
+// with no owner (§5.8). These scan the two callers for the mechanical
+// properties a unit test cannot see — that the action refuses BEFORE it
+// writes, that the page states the reason next to the button rather than in
+// the banner 400 lines up (UI_STANDARDS 6b), and that neither builds a
+// sentence out of the enum.
+// ————————————————————————————————————————————————————————————————
+
+const GUARD_ROOT = join(import.meta.dirname, "..");
+const readSource = (file: string) => readFileSync(join(GUARD_ROOT, file), "utf8");
+const ACTION_FILE = "app/actions/wheel.ts";
+const SETUP_FILE = "app/admin/wheel/setup/wheel-setup.tsx";
+
+describe("GUARD — the ALONE rule has an owner, and both callers use it", () => {
+  const action = readSource(ACTION_FILE);
+  const setup = readSource(SETUP_FILE);
+
+  it("reads the real files (a broken path would make every check below vacuous)", () => {
+    expect(action).toContain("export async function createWinnerPlan");
+    expect(setup).toContain("Winner planning");
+  });
+
+  it("createWinnerPlan CALLS the rule, and refuses BEFORE it writes the slot", () => {
+    // Scoped to createWinnerPlan's own body. The first version compared
+    // whole-file offsets and failed on correct code, because `saveSlots`
+    // writes slot members 300 lines earlier — an ordering claim about the
+    // wrong function (§5.3: a guard that fails on correct code gets deleted).
+    const start = action.indexOf("export async function createWinnerPlan");
+    const end = action.indexOf("export async function", start + 1);
+    const body = action.slice(start, end === -1 ? undefined : end);
+    expect(body, "createWinnerPlan's body must be isolatable").toContain("winnerPlan.create(");
+
+    // CALLS, not names: matching the bare identifier is satisfied by the
+    // import line alone, which is how the lucky-number guard shipped vacuous
+    // (§5.2). The paren is the difference.
+    const call = body.indexOf("winnerPlanArityRefusal(");
+    expect(call, `${ACTION_FILE} must ask the shared rule`).toBeGreaterThan(-1);
+    // The write that caused the defect: one slot, then every id into it.
+    const write = body.indexOf("tx.slotMember.createMany(");
+    expect(write, `${ACTION_FILE} must still be the thing that writes the slot`).toBeGreaterThan(-1);
+    expect(call, "the refusal must come before anything is written").toBeLessThan(write);
+  });
+
+  it("the action does not re-implement its own arity check", () => {
+    // Two functions answering one question is the same defect as none
+    // (§5.10) — a private count check here would drift from the sentence
+    // the setup page shows, and the organizer would get two answers.
+    expect(action, `${ACTION_FILE} counts ids by hand instead of asking the rule`).not.toMatch(
+      /ids\.length\s*(<|>|!==|===)\s*\d/,
+    );
+  });
+
+  it("the setup page asks the SAME rule, before the round trip", () => {
+    expect(setup, `${SETUP_FILE} must ask the shared rule`).toMatch(/winnerPlanArityRefusal\(/);
+    // Gated on the rule, never on a hand-rolled count the rule can outgrow.
+    // `disabled={busy || planNumbers.size === 0 || dirty}` is what let a
+    // two-number ALONE selection reach the server at all.
+    expect(setup).not.toContain("planNumbers.size === 0");
+    expect(setup).toContain("planRefusal !== null");
+  });
+
+  it("the refusal renders AT the control — between the button and the plan list", () => {
+    // UI_STANDARDS 6b lists this exact control as a known violation: the
+    // reason went to the banner at the top of a long page, so the organizer
+    // saw nothing change and reported "it did not save".
+    const commit = setup.indexOf("createWinnerPlan({");
+    const list = setup.indexOf("state.plans.length > 0");
+    expect(commit).toBeGreaterThan(-1);
+    expect(list).toBeGreaterThan(commit);
+    for (const slot of ["{planRefusal}", "{planError}"]) {
+      const at = setup.indexOf(slot);
+      expect(at, `${slot} must be rendered`).toBeGreaterThan(-1);
+      expect(at, `${slot} must sit under the button, not elsewhere`).toBeGreaterThan(commit);
+      expect(at, `${slot} must sit above the plan list`).toBeLessThan(list);
+      // And be announced, not just printed.
+      const openTag = setup.lastIndexOf("<p", at);
+      expect(setup.slice(openTag, at), `${slot} needs role="alert"`).toContain('role="alert"');
+    }
+    // The server's refusal must reach that slot, not only the banner. Matched
+    // on the CALL and not on `result.error` verbatim: the action's union makes
+    // `error` optional, so the page narrows it to a reason string first — and
+    // pinning the old spelling would have forced that narrowing back out.
+    expect(setup).toMatch(/setPlanError\((?!null)/);
+  });
+
+  it("no screen builds a sentence out of the mode enum", () => {
+    // The confirmation was `Commit ${picked} as ${planMode}?`, and the plan
+    // list printed `— {p.mode}`.
+    expect(setup).not.toMatch(/\$\{planMode\}/);
+    expect(setup).not.toMatch(/\{p\.mode\}/);
+    expect(setup).toMatch(/winnerPlanModeLabel\(/);
+    expect(setup).toMatch(/winnerPlanConfirmation\(/);
+  });
+
+  it("the labels the refusal quotes ARE the labels on the control", () => {
+    // If these drift, the refusal tells him to choose an option that is not
+    // on screen — §5.15, a reason string that outlived its cause.
+    for (const mode of MODES) {
+      expect(setup, `the ${mode} option must be labelled by the shared function`).toContain(
+        `{ value: "${mode}", label: winnerPlanModeLabel("${mode}") }`,
+      );
+    }
+  });
+
+  it("the scan is not vacuous — every pattern fires on the shape it forbids", () => {
+    // Verbatim from the tree this replaced, so a future rewrite that
+    // reintroduces any of them is caught rather than argued about.
+    expect(/ids\.length\s*(<|>|!==|===)\s*\d/.test(
+      `    if (input.mode === "TOGETHER" && ids.length < 2) {`,
+    )).toBe(true);
+    expect(/ids\.length\s*(<|>|!==|===)\s*\d/.test(
+      `    if (ids.length === 0) return { ok: false as const, error: "Pick at least one number." };`,
+    )).toBe(true);
+    // ...and NOT on the corrected form, or a guard that flags correct code
+    // gets switched off by whoever meets it next (§5.3).
+    expect(/ids\.length\s*(<|>|!==|===)\s*\d/.test(
+      `    const arity = winnerPlanArityRefusal({ mode: input.mode, count: ids.length });`,
+    )).toBe(false);
+
+    expect(/\$\{planMode\}/.test("title: `Commit ${picked} as ${planMode}?`,")).toBe(true);
+    expect(/\{p\.mode\}/.test("{p.numbers.map((n) => `#${n}`).join(\" + \")} — {p.mode}")).toBe(true);
+    expect("disabled={busy || planNumbers.size === 0 || dirty}").toContain("planNumbers.size === 0");
   });
 });

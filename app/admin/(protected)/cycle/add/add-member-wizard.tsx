@@ -371,9 +371,10 @@ export function AddMemberWizard({
           "The save could not be confirmed — check your connection and look at the cycle page before trying again.",
       });
     }
-    // NO `finally { setSaving(false) }`: every path above settles the one save
-    // state itself, so a refusal can no longer be wiped by the reset that ran
-    // after it.
+    // NO `finally` resetting a second boolean: every path above settles the
+    // one save state itself, so a refusal can no longer be wiped by a reset
+    // that ran after it — and the guard beside this file pins that every
+    // `return` past the point of no return says how the save ended.
   }
 
   // ————— Success screen: unmistakable confirmation (2.10) —————

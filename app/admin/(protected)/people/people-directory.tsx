@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { SigningChip } from "@/components/admin/agreement-signing";
 import { Pill, type PillTone } from "@/components/ui/primitives";
+import type { SigningState } from "@/lib/agreement-view";
 import { formatMoney } from "@/lib/format";
 import { useViewMode, ViewToggle } from "@/components/ui/view-toggle";
 
@@ -17,6 +19,8 @@ export type DirectoryRow = {
   lockedMinutesLeft: number | null;
   cycles: string;
   inActiveCycle: boolean;
+  /** Where they stand on the member agreement — derived, never stored. */
+  signing: SigningState;
   /** Cents contributed to the active cycle (2.1) — 0 when not a member. */
   contributedThisCycle: number;
 };
@@ -41,7 +45,7 @@ export function PeopleDirectory({ rows }: { rows: DirectoryRow[] }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                {["Member", "Phone", "Sign-in PIN", "Cycles"].map((h) => (
+                {["Member", "Phone", "Sign-in PIN", "Agreement", "Cycles"].map((h) => (
                   <th
                     key={h}
                     className="border-b border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-white/[0.03] px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400"
@@ -78,6 +82,12 @@ export function PeopleDirectory({ rows }: { rows: DirectoryRow[] }) {
                       )}
                     </span>
                   </td>
+                  {/* ONE CHIP, SCANNABLE DOWN THE COLUMN. Beside the PIN
+                      because both answer "can they get in", and the agreement
+                      is the outer of the two doors. */}
+                  <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-2.5">
+                    <SigningChip state={p.signing} />
+                  </td>
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-2.5 text-gray-700 dark:text-gray-300">
                     {p.cycles}
                   </td>
@@ -110,11 +120,19 @@ export function PeopleDirectory({ rows }: { rows: DirectoryRow[] }) {
                     {p.nameEnglish}
                   </span>
                 </span>
-                {p.lockedMinutesLeft !== null ? (
-                  <Pill tone="problem">Locked · {p.lockedMinutesLeft} min</Pill>
-                ) : (
-                  <Pill tone={PIN_LABEL[p.pinState].tone}>{PIN_LABEL[p.pinState].text}</Pill>
-                )}
+                {/* Stacked, not side by side: two chips on one line squeeze
+                    the name they sit beside. The cards must carry the same
+                    signing state as the list — a view toggle that changes
+                    which facts exist is how one view starts being trusted
+                    over the other. */}
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  {p.lockedMinutesLeft !== null ? (
+                    <Pill tone="problem">Locked · {p.lockedMinutesLeft} min</Pill>
+                  ) : (
+                    <Pill tone={PIN_LABEL[p.pinState].tone}>{PIN_LABEL[p.pinState].text}</Pill>
+                  )}
+                  <SigningChip state={p.signing} />
+                </span>
               </div>
               <p className="mt-2.5 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-400">
                 <span className="tabular-nums">{p.phone ?? "no phone"}</span>

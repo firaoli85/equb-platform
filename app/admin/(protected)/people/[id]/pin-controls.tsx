@@ -79,6 +79,9 @@ export function PinControls({
     unlockSave.kind === "saving" ||
     resetSave.kind === "saving";
 
+  /** Beat 1: the button is dead until there is something valid to save. */
+  const pinIsValid = /^\d{4,8}$/.test(pin);
+
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran. Set it and the dialog stays
@@ -196,49 +199,62 @@ export function PinControls({
     );
   }
 
-  async function handleSetPin(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setSaving("pin");
+  async function handleSetPin() {
+    // The field is captured BEFORE the await: the confirmation names the
+    // length he actually typed, and `pin` is cleared on the way out.
+    const digits = pin.length;
+    setPinSave({ kind: "saving" });
     try {
       const result = await setMemberPin({ personId, pin });
       if (!result.ok) {
-        setError(result.error);
+        setPinSave({ kind: "err", message: `Not saved: ${result.error}` });
         return;
       }
-      setSuccess(pinSet ? "✓ PIN replaced." : "✓ PIN set.");
+      setPinSave({
+        kind: "ok",
+        message: `${pinSet ? "PIN replaced" : "PIN set"} — ${digits} digits, stored as a hash. ${personName} signs in with it from now on${pinSet ? "; their old PIN stopped working" : ""}.`,
+      });
       setPin("");
       router.refresh();
     } catch {
-      setError("Could not reach the server — the PIN was not confirmed.");
-    } finally {
-      setSaving(null);
+      setPinSave({
+        kind: "err",
+        message: "Could not reach the server — the PIN was NOT changed. Their old one still works.",
+      });
     }
   }
 
   async function handleAllowedChange(value: string) {
     setAllowed(value);
-    setError(null);
-    setSuccess(null);
-    setSaving("allowed");
+    setAllowedSave({ kind: "saving" });
     try {
       const result = await setPinLoginAllowed({
         personId,
         allowed: value === "global" ? null : value === "always",
       });
       if (!result.ok) {
-        setError(result.error);
+        setAllowedSave({ kind: "err", message: `Not saved: ${result.error}` });
         setAllowed(initialAllowed);
         return;
       }
-      setSuccess("✓ PIN permission saved.");
+      // WHICH of the three, in words. "PIN permission saved" left him reading
+      // the select back to find out what he had just chosen.
+      setAllowedSave({
+        kind: "ok",
+        message:
+          value === "always"
+            ? `Saved — ${personName} can sign in with a PIN even while PIN sign-in is globally off.`
+            : value === "never"
+              ? `Saved — ${personName} must use the WhatsApp code; a PIN attempt is refused on the server.`
+              : `Saved — ${personName} follows the global PIN sign-in setting.`,
+      });
       router.refresh();
     } catch {
-      setError("Could not reach the server — the change was not confirmed.");
+      setAllowedSave({
+        kind: "err",
+        message: "Could not reach the server — the change was not confirmed.",
+      });
       setAllowed(initialAllowed);
-    } finally {
-      setSaving(null);
     }
   }
 
@@ -271,15 +287,28 @@ export function PinControls({
           <button
             type="button"
             onClick={handleUnlock}
-            disabled={saving !== null}
+            disabled={busy}
             className="ml-2 rounded border border-current px-2 py-0.5 text-xs font-semibold disabled:opacity-40"
           >
-            {saving === "unlock" ? "Unlocking…" : "Unlock account"}
+            {unlockSave.kind === "saving" ? "Unlocking…" : "Unlock account"}
           </button>
         )}
+        {/* OUTSIDE the condition above, on purpose. A successful unlock clears
+            the lock AND the counter, so the refresh that proves it worked is
+            the thing that removes the button — a confirmation rendered inside
+            that branch would be destroyed by its own success. */}
+        <SaveFeedback state={unlockSave} className="mt-2" />
       </div>
 
-      <form onSubmit={handleSetPin} className="space-y-2">
+      {/* Still a form: this is a typed field, and Enter is how anyone finishes
+          typing. The SaveButton press is the submit. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (pinIsValid) void handleSetPin();
+        }}
+        className="space-y-2"
+      >
         <label className="block">
           <span className="mb-1 block text-sm font-medium">
             {pinSet ? "Replace PIN" : "Set PIN"} (4–8 digits)
@@ -290,71 +319,80 @@ export function PinControls({
             value={pin}
             onChange={(e) => {
               setPin(e.target.value);
-              setError(null);
-              setSuccess(null);
+              setPinSave({ kind: "idle" });
             }}
             className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
           />
         </label>
-        <button
-          type="submit"
-          disabled={saving !== null || !/^\d{4,8}$/.test(pin)}
-          className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
-          {saving === "pin" ? "Saving…" : pinSet ? "Replace PIN" : "Set PIN"}
-        </button>
+        <SaveButton
+          state={pinSave}
+          onSave={() => void handleSetPin()}
+          onStateSettled={() => setPinSave({ kind: "idle" })}
+          label={pinSet ? "Replace PIN" : "Set PIN"}
+          savingLabel="Saving…"
+          dirty={pinIsValid}
+          disabled={busy}
+          notDirtyHint="Type 4 to 8 digits first."
+        />
         <p className="text-xs text-gray-600 dark:text-gray-400">
           Stored as a bcrypt hash only — the PIN itself is never saved. {pinSet ? "A PIN is currently set." : "No PIN set yet."}
         </p>
       </form>
 
-      {pinSet && (
-        <div>
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={saving !== null}
-            className="rounded border border-red-400 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
-          >
-            {saving === "reset" ? "Resetting…" : "Reset PIN (back to default)"}
-          </button>
-          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-            Clears their PIN so the last 4 digits of their phone work again (while the
-            default setting is on) and they can choose a new PIN. Nothing is ever shown
-            or picked for them.
-          </p>
+      {/* The wrapper survives the reset even though the button does not — but
+          it is not drawn at all when there is nothing to draw, or an empty box
+          would open a gap in the stack on every member without a PIN. */}
+      {(pinSet || resetSave.kind !== "idle") && (
+        <div className="space-y-2">
+          {pinSet && (
+            <div>
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={busy}
+                className="rounded border border-red-400 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
+              >
+                {resetSave.kind === "saving" ? "Resetting…" : "Reset PIN (back to default)"}
+              </button>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                Clears their PIN so the last 4 digits of their phone work again (while the
+                default setting is on) and they can choose a new PIN. Nothing is ever shown
+                or picked for them.
+              </p>
+            </div>
+          )}
+          {/* OUTSIDE the `pinSet` branch, for the same reason as the unlock
+              confirmation: a successful reset makes `pinSet` false, so the
+              button and everything drawn with it disappears on the refresh
+              that proves the reset happened. */}
+          <SaveFeedback state={resetSave} />
         </div>
       )}
 
-      <label className="block">
-        <span className="mb-1 block text-sm font-medium">PIN sign-in for this member</span>
-        <Select
-          value={allowed}
-          onChange={(value) => void handleAllowedChange(value)}
-          disabled={saving !== null}
-          ariaLabel="PIN sign-in permission for this member"
-          options={[
-            { value: "global", label: "Follow the global setting" },
-            { value: "always", label: "Always allowed (even when globally off)" },
-            { value: "never", label: "Never — must use the WhatsApp code" },
-          ]}
-        />
-      </label>
+      <div className="space-y-2">
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">PIN sign-in for this member</span>
+          <Select
+            value={allowed}
+            onChange={(value) => void handleAllowedChange(value)}
+            disabled={busy}
+            ariaLabel="PIN sign-in permission for this member"
+            options={[
+              { value: "global", label: "Follow the global setting" },
+              { value: "always", label: "Always allowed (even when globally off)" },
+              { value: "never", label: "Never — must use the WhatsApp code" },
+            ]}
+          />
+        </label>
+        {/* A select is not a button you press to save, so the same message
+            without one — beside the control, never at the foot of the panel. */}
+        <SaveFeedback state={allowedSave} />
+      </div>
 
-      {error && (
-        <p role="alert" className="rounded border border-red-400 bg-red-50 px-3 py-2 text-sm text-red-800 dark:text-red-400">
-          Not saved: {error}
-        </p>
-      )}
-      {success && (
-        <p role="status" className="rounded border border-green-500 bg-green-50 px-3 py-2 text-sm text-green-900">
-          {success}
-        </p>
-      )}
       <ConfirmDialog
         spec={confirm}
         error={dialogError}
-        busy={saving !== null}
+        busy={busy}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
           setDialogError(null);

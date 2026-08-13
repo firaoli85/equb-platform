@@ -123,8 +123,6 @@ export function CarriedBalance({
 
   return (
     <div className="space-y-3">
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-
       {/* The headline: what is still carried, and where it stands. */}
       <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
         <div>
@@ -139,24 +137,31 @@ export function CarriedBalance({
           {formatMoney(story.raised)} owed over time · {formatMoney(story.repaid)} repaid
           {story.forgiven > 0 && ` · ${formatMoney(story.forgiven)} written off`}
         </p>
-        {story.balance > 0 && (
-          <span className="ml-auto flex gap-2">
-            <button
-              type="button"
-              onClick={() => setMode(mode === "settle" ? "none" : "settle")}
-              className={buttonCls.primary + " !px-3 !py-1.5 !text-xs"}
-            >
-              Record against the balance
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(mode === "forgive" ? "none" : "forgive")}
-              className={buttonCls.dangerQuiet + " !text-xs"}
-            >
-              Write it off
-            </button>
-          </span>
-        )}
+        {/* THE FEEDBACK LIVES WITH THE TWO BUTTONS, and OUTSIDE the
+            `balance > 0` test on purpose: writing off the last of a balance
+            makes both buttons disappear, and the confirmation for the money
+            just moved must not disappear with them. */}
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {story.balance > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setMode(mode === "settle" ? "none" : "settle")}
+                className={buttonCls.primary + " !px-3 !py-1.5 !text-xs"}
+              >
+                Record against the balance
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode(mode === "forgive" ? "none" : "forgive")}
+                className={buttonCls.dangerQuiet + " !text-xs"}
+              >
+                Write it off
+              </button>
+            </>
+          )}
+          <SaveFeedback state={save} />
+        </span>
       </div>
 
       {/* ————— Settle: works with no active cycle (2.18) ————— */}
@@ -210,6 +215,10 @@ export function CarriedBalance({
             onClick={() => {
               if (cents === null) return;
               const left = Math.max(0, story.balance - cents);
+              // A fresh dialog opens with no refusal in it — the derived error
+              // would otherwise show the previous attempt's reason beside a
+              // button that has not been pressed yet.
+              setSave({ kind: "idle" });
               setConfirm({
                 title: `Record ${formatMoney(cents)} from ${personName}?`,
                 destructive: false,
@@ -239,7 +248,12 @@ export function CarriedBalance({
                       occurredAt: when,
                       notes: note || undefined,
                     }),
-                  `✓ ${formatMoney(cents)} recorded — ${formatMoney(left)} still carried.`,
+                  // THE AMOUNT AND THE PERSON. This is real money against a
+                  // real debt; the organizer reads the confirmation back to
+                  // check he credited who he meant, for what he meant.
+                  `${formatMoney(cents)} recorded from ${personName} by ` +
+                    `${METHODS.find((m) => m.value === method)?.label ?? method} — ` +
+                    `${formatMoney(left)} still carried.`,
                 ),
               );
             }}
@@ -286,6 +300,8 @@ export function CarriedBalance({
             onClick={() => {
               if (cents === null) return;
               const left = Math.max(0, story.balance - cents);
+              // As above: no previous refusal carried into a fresh dialog.
+              setSave({ kind: "idle" });
               setConfirm({
                 title:
                   cents >= story.balance
@@ -311,7 +327,10 @@ export function CarriedBalance({
               setOnConfirm(() => (typedPhrase: string) =>
                 void run(
                   () => forgiveBalance({ personId, amount: cents, reason, typedName: typedPhrase }),
-                  `✓ ${formatMoney(cents)} written off — ${formatMoney(left)} still carried.`,
+                  // "Written off", never "paid" — the confirmation has to say
+                  // the same thing the permanent record says (2.2).
+                  `${formatMoney(cents)} of ${personName}'s balance written off — ` +
+                    `${formatMoney(left)} still carried.`,
                 ),
               );
             }}
@@ -368,8 +387,9 @@ export function CarriedBalance({
         error={dialogError}
         busy={busy}
         onConfirm={(typedPhrase) => onConfirm?.(typedPhrase)}
+        // Cancelling closes the dialog but does NOT erase the refusal: it
+        // stays up beside the buttons, which is where the retry starts.
         onCancel={() => {
-          setDialogError(null);
           setConfirm(null);
           setOnConfirm(null);
         }}

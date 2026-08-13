@@ -467,6 +467,10 @@ describe("which message types apply to one member", () => {
     amountOutstanding: 0,
     drawnWeek: null as number | null,
     cycleClosed: false,
+    // A live participation in the running cycle — the ordinary case. The two
+    // other states ("ended", "none") get their own describe below, because
+    // conflating them is the defect this build closed.
+    participation: "live" as "live" | "ended" | "none",
     noMessages: false,
     hasPhone: true,
   };
@@ -506,9 +510,104 @@ describe("which message types apply to one member", () => {
     expect(forKey({ ...base, drawnWeek: 7 }, "WINNER_ANNOUNCEMENT").applicable).toBe(true);
   });
 
-  it("holds the closing statement until the cycle has actually closed", () => {
-    expect(forKey(base, "CYCLE_CLOSING_STATEMENT").applicable).toBe(false);
-    expect(forKey({ ...base, cycleClosed: true }, "CYCLE_CLOSING_STATEMENT").applicable).toBe(true);
+  // ————— The closing statement, in every state a member can be in —————
+  //
+  // THIS TEST USED TO PIN THE BUG AS THE RULE (lesson 5.6). It asserted that
+  // the closing statement is refused until `cycleClosed`, which was true of the
+  // pure function and useless as law, because the ONE caller derived
+  // `cycleClosed` as "there is no active participation" — and then took
+  // `participationId` from that same participation. The statement was therefore
+  // unsendable from a profile in BOTH states, while 2.18 requires one for every
+  // member at cycle end.
+  //
+  // THE REPAIR THEN OVERSHOT, and that is worth recording too. It removed the
+  // state check ALTOGETHER, which made the type applicable to a contributing
+  // member at week 1 of a running cycle — where the message reads "your Equb
+  // closing statement: you paid 0 of 20 weeks, $0.00 in total", in Meta's
+  // approved wording, to a real member. A gap that blocks a true message is
+  // cheaper than one that sends a false one.
+  //
+  // The rule is that a closing statement states a FINAL position, so it is
+  // offered exactly where one exists — the two states the batch reaches:
+  // the CYCLE has closed, or the MEMBER's participation has ended (2.18).
+
+  it("REFUSES it to a member still contributing to a running cycle", () => {
+    // The overshoot, pinned: `base` is a live member of a running cycle, and
+    // the previous version of this test asserted `true` here.
+    const t = forKey(base, "CYCLE_CLOSING_STATEMENT");
+    expect(t.applicable).toBe(false);
+    expect(t.reason).toContain("still contributing");
+    // …and it names where the closing statement DOES come from.
+    expect(t.reason).toContain("Send to many");
+  });
+
+  it("names no figure in that refusal — there is no final position to quote", () => {
+    expect(forKey(base, "CYCLE_CLOSING_STATEMENT").reason).not.toMatch(/\$|\d+ of \d+/);
+  });
+
+  it("still offers it to a member who stopped early, exactly as the batch does (2.18)", () => {
+    // prepareBatch drops the ACTIVE-participation filter for this key alone.
+    const t = forKey({ ...base, participation: "ended" }, "CYCLE_CLOSING_STATEMENT");
+    expect(t.applicable).toBe(true);
+  });
+
+  it("still offers it once the cycle has closed — the state the batch cannot reach", () => {
+    const t = forKey(
+      { ...base, participation: "ended", cycleClosed: true },
+      "CYCLE_CLOSING_STATEMENT",
+    );
+    expect(t.applicable).toBe(true);
+  });
+
+  it("refuses it ONLY when there is no participation, and says that — not 'still running'", () => {
+    const t = forKey({ ...base, participation: "none" }, "CYCLE_CLOSING_STATEMENT");
+    expect(t.applicable).toBe(false);
+    expect(t.reason).toContain("not in a cycle");
+    // 5.15: a reason string that outlives its cause is a lie. This member's
+    // cycle is not "still running" — they do not have one.
+    expect(t.reason).not.toContain("still running");
+  });
+
+  it("a finished participation takes away the chases and the announcement, and says which", () => {
+    // Rule 17: stopped is not behind. The batch keeps the ACTIVE-participation
+    // filter for these three, so the profile does too.
+    const stopped = applicableTypes({
+      ...base,
+      participation: "ended",
+      weeksBehind: 6,
+      amountOutstanding: 250_000,
+      drawnWeek: 7,
+    });
+    for (const key of ["BEHIND_NOTICE", "LATE_NOTICE", "WINNER_ANNOUNCEMENT"] as const) {
+      const t = stopped.find((x) => x.key === key)!;
+      expect(t.applicable, key).toBe(false);
+      expect(t.reason, key).toContain("stopped contributing");
+    }
+    expect(stopped.find((t) => t.key === "CYCLE_CLOSING_STATEMENT")!.applicable).toBe(true);
+  });
+
+  it("a CLOSED cycle names the carried balance rather than the member stopping", () => {
+    // Two states, two true sentences: the cycle ended, or they did (2.18/2.19).
+    const closed = applicableTypes({
+      ...base,
+      participation: "ended",
+      cycleClosed: true,
+      weeksBehind: 6,
+      amountOutstanding: 250_000,
+    });
+    const behind = closed.find((t) => t.key === "BEHIND_NOTICE")!;
+    expect(behind.applicable).toBe(false);
+    expect(behind.reason).toContain("cycle has closed");
+    expect(behind.reason).toContain("carried balance");
+  });
+
+  it("blocks EVERY type for a person in no cycle at all — with ONE true reason", () => {
+    // The state that produced the contradiction: nothing to send, and nothing
+    // to send it with. Every reason has to say so, including the closing
+    // statement's, which used to read "the cycle is still running".
+    const none = applicableTypes({ ...base, participation: "none" });
+    expect(none.every((t) => !t.applicable)).toBe(true);
+    expect(none.every((t) => (t.reason ?? "").includes("not in a cycle"))).toBe(true);
   });
 
   it("blocks EVERY type for a member with no phone, and says so once", () => {
@@ -518,7 +617,6 @@ describe("which message types apply to one member", () => {
       weeksBehind: 6,
       amountOutstanding: 250_000,
       drawnWeek: 7,
-      cycleClosed: true,
     });
     expect(all.every((t) => !t.applicable)).toBe(true);
     expect(all.every((t) => (t.reason ?? "").includes("no phone number"))).toBe(true);
@@ -531,7 +629,6 @@ describe("which message types apply to one member", () => {
       weeksBehind: 6,
       amountOutstanding: 250_000,
       drawnWeek: 7,
-      cycleClosed: true,
     });
     expect(all.every((t) => !t.applicable)).toBe(true);
     expect(all.every((t) => (t.reason ?? "").includes("no messages"))).toBe(true);
@@ -544,16 +641,26 @@ describe("which message types apply to one member", () => {
     expect(chasing.sort()).toEqual(["BEHIND_NOTICE", "LATE_NOTICE"]);
   });
 
-  it("offers everything at once to a member whose state supports it", () => {
+  // THE FIXTURE ITSELF CHANGED, AND THAT IS THE POINT (lesson 5.1). It used to
+  // pass `cycleClosed: true` alongside a live participation — a state the
+  // platform cannot produce, since a live participation only exists inside a
+  // running cycle. It passed only because the closing statement was keyed off
+  // the impossible half. On the real state below — the running cycle, the
+  // member behind and drawn — the unfixed code refuses the closing statement,
+  // so this could not have passed before.
+  it("offers everything at once to a member of the RUNNING cycle whose state supports it", () => {
     const all = applicableTypes({
       ...base,
       weeksBehind: 6,
       amountOutstanding: 250_000,
       drawnWeek: 7,
-      cycleClosed: true,
     });
-    expect(all.every((t) => t.applicable)).toBe(true);
-    expect(all.every((t) => t.reason === null)).toBe(true);
+    // EVERYTHING EXCEPT THE CLOSING STATEMENT, which is the one type a
+    // running cycle genuinely cannot state — see the block above.
+    const chaseable = all.filter((t) => t.key !== "CYCLE_CLOSING_STATEMENT");
+    expect(chaseable.every((t) => t.applicable)).toBe(true);
+    expect(chaseable.every((t) => t.reason === null)).toBe(true);
+    expect(all.find((t) => t.key === "CYCLE_CLOSING_STATEMENT")!.applicable).toBe(false);
   });
 });
 

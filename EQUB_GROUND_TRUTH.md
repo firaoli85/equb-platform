@@ -891,6 +891,25 @@ written against defects that actually occurred. **The organizer runs it.**
   is genuinely the right shape (a repeated mechanical change across many files), have it
   print what it changed and assert the count, then grep the result before believing it.
   **A green check on code you did not actually write is worse than a red one.**
+- **A migration is not finished until the client is regenerated AND the dev server is
+  restarted.** A stale Prisma client broke a page **four times in one session** — most
+  recently `markedLateAt`, added by the manual-late migration. The symptom is always the
+  same and always misleading: a property that "does not exist" on a model the schema
+  plainly has, which reads as a code defect and is not one. The fix was always the same
+  two commands, and the second one is the one that gets forgotten.
+
+  Both halves are now harder to skip:
+
+  ```
+  npm run db:migrate      # migrate deploy AND generate, in one command
+  ```
+
+  `predev`, `prebuild` and `postinstall` also regenerate, so a fresh start is never
+  stale. **But `predev` only fires when the server BOOTS.** Applying a migration while
+  `next dev` is already running leaves the old client loaded in Next's module graph, and
+  regenerating the files underneath it does not evict what is in memory. **Restart the dev
+  server before testing anything the migration touched** — otherwise the first thing you
+  test reports a defect that does not exist, and the time goes on hunting it.
 
 ### The Sunday check — `npm run check:position`
 

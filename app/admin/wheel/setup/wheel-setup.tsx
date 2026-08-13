@@ -22,7 +22,15 @@ import {
 } from "@/lib/arrangement";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/controls";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
+import { SegmentedToggle, usePersistedChoice } from "@/components/ui/view-toggle";
 import { formatMoney } from "@/lib/format";
+import {
+  winnerPlanArityRefusal,
+  winnerPlanConfirmation,
+  winnerPlanModeLabel,
+  type WinnerPlanMode,
+} from "@/lib/wheel";
 
 type NumberInfo = {
   id: string;
@@ -44,10 +52,17 @@ type SetupState = {
   currentWeek: number;
   slots: { id: string; position: number; drawn: boolean; members: NumberInfo[]; total: number | null }[];
   unassigned: NumberInfo[];
-  plans: { id: string; mode: string; weekNumber: number | null; numbers: number[] }[];
+  plans: { id: string; mode: WinnerPlanMode; weekNumber: number | null; numbers: number[] }[];
   weeks: { id: string; weekNumber: number; hasDraw: boolean; planned: boolean }[];
   warnings: { participationId: string; name: string; finishWeek: number; weeksLeft: number; numbers: number[] }[];
 };
+
+/**
+ * TWO JOBS, and the order is the order he does them: put the numbers where they
+ * go, then decide who is committed to which week.
+ */
+const SECTIONS = ["arrange", "plan"] as const;
+type Section = (typeof SECTIONS)[number];
 
 export function WheelSetup({ state }: { state: SetupState }) {
   const router = useRouter();
@@ -91,12 +106,60 @@ export function WheelSetup({ state }: { state: SetupState }) {
   }
   const dirty = isDirty(original, draft);
 
-  const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+  // TWO JOBS, ONE AT A TIME (the same split Messages and the cycle position
+  // already use).
+  //
+  // This screen asked one question — "is the wheel ready to spin this week?" —
+  // and stacked six blocks before answering it: a banner, the empty-wheel
+  // prompt, the undrawn warnings, the slot grid with five controls, the
+  // unassigned tray, and a winner planner with a checkbox for EVERY eligible
+  // number. It is the screen the organizer drives live on a shared call.
+  //
+  // EVERY NUMBER WAS DRAWN TWICE on it: as a draggable chip in a slot or the
+  // tray, and again as a checkbox in the planner. Two representations of one
+  // object on one screen is what 2.19 rules out. Split, they are two different
+  // jobs on two screens — on ARRANGE a number is a thing you move, on PLAN
+  // WINNERS it is a thing you choose — which is the honest reading of why both
+  // exist.
+  //
+  // CLIENT STATE, not a `?section=` link, and deliberately: the draft, its
+  // dirty flag and the drag state all live here, so a server round trip would
+  // throw away unsaved work every time he changed section. Switching sections
+  // now costs nothing and loses nothing.
+  const [section, setSection] = usePersistedChoice<Section>(
+    "admin-wheel-setup-section",
+    SECTIONS,
+    "arrange",
+  );
+
+  /**
+   * WHICH CONTROL A MESSAGE BELONGS TO.
+   *
+   * One `banner` at the top served six actions, the furthest — Create plan —
+   * some 370 lines below it, on a screen that scrolls. Now each action reports
+   * at itself. One state so two controls can never disagree; the slot decides
+   * which one renders it.
+   */
+  const [save, setSave] = useState<{ slot: string; state: SaveState }>({
+    slot: "",
+    state: { kind: "idle" },
+  });
+  const busy = save.state.kind === "saving";
+  const feedbackFor = (slot: string): SaveState =>
+    save.slot === slot ? save.state : { kind: "idle" };
   const [pickedNumber, setPickedNumber] = useState<string | null>(null);
   const [planNumbers, setPlanNumbers] = useState<Set<string>>(new Set());
-  const [planMode, setPlanMode] = useState<"ALONE" | "TOGETHER" | "OPEN_PARTNER">("ALONE");
+  const [planMode, setPlanMode] = useState<WinnerPlanMode>("ALONE");
   const [planWeekId, setPlanWeekId] = useState("");
+  /**
+   * A refusal from `createWinnerPlan`, rendered UNDER the Create plan button
+   * (UI_STANDARDS 6b). It used to land only in the page-level banner at the
+   * top of a long screen — the organizer pressed the button, nothing visible
+   * changed, and the reason was 400 lines above him. Cleared whenever the
+   * selection or the mode changes, so a reason can never outlive its cause
+   * (§5.15).
+   */
+  const [planError, setPlanError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran. Set it and the dialog stays
@@ -107,12 +170,36 @@ export function WheelSetup({ state }: { state: SetupState }) {
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
-  function ask(spec: ConfirmSpec, fn: () => void) {
+  /**
+   * Confirm, run, and CLOSE ONLY ON SUCCESS.
+   *
+   * This called `fn()` and then `setConfirm(null)` on the very next line —
+   * synchronously, before the async action it had just started could possibly
+   * have resolved. So the dialog always closed, whatever came back, and
+   * `setDialogError` was only ever called with `null`, from `onCancel`. The
+   * `error` slot was wired to the dialog and nothing could fill it: a refusal
+   * from any of the three confirmations here was discarded with the dialog
+   * that existed to show it (UI_STANDARDS 6b).
+   *
+   * `lib/refusal-placement.test.ts` passed the whole time, because it checked
+   * that the slot EXISTS. Existing and being reachable are different
+   * properties, and lib/save-feedback.test.ts now owns the second one.
+   *
+   * `fn` returns the refusal, or null/void on success.
+   */
+  function ask(spec: ConfirmSpec, fn: () => Promise<string | null | void> | void) {
+    setDialogError(null);
     setConfirm(spec);
     setOnConfirm(() => () => {
-      fn();
-      setConfirm(null);
-      setOnConfirm(null);
+      void (async () => {
+        const refused = await fn();
+        if (typeof refused === "string" && refused.length > 0) {
+          setDialogError(refused);
+          return;
+        }
+        setConfirm(null);
+        setOnConfirm(null);
+      })();
     });
   }
 
@@ -142,36 +229,47 @@ export function WheelSetup({ state }: { state: SetupState }) {
 
   function applyMove(numberId: string, destination: MoveDestination) {
     const result = moveNumber(draft, numberId, destination, locks);
-    if (result.error) setBanner({ kind: "err", text: result.error });
+    // A REFUSED MOVE IS NOT A FAILED SAVE — nothing was sent anywhere. It is
+    // the arrangement telling him a locked number cannot go there (rule 13),
+    // so it reports at the slot grid, which is what he was touching.
+    if (result.error) setSave({ slot: "arrangement", state: { kind: "err", message: result.error } });
     else {
       setDraft(result.draft!);
-      setBanner(null);
+      setSave({ slot: "arrangement", state: { kind: "idle" } });
     }
     setPickedNumber(null);
   }
 
-  async function run(fn: () => Promise<{ ok: boolean; error?: string }>, okText: string) {
-    setBusy(true);
-    setBanner(null);
+  /** Returns the refusal, or null — so a caller can keep its dialog open. */
+  async function run(
+    slot: string,
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+    okText: string,
+  ): Promise<string | null> {
+    setSave({ slot, state: { kind: "saving" } });
     try {
       const result = await fn();
-      if (!result.ok) setBanner({ kind: "err", text: result.error ?? "Failed." });
-      else {
-        setBanner({ kind: "ok", text: okText });
-        router.refresh();
+      if (!result.ok) {
+        const refused = result.error ?? "Failed.";
+        setSave({ slot, state: { kind: "err", message: refused } });
+        return refused;
       }
+      setSave({ slot, state: { kind: "ok", message: okText } });
+      router.refresh();
+      return null;
     } catch {
-      setBanner({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
-    } finally {
-      setBusy(false);
+      const refused = "Could not reach the server — nothing was confirmed.";
+      setSave({ slot, state: { kind: "err", message: refused } });
+      return refused;
     }
   }
 
-  function save() {
-    void run(async () => {
-      const result = await saveSlots({ slots: toSavePayload(draft) });
-      return result;
-    }, "✓ Arrangement saved.");
+  function saveArrangement() {
+    void run(
+      "arrangement",
+      () => saveSlots({ slots: toSavePayload(draft) }),
+      `Arrangement saved — ${draft.slots.length} slot${draft.slots.length === 1 ? "" : "s"}, ${draft.unassigned.length} number${draft.unassigned.length === 1 ? "" : "s"} still unassigned.`,
+    );
   }
 
   // ————— empty-wheel notice (requirement 6) —————
@@ -186,11 +284,12 @@ export function WheelSetup({ state }: { state: SetupState }) {
   const wheelIsEmpty = spinnableSlots === 0 && eligibleUnassigned > 0;
 
   async function autoArrangeEverything() {
-    setBusy(true);
-    setBanner(null);
+    const slot = "auto-arrange";
+    setSave({ slot, state: { kind: "saving" } });
+    const refuse = (message: string) => setSave({ slot, state: { kind: "err", message } });
     try {
       const proposal = await autoArrangeSlots();
-      if (!proposal.ok) return setBanner({ kind: "err", text: proposal.error });
+      if (!proposal.ok) return refuse(proposal.error);
       // The proposal is computed against SAVED state; this button is only
       // enabled when the draft is clean, so the two cannot diverge.
       const payload = [
@@ -198,15 +297,61 @@ export function WheelSetup({ state }: { state: SetupState }) {
         ...proposal.data.proposal.map((s) => ({ id: null, luckyNumberIds: s.luckyNumberIds })),
       ];
       const saved = await saveSlots({ slots: payload });
-      if (!saved.ok) return setBanner({ kind: "err", text: saved.error });
-      setBanner({ kind: "ok", text: "✓ All unassigned numbers arranged onto the wheel." });
+      if (!saved.ok) return refuse(saved.error);
+      setSave({
+        slot,
+        state: {
+          kind: "ok",
+          message: `All ${eligibleUnassigned} unassigned number${eligibleUnassigned === 1 ? "" : "s"} arranged onto the wheel and saved.`,
+        },
+      });
       router.refresh();
     } catch {
-      setBanner({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
-    } finally {
-      setBusy(false);
+      refuse("Could not reach the server — nothing was confirmed.");
     }
   }
+
+  // ————— winner planning (2.3): what this selection can be committed as —————
+  // The numbers he ticked, in his order of reading rather than click order.
+  const planPickedNumbers = useMemo(
+    () =>
+      [...planNumbers]
+        .map((id) => numberById.get(id)?.number)
+        .filter((n): n is number => n !== undefined)
+        .sort((a, b) => a - b),
+    [planNumbers, numberById],
+  );
+  /**
+   * Non-null when the selection cannot be committed as declared — the same
+   * function `createWinnerPlan` runs, so the sentence he reads here is the
+   * sentence the server would have sent back (2.3). Knowable before the
+   * request, so it is said at the control rather than round-tripped
+   * (UI_STANDARDS 6b, last row).
+   */
+  /**
+   * THE HIDDEN COUPLING, MADE PLAIN.
+   *
+   * "Create plan" was `disabled={busy || dirty}` with the reason in a `title`
+   * — a hover, on a control ~370 lines below the drag surface that caused it.
+   * The organizer would arrange slots, scroll down, tick two numbers, and find
+   * a dead button with no visible explanation. Split across sections it got
+   * worse, not better: the cause is now on a screen he cannot even see.
+   *
+   * The coupling is REAL and cannot simply be removed — `createWinnerPlan`
+   * writes a new slot on the server, and it is computed against SAVED state,
+   * so committing over an unsaved arrangement would resolve two different
+   * pictures of the wheel into one write. So it is stated instead, at the
+   * control, naming the section and carrying the way back to it.
+   */
+  const arrangementRefusal = dirty
+    ? "The arrangement has unsaved changes. A plan is committed against the SAVED wheel, so save or discard them on Arrange first."
+    : null;
+
+  const planRefusal = winnerPlanArityRefusal({
+    mode: planMode,
+    count: planNumbers.size,
+    numbers: planPickedNumbers,
+  });
 
   // ————— chips —————
   const chip = (id: string) => {
@@ -285,16 +430,11 @@ export function WheelSetup({ state }: { state: SetupState }) {
   });
 
   return (
-    <div className="space-y-8">
-      {banner && (
-        <p
-          role={banner.kind === "err" ? "alert" : "status"}
-          className={`rounded-xl border px-3.5 py-2.5 text-sm ${banner.kind === "err" ? "border-red-300 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400" : "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-400"}`}
-        >
-          {banner.text}
-        </p>
-      )}
-
+    <div className="space-y-6">
+      {/* ABOVE THE SPLIT, DELIBERATELY. These two are claims about the WHOLE
+          wheel — it is empty, or somebody's window is closing undrawn — and
+          hiding either behind a section would mean the organizer could be
+          looking straight at the screen that owns the problem and not see it. */}
       {wheelIsEmpty && (
         <section className="rounded-2xl border-2 border-amber-400 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm shadow-sm">
           <p className="mb-2 font-bold text-amber-900 dark:text-amber-300">
@@ -310,6 +450,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
           >
             Auto-arrange all unassigned numbers
           </button>
+          <SaveFeedback state={feedbackFor("auto-arrange")} className="mt-2" />
           {dirty && (
             <p className="mt-1.5 text-xs text-amber-800 dark:text-amber-400">
               Save or discard your changes first.
@@ -335,8 +476,38 @@ export function WheelSetup({ state }: { state: SetupState }) {
         </section>
       )}
 
+      <SegmentedToggle
+        label="Wheel setup"
+        value={section}
+        onChange={setSection}
+        options={[
+          { value: "arrange", label: "Arrange" },
+          { value: "plan", label: "Plan winners" },
+        ]}
+      />
+
+      {/* THE UNSAVED-WORK NOTICE FOLLOWS HIM. On Arrange it sits with the Save
+          and Discard buttons that resolve it; on Plan winners it is the reason
+          Create plan is dead, so it appears there too, with the way back. */}
+      {dirty && section === "plan" && (
+        <p
+          data-testid="arrangement-dirty-notice"
+          role="status"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm font-semibold text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          {arrangementRefusal}
+          <button
+            type="button"
+            onClick={() => setSection("arrange")}
+            className="ml-auto text-xs font-bold text-amber-900 underline underline-offset-2 dark:text-amber-200"
+          >
+            Go to Arrange
+          </button>
+        </p>
+      )}
+
       {/* ————— Slots ————— */}
-      <section>
+      <section className={section === "arrange" ? "" : "hidden"}>
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <h2 className="text-base font-black text-gray-900 dark:text-white">
             {state.unitAmount === null ? "Slots" : `Slots (unit ${formatMoney(state.unitAmount)})`}
@@ -355,14 +526,17 @@ export function WheelSetup({ state }: { state: SetupState }) {
             title={dirty ? "Save or discard your changes first" : undefined}
             onClick={() =>
               void (async () => {
-                setBusy(true);
-                setBanner(null);
+                setSave({ slot: "arrangement", state: { kind: "saving" } });
                 try {
                   // Only reachable with a CLEAN draft — the proposal is
                   // computed against SAVED state, so merging into a dirty
                   // draft would duplicate or vanish numbers.
                   const result = await reshuffleSlots();
-                  if (!result.ok) return setBanner({ kind: "err", text: result.error });
+                  if (!result.ok)
+                    return setSave({
+                      slot: "arrangement",
+                      state: { kind: "err", message: result.error },
+                    });
                   // Keep locked slots AND empty slots (they persist — never
                   // silently dropped); the proposal replaces the free ones.
                   const kept = draft.slots.filter(
@@ -380,11 +554,22 @@ export function WheelSetup({ state }: { state: SetupState }) {
                     ],
                     unassigned: draft.unassigned,
                   });
-                  setBanner({ kind: "ok", text: "Reshuffle applied to the DRAFT — press Save to keep it, Discard to revert." });
+                  setSave({
+                    slot: "arrangement",
+                    state: {
+                      kind: "ok",
+                      message:
+                        "Reshuffle applied to the DRAFT — press Save to keep it, Discard to revert.",
+                    },
+                  });
                 } catch {
-                  setBanner({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
-                } finally {
-                  setBusy(false);
+                  setSave({
+                    slot: "arrangement",
+                    state: {
+                      kind: "err",
+                      message: "Could not reach the server — nothing was confirmed.",
+                    },
+                  });
                 }
               })()
             }
@@ -398,20 +583,27 @@ export function WheelSetup({ state }: { state: SetupState }) {
                 unsaved changes
               </span>
             )}
-            <button
-              type="button"
-              disabled={busy || !dirty}
-              onClick={save}
-              className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-700 active:scale-[0.97] disabled:opacity-40"
-            >
-              {busy ? "Saving…" : "Save arrangement"}
-            </button>
+            <SaveButton
+              state={feedbackFor("arrangement")}
+              onSave={saveArrangement}
+              onStateSettled={() => setSave({ slot: "arrangement", state: { kind: "idle" } })}
+              label="Save arrangement"
+              dirty={dirty}
+              disabled={busy}
+              notDirtyHint="The arrangement matches what is saved."
+            />
             <button
               type="button"
               disabled={busy || !dirty}
               onClick={() => {
                 setDraft(original);
-                setBanner({ kind: "ok", text: "Draft discarded — back to the last saved arrangement." });
+                setSave({
+                  slot: "arrangement",
+                  state: {
+                    kind: "ok",
+                    message: "Draft discarded — back to the last saved arrangement.",
+                  },
+                });
               }}
               className="inline-flex items-center justify-center rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#141414] px-4 py-2 text-sm font-semibold text-gray-800 dark:text-gray-200 transition-[background-color,transform] duration-150 ease-out hover:bg-gray-50 dark:hover:bg-white/5 active:scale-[0.97] disabled:opacity-40"
             >
@@ -419,6 +611,10 @@ export function WheelSetup({ state }: { state: SetupState }) {
             </button>
           </span>
         </div>
+        {/* Every arrangement action — move, reshuffle, save, discard, a slot
+            edit — reports in this ONE place, directly under the row of buttons
+            that produce it and above the grid they act on. */}
+        <SaveFeedback state={feedbackFor("arrangement")} className="mb-2" />
         {pickedNumber && (
           <p className="mb-2 text-sm text-gray-700">
             Moving #{numberById.get(pickedNumber)?.number} — click a slot, the tray, or{" "}
@@ -476,7 +672,8 @@ export function WheelSetup({ state }: { state: SetupState }) {
                           e.stopPropagation();
                           if (s.luckyNumberIds.length === 0) {
                             const result = deleteSlot(draft, s.key);
-                            if (result.error) setBanner({ kind: "err", text: result.error });
+                            if (result.error)
+                              setSave({ slot: "arrangement", state: { kind: "err", message: result.error } });
                             else setDraft(result.draft!);
                             return;
                           }
@@ -498,9 +695,17 @@ export function WheelSetup({ state }: { state: SetupState }) {
                             },
                             () => {
                               const emptied = emptySlotToUnassigned(draft, s.key, locks);
-                              if (emptied.error) return setBanner({ kind: "err", text: emptied.error });
+                              if (emptied.error)
+                                return setSave({
+                                  slot: "arrangement",
+                                  state: { kind: "err", message: emptied.error },
+                                });
                               const deleted = deleteSlot(emptied.draft!, s.key);
-                              if (deleted.error) return setBanner({ kind: "err", text: deleted.error });
+                              if (deleted.error)
+                                return setSave({
+                                  slot: "arrangement",
+                                  state: { kind: "err", message: deleted.error },
+                                });
                               setDraft(deleted.draft!);
                             },
                           );
@@ -552,7 +757,9 @@ export function WheelSetup({ state }: { state: SetupState }) {
       {/* ————— Winner planning (2.3) — never rendered in presentation mode:
             the server sent no plans and no committed/planned indicators. ————— */}
       {!state.presentation && (
-      <section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] p-4 shadow-sm">
+      <section
+        className={`rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] p-4 shadow-sm ${section === "plan" ? "" : "hidden"}`}
+      >
         <h2 className="mb-1 text-base font-black text-gray-900 dark:text-white">Winner planning</h2>
         <p className="mb-2 text-xs text-gray-600 dark:text-gray-400">
           Pick numbers, choose how they win, assign a week. Committing locks them: no shuffle,
@@ -580,6 +787,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
                     if (e.target.checked) next.add(n.id);
                     else next.delete(n.id);
                     setPlanNumbers(next);
+                    setPlanError(null); // the refusal was about the old selection
                   }}
                 />
                 #{n.number} <span className="text-gray-500 dark:text-gray-400">{n.owner}</span>
@@ -587,15 +795,20 @@ export function WheelSetup({ state }: { state: SetupState }) {
             ))}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Select<"ALONE" | "TOGETHER" | "OPEN_PARTNER">
+          {/* The labels come from lib/wheel so the refusal below quotes the
+              option he actually chose, word for word. */}
+          <Select<WinnerPlanMode>
             value={planMode}
-            onChange={setPlanMode}
+            onChange={(mode) => {
+              setPlanMode(mode);
+              setPlanError(null); // the refusal was about the old mode
+            }}
             ariaLabel="How the planned numbers win"
             className="w-72"
             options={[
-              { value: "ALONE", label: "Win alone" },
-              { value: "TOGETHER", label: "Win together (same week)" },
-              { value: "OPEN_PARTNER", label: "Open partner (shuffle may attach one)" },
+              { value: "ALONE", label: winnerPlanModeLabel("ALONE") },
+              { value: "TOGETHER", label: winnerPlanModeLabel("TOGETHER") },
+              { value: "OPEN_PARTNER", label: winnerPlanModeLabel("OPEN_PARTNER") },
             ]}
           />
           <Select
@@ -612,36 +825,85 @@ export function WheelSetup({ state }: { state: SetupState }) {
           />
           <button
             type="button"
-            disabled={busy || planNumbers.size === 0 || dirty}
-            title={dirty ? "Save or discard the arrangement first" : undefined}
+            disabled={busy || arrangementRefusal !== null || planRefusal !== null}
             onClick={() => {
-              const picked = [...planNumbers]
-                .map((id) => `#${numberById.get(id)?.number ?? "?"}`)
-                .join(" + ");
-              const weekLabel = state.weeks.find((w) => w.id === planWeekId)?.weekNumber;
+              // BOTH RULES AGAIN, AT THE PRESS. `disabled` is a hint the DOM
+              // can lose (a stale render, a scripted click); this handler is
+              // what actually runs, and the server checks the arity a third
+              // time. The unsaved-arrangement reason is checked here too, so
+              // it can never be the silent half of a dead button.
+              if (arrangementRefusal !== null) {
+                setPlanError(arrangementRefusal);
+                return;
+              }
+              if (planRefusal !== null) {
+                setPlanError(planRefusal);
+                return;
+              }
+              const weekNumber = state.weeks.find((w) => w.id === planWeekId)?.weekNumber ?? null;
+              // The title and the effect describe THIS plan, built from the
+              // same labels as the refusal. It used to read "Commit #3 + #7
+              // as ALONE?" — the database's word, over a write that paired
+              // them, approved by the organizer on the way past.
+              const { title, effect } = winnerPlanConfirmation({
+                mode: planMode,
+                numbers: planPickedNumbers,
+                weekNumber,
+              });
               ask(
                 {
-                  title: `Commit ${picked} as ${planMode}?`,
+                  title,
                   destructive: false,
                   body: (
                     <p>
-                      {planWeekId ? `They win week ${weekLabel}. ` : "No week is assigned yet. "}
-                      Committed numbers are LOCKED (2.3): no shuffle, drag, or manual move can
-                      separate or re-pair them until the plan is cancelled or fulfilled.
+                      {effect} Committed numbers are LOCKED (2.3): no shuffle, drag, or manual
+                      move can separate or re-pair them until the plan is cancelled or
+                      fulfilled.
                     </p>
                   ),
                   confirmLabel: "Create plan",
                 },
-                () =>
-                  void run(async () => {
-                    const result = await createWinnerPlan({
-                      luckyNumberIds: [...planNumbers],
-                      mode: planMode,
-                      weekId: planWeekId || undefined,
-                    });
-                    if (result.ok) setPlanNumbers(new Set());
-                    return result;
-                  }, "✓ Plan saved — numbers locked."),
+                async () => {
+                    setSave({ slot: "plan", state: { kind: "saving" } });
+                    setPlanError(null);
+                    try {
+                      const result = await createWinnerPlan({
+                        luckyNumberIds: [...planNumbers],
+                        mode: planMode,
+                        weekId: planWeekId || undefined,
+                      });
+                      if (!result.ok) {
+                        // AT the control (UI_STANDARDS 6b). The banner fires
+                        // too — never instead of this.
+                        //
+                        // `result.error` is optional on the action's union, so
+                        // it is narrowed here rather than asserted: a refusal
+                        // that arrives without a reason must still SAY
+                        // something, or the control goes quiet on the one
+                        // outcome it exists to report.
+                        const reason = result.error ?? "The plan was refused, with no reason given.";
+                        setPlanError(reason);
+                        setSave({ slot: "plan", state: { kind: "err", message: reason } });
+                        // Returned, so the dialog STAYS OPEN carrying it.
+                        return reason;
+                      }
+                      setPlanNumbers(new Set());
+                      setSave({
+                        slot: "plan",
+                        state: {
+                          kind: "ok",
+                          message: `Plan committed — ${planPickedNumbers.length === 1 ? "that number is" : "those numbers are"} locked to their slot and cannot be shuffled or dragged.`,
+                        },
+                      });
+                      router.refresh();
+                      return null;
+                    } catch {
+                      const text = "Could not reach the server — nothing was confirmed.";
+                      setPlanError(text);
+                      setSave({ slot: "plan", state: { kind: "err", message: text } });
+                      return text;
+                    }
+                  },
               );
             }}
             className="rounded-xl bg-indigo-600 px-3.5 py-2 font-bold text-white transition-[background-color,transform] duration-150 ease-out hover:bg-indigo-700 active:scale-[0.97] disabled:opacity-40"
@@ -650,12 +912,57 @@ export function WheelSetup({ state }: { state: SetupState }) {
           </button>
         </div>
 
+        {/* The reason lives HERE, under the button that was pressed — never
+            only in the banner at the top of the page (UI_STANDARDS 6b).
+            THE UNSAVED-ARRANGEMENT REASON COMES FIRST, because it is the one
+            that used to be invisible: a `title` on a disabled button, on a
+            screen whose cause is now a section away. */}
+        {arrangementRefusal !== null && (
+          <p
+            data-testid="plan-blocked-by-arrangement"
+            role="alert"
+            className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-amber-800 dark:text-amber-400"
+          >
+            {arrangementRefusal}
+            <button
+              type="button"
+              onClick={() => setSection("arrange")}
+              className="text-xs font-bold underline underline-offset-2"
+            >
+              Go to Arrange
+            </button>
+          </p>
+        )}
+        {planNumbers.size > 0 && arrangementRefusal === null && planRefusal !== null && (
+          <p role="alert" className="mt-2 text-sm font-semibold text-amber-800 dark:text-amber-400">
+            {planRefusal}
+          </p>
+        )}
+        {planNumbers.size > 0 && arrangementRefusal === null && planRefusal === null && (
+          <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+            {
+              winnerPlanConfirmation({
+                mode: planMode,
+                numbers: planPickedNumbers,
+                weekNumber: state.weeks.find((w) => w.id === planWeekId)?.weekNumber ?? null,
+              }).effect
+            }
+          </p>
+        )}
+        {planError !== null && (
+          <p role="alert" className="mt-2 text-sm font-semibold text-red-800 dark:text-red-400">
+            {planError}
+          </p>
+        )}
+        {/* The commit's own outcome, at the button that committed it. */}
+        <SaveFeedback state={feedbackFor("plan")} className="mt-2" />
+
         {state.plans.length > 0 && (
           <ul className="mt-3 space-y-1 text-sm">
             {state.plans.map((p) => (
               <li key={p.id} className="flex items-center gap-2">
                 <span>
-                  {p.numbers.map((n) => `#${n}`).join(" + ")} — {p.mode}
+                  {p.numbers.map((n) => `#${n}`).join(" + ")} — {winnerPlanModeLabel(p.mode)}
                   {p.weekNumber !== null ? `, week ${p.weekNumber}` : ", no week yet"}
                 </span>
                 <button
@@ -675,13 +982,20 @@ export function WheelSetup({ state }: { state: SetupState }) {
                         ),
                         confirmLabel: "Cancel the plan",
                       },
-                      () => void run(() => cancelWinnerPlan({ planId: p.id }), "✓ Plan cancelled — numbers unlocked."),
+                      () =>
+                        run(
+                          `plan:${p.id}`,
+                          () => cancelWinnerPlan({ planId: p.id }),
+                          `Plan cancelled — ${p.numbers.map((x) => `#${x}`).join(", ")} back on the wheel.`,
+                        ),
                     )
                   }
                   className="rounded border border-red-400 px-2 py-0.5 text-xs text-red-800 disabled:opacity-40"
                 >
                   Cancel
                 </button>
+                {/* Cancelling THIS plan reports on THIS row. */}
+                <SaveFeedback state={feedbackFor(`plan:${p.id}`)} />
               </li>
             ))}
           </ul>

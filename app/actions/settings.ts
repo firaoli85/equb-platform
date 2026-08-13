@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { requireAdmin } from "@/lib/auth";
 import { getSetting, setSetting } from "@/lib/settings";
+import { portalUrlProblem } from "@/lib/welcome-send";
 
 /** ADMIN: the current platform settings for /admin/settings. */
 export async function getPlatformSettings() {
@@ -25,6 +26,7 @@ export async function getPlatformSettings() {
         adminSessionIdleMinutes: await getSetting("adminSessionIdleMinutes"),
         adminSessionMaxHours: await getSetting("adminSessionMaxHours"),
         closingWaitDays: await getSetting("closingWaitDays"),
+        portalUrl: await getSetting("portalUrl"),
       },
     };
   } catch (e) {
@@ -226,6 +228,47 @@ export async function updateWhatsappEnabled(input: { enabled: boolean }) {
     return { ok: true as const, data: { whatsappEnabled: input.enabled } };
   } catch (e) {
     console.error("updateWhatsappEnabled failed:", e);
+    return { ok: false as const, error: `Could not save the setting. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * ADMIN: where a member signs in — the address the welcome message tells them
+ * to open.
+ *
+ * TRIMMED HERE, ONCE. Everything downstream treats an empty string as "not
+ * decided" — `welcomeSendCheck` refuses the send, `placeholderValues` renders
+ * the sentinel — and a value of "   " would satisfy neither of those tests
+ * while being just as unopenable. Trimming at the only write means there is no
+ * whitespace-only address to defend against anywhere else.
+ *
+ * CLEARING IT IS ALLOWED. An organizer who moves the portal has to be able to
+ * empty the box while he finds the new address, and the welcome refusing in the
+ * meantime is the correct behaviour rather than a state to prevent.
+ *
+ * The audit is automatic: every write goes through setSetting, which records
+ * it in the same transaction (2.23).
+ */
+export async function updatePortalUrl(input: { url: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (typeof input.url !== "string") {
+      return { ok: false as const, error: "Invalid value." };
+    }
+    const url = input.url.trim();
+    // Validated with the SAME pure rule the form uses while typing, so the box
+    // and the server can never disagree about what a usable address is.
+    const problem = portalUrlProblem(url);
+    if (problem) return { ok: false as const, error: problem };
+
+    await setSetting("portalUrl", url);
+    revalidatePath("/admin/settings");
+    // The welcome's preview quotes this address on both screens that render one.
+    revalidatePath("/admin/messages");
+    return { ok: true as const, data: { portalUrl: url } };
+  } catch (e) {
+    console.error("updatePortalUrl failed:", e);
     return { ok: false as const, error: `Could not save the setting. ${errorMessage(e)}` };
   }
 }

@@ -35,6 +35,7 @@ import {
   WHATSAPP_DISABLED_REASON,
   WHATSAPP_STATEMENTS_BLOCKED_REASON,
 } from "@/lib/settings";
+import { portalUrlValue, welcomeSendCheck } from "@/lib/welcome-send";
 import { calculatePayout } from "@/lib/wheel";
 import { whatsAppMissingConfig } from "@/lib/whatsapp";
 
@@ -319,6 +320,14 @@ export async function previewMessage(input: {
     } else if (key === "LOCKOUT_NOTICE") {
       extras = { lockMinutes: await getSetting("pinLockMinutes") };
       sampleNote = "Preview uses the configured lock duration (settings → PIN lockout).";
+    } else if (key === "WHATSAPP_WELCOME") {
+      // NO SAMPLE FACTS — every variable is this member's own or a setting.
+      // What the note carries instead is the CONSEQUENCE, because it is the
+      // only message here that creates an obligation rather than reporting one,
+      // and reading the sentence gives no hint of that.
+      sampleNote =
+        (await welcomeBlockedReason(key)) ??
+        "Sending this is what requires this member's signature — they read and sign their agreement the next time they sign in.";
     }
 
     const templates = await loadTemplates();
@@ -352,6 +361,29 @@ function manualKeyOrError(key: string) {
 }
 
 /**
+ * The welcome's two platform-level refusals, read fresh.
+ *
+ * ASKED IN prepareBatch AS WELL AS IN THE SEND. deliver() refuses either way,
+ * but as 27 separate skips discovered one row at a time after the organizer has
+ * already pressed send — and the fix is one settings change he could have made
+ * first. Refusing the whole batch up front is the same rule stated where it can
+ * still be acted on.
+ */
+async function welcomeBlockedReason(key: MessageKey): Promise<string | null> {
+  if (key !== "WHATSAPP_WELCOME") return null;
+  // PLATFORM-WIDE ONLY. A per-person override cannot be expressed in one
+  // sentence about a batch, and it does not need to be: `deliver()` asks the
+  // same rule again with that member in hand, so a single blocked person is
+  // skipped with their own reason rather than stopping the whole send.
+  const check = welcomeSendCheck({
+    portalUrl: portalUrlValue(await getSetting("portalUrl")),
+    defaultPinFromPhone: await getSetting("defaultPinFromPhone"),
+    pinLoginEnabled: await getSetting("pinLoginEnabled"),
+  });
+  return check.ok ? null : check.reason;
+}
+
+/**
  * Everything the organizer needs BEFORE anything leaves: exactly who is
  * suggested for this message type, the real rendered text each would
  * receive, and who is excluded and why. Nothing is sent here.
@@ -366,6 +398,9 @@ export async function prepareBatch(input: { key: string }) {
     const keyCheck = manualKeyOrError(input.key);
     if (!keyCheck.ok) return keyCheck;
     const key = keyCheck.key;
+
+    const welcomeBlocked = await welcomeBlockedReason(key);
+    if (welcomeBlocked) return { ok: false as const, error: welcomeBlocked };
 
     const cycle = await prisma.cycle.findFirst({ where: { status: "ACTIVE" } });
     if (!cycle) return { ok: false as const, error: "No active cycle." };
@@ -428,7 +463,15 @@ export async function prepareBatch(input: { key: string }) {
           body,
           placeholderValues(loaded.facts, winners?.get(p.id) ?? {}),
         ),
-        checked: blocked === null,
+        // THE WELCOME ARRIVES UNTICKED, and it is the only type that does.
+        //
+        // Sending it is not a statement about a member's money — it is what
+        // REQUIRES their signature and puts the agreement gate in front of
+        // their portal. Every other batch pre-ticks because sending to one more
+        // person is a message they can ignore; pre-ticking this one would make
+        // "prepare, glance, send" gate all 27 existing members against a
+        // document they were never expecting, and there is no un-send.
+        checked: blocked === null && key !== "WHATSAPP_WELCOME",
         blocked,
       });
     }
@@ -446,7 +489,9 @@ export async function prepareBatch(input: { key: string }) {
               ? "Members with at least one week unpaid after its window closed."
               : key === "WINNER_ANNOUNCEMENT"
                 ? "Winners of the latest drawn week."
-                : "Every member of the cycle, including anyone closed early.",
+                : key === "WHATSAPP_WELCOME"
+                  ? "Every member still contributing. Nobody is ticked: sending the welcome is what requires that member's signature, and they will have to read and sign their agreement the next time they sign in. Tick only the people you are welcoming."
+                  : "Every member of the cycle, including anyone closed early.",
       },
     };
   } catch (e) {
@@ -473,6 +518,13 @@ export async function sendBatch(input: { key: string; participationIds: string[]
     if (!Array.isArray(input.participationIds) || input.participationIds.length === 0) {
       return { ok: false as const, error: "Nobody is selected." };
     }
+
+    // Re-asked at send time, not carried from prepare: the settings can change
+    // between opening a batch and pressing send, and the browser is never
+    // trusted for a decision (2.21). deliver() refuses again per member — this
+    // is the one that refuses the whole batch with the actionable sentence.
+    const welcomeBlocked = await welcomeBlockedReason(key);
+    if (welcomeBlocked) return { ok: false as const, error: welcomeBlocked };
 
     const cycle = await prisma.cycle.findFirst({ where: { status: "ACTIVE" } });
     const winners =

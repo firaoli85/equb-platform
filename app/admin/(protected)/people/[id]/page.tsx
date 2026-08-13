@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getMemberAgreementState } from "@/app/actions/agreement";
 import { getCatchUpWeeks } from "@/app/actions/payments-view";
 import { getMemberStanding } from "@/app/actions/payments";
 import { getMemberMessaging } from "@/app/actions/member-messaging";
 import { listMemberSignIns } from "@/app/actions/sessions";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { AgreementSigningCard } from "@/components/admin/agreement-signing";
 import { PayoutEquation } from "@/components/admin/payout-equation";
 import { Pager, TruncationNotice } from "@/components/ui/pager";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
+import { paymentStatus } from "@/lib/derived";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { finalPosition, finalPositionAdminLine } from "@/lib/final-position";
 import { ledgerBalance, ledgerStory } from "@/lib/ledger";
@@ -214,6 +217,18 @@ export default async function PersonPage({
     tab === "settings"
       ? await listMemberSignIns({ personId: person.id })
       : ({ ok: true as const, data: { total: 0, rows: [] } });
+
+  // WHERE THEY STAND ON SIGNING — read only by the section that renders it.
+  //
+  // Unlike the sign-in count, nothing in the section nav quotes this, so it
+  // does not have to be paid for on the other two Settings sections. The
+  // action reads their most recent participation; the directory chip reads the
+  // same one (see app/actions/people.ts), so the list and this page cannot
+  // report a different requirement for the same member.
+  const agreement =
+    tab === "settings" && section === "access"
+      ? await getMemberAgreementState({ personId: person.id })
+      : null;
 
   // The one finish preview this page shows (2.22) — same pure module as every
   // editable surface, so the card, the editor and the wizard all agree.
@@ -505,7 +520,16 @@ export default async function PersonPage({
         />
       </header>
 
-      {active === null && tab !== "settings" && tab !== "history" && (
+      {/* NOT ON THE MESSAGES TAB.
+          `active` is the participation in a cycle whose status is ACTIVE, so
+          the moment a cycle closes it is null for EVERY member — and this card
+          then led every profile with "Not in the current cycle · Add them",
+          directly above the closing-statement panel that exists for exactly
+          that day. The advice was also wrong: adding a member to a cycle that
+          has ended is not what the organizer is there to do.
+          Messages works without a live participation on purpose (2.18), so it
+          is the one tab this card must not cover. */}
+      {active === null && tab !== "settings" && tab !== "history" && tab !== "messages" && (
         <Card className="px-5 py-4">
           <h2 className="text-sm font-bold text-gray-900 dark:text-white">Not in the current cycle</h2>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
@@ -541,9 +565,24 @@ export default async function PersonPage({
                 amountAlreadyPaid: w.amountAlreadyPaid,
                 isDeferred: w.isDeferred,
                 isSkipped: w.isSkipped,
+                // THE FALLBACK USED TO GUESS. It read
+                // `isSkipped ? … : isDeferred ? … : "UNPAID"` — no date, no
+                // clock — so a week whose window had closed unpaid came out
+                // UNPAID, the same collapse that put seven late members under
+                // "have not paid" on /admin/this-week. It only fires when a
+                // week is missing from the standing, which should not happen;
+                // when it does, the answer must still be derived rather than
+                // assumed (2.14, 2.19).
                 status:
                   standing.data.weeks.find((sw) => sw.weekNumber === w.weekNumber)?.status ??
-                  (w.isSkipped ? "SKIPPED" : w.isDeferred ? "DEFERRED" : "UNPAID"),
+                  paymentStatus({
+                    amountPaid: w.amountAlreadyPaid,
+                    amountDue: w.amountDue,
+                    isDeferred: w.isDeferred,
+                    isSkipped: w.isSkipped,
+                    weekDate: w.date,
+                    today: new Date(),
+                  }),
               }))}
             />
           </div>
@@ -936,6 +975,25 @@ export default async function PersonPage({
                 How {person.nameEnglishFirst} gets in, what the product is allowed to send
                 them, and the evidence that answers &ldquo;was that really them?&rdquo;
               </SectionHeading>
+
+              {/* FIRST, BECAUSE IT IS THE OUTERMOST DOOR. A PIN gets them to
+                  the portal; an unsigned agreement stops them at it whatever
+                  their PIN is. It also states whether they set their own PIN,
+                  which is the fact the card below then gives the controls
+                  for — both read `pinHash`, so they cannot disagree. */}
+              {agreement !== null &&
+                (agreement.ok ? (
+                  <AgreementSigningCard
+                    personName={person.nameEnglishFirst}
+                    state={agreement.data}
+                  />
+                ) : (
+                  <Card className="px-5 py-4">
+                    <p role="alert" className="text-sm text-red-800 dark:text-red-400">
+                      {agreement.error}
+                    </p>
+                  </Card>
+                ))}
 
               <Card>
                 <CardHeader title="PIN sign-in" />

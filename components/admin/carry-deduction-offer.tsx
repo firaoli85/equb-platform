@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { deductCarryFromPayout, payoutCarryOffer } from "@/app/actions/carry-deduction";
 import type { CarryOffer } from "@/lib/carry-balance";
 import { AmountInput } from "@/components/ui/controls";
-import { Alert, buttonCls } from "@/components/ui/primitives";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatMoney, parseDollarsToCents } from "@/lib/format";
 
 // D-2 / D-23 — THE OFFER, AT THE MOMENT THE MONEY CROSSES THE TABLE.
@@ -24,6 +24,17 @@ import { formatMoney, parseDollarsToCents } from "@/lib/format";
 // It is deliberately separate from the collect panel's own confirm: the payout
 // and the balance are two different pieces of money, and merging them into one
 // button would make the deduction a side effect of handing over cash.
+//
+// THE FEEDBACK BELONGS TO THE BUTTON (UI_STANDARDS rule 6). It used to sit in
+// an <Alert> at the TOP of the panel — above the tick, above the origin
+// sentence, above the amount field and the arithmetic — while the button that
+// produced it is the last thing in the panel. `SaveButton` renders both the
+// refusal and the confirmation beside the press, where there is nowhere else
+// to put them.
+
+/** One panel, two renders (offer, and offer-already-taken) — one class string. */
+const PANEL_CLS =
+  "mt-2 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/25 p-3";
 
 export function CarryDeductionOffer({ payoutId }: { payoutId: string }) {
   const router = useRouter();
@@ -32,8 +43,10 @@ export function CarryDeductionOffer({ payoutId }: { payoutId: string }) {
   >({ status: "loading" });
   const [ticked, setTicked] = useState(false);
   const [dollars, setDollars] = useState("");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [pending, start] = useTransition();
+  // ONE save state. "Is it working", "did it fail", "what did it say" are all
+  // read off `save` — a second `pending` boolean for the same fact is exactly
+  // what drifts out of step with the message it is supposed to accompany.
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
 
   useEffect(() => {
     let live = true;
@@ -56,26 +69,71 @@ export function CarryDeductionOffer({ payoutId }: { payoutId: string }) {
     };
   }, [payoutId]);
 
+  async function handleDeduct() {
+    const amount = parseDollarsToCents(dollars);
+    if (amount === null) return;
+    setSave({ kind: "saving" });
+    try {
+      const result = await deductCarryFromPayout({
+        payoutId,
+        amount,
+        // The organizer pressed THIS button. The value comes from the press,
+        // never from the remembered intention (D-23).
+        confirmedByOrganizer: ticked,
+      });
+      if (!result.ok) {
+        setSave({ kind: "err", message: `Not saved: ${result.error}` });
+        return;
+      }
+      // The figures come back from the server, not from the panel's own
+      // preview — this is the sentence the organizer checks the deduction
+      // against, so it has to be the money that actually moved.
+      setSave({
+        kind: "ok",
+        message:
+          `Saved — ${formatMoney(result.data.deducted)} taken from ` +
+          `${result.data.personName}'s payout. They receive ` +
+          `${formatMoney(result.data.netAfter)}; ` +
+          `${formatMoney(result.data.balanceAfter)} still carried.`,
+      });
+      router.refresh();
+    } catch {
+      setSave({
+        kind: "err",
+        message: "Could not reach the server — nothing was deducted.",
+      });
+    }
+  }
+
+  // THE CONFIRMATION OUTLIVES THE OFFER.
+  //
+  // A successful deduction used to set the panel to "hidden", which returned
+  // null on the very next render and took the freshly-set success message down
+  // with it — the organizer moved money and saw nothing at all. The offer IS
+  // spent, so the tick, the amount and the button go; the panel stays, holding
+  // what happened. `SaveFeedback` has no timer, so this one does not fade.
+  if (save.kind === "ok") {
+    return (
+      <div className={PANEL_CLS}>
+        <SaveFeedback state={save} />
+      </div>
+    );
+  }
+
   if (state.status !== "ready" || state.offer.kind !== "offer") return null;
   const offer = state.offer;
   const cents = parseDollarsToCents(dollars);
   const valid = cents !== null && cents >= 1 && cents <= offer.maxDeductible;
 
   return (
-    <div className="mt-2 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/25 p-3">
-      {msg && (
-        <div className="mb-2">
-          <Alert kind={msg.kind}>{msg.text}</Alert>
-        </div>
-      )}
-
+    <div className={PANEL_CLS}>
       <label className="flex items-start gap-2.5">
         <input
           type="checkbox"
           checked={ticked}
           onChange={(e) => {
             setTicked(e.target.checked);
-            setMsg(null);
+            setSave({ kind: "idle" });
           }}
           className="mt-0.5 h-4 w-4 shrink-0 accent-amber-700"
           style={{ touchAction: "manipulation" }}
@@ -107,7 +165,7 @@ export function CarryDeductionOffer({ payoutId }: { payoutId: string }) {
               value={dollars}
               onChange={(v) => {
                 setDollars(v);
-                setMsg(null);
+                setSave({ kind: "idle" });
               }}
               ariaLabel={`Amount of ${state.name}'s carried balance to deduct, in dollars`}
               className="w-32"
@@ -120,39 +178,15 @@ export function CarryDeductionOffer({ payoutId }: { payoutId: string }) {
             {" · "}balance left{" "}
             <strong>{formatMoney(Math.max(0, offer.balance - (cents ?? 0)))}</strong>
           </p>
-          <button
-            type="button"
-            disabled={pending || !valid}
-            onClick={() =>
-              start(async () => {
-                if (cents === null) return;
-                setMsg(null);
-                const result = await deductCarryFromPayout({
-                  payoutId,
-                  amount: cents,
-                  // The organizer pressed THIS button. The value comes from the
-                  // press, never from the remembered intention (D-23).
-                  confirmedByOrganizer: ticked,
-                });
-                if (!result.ok) {
-                  setMsg({ kind: "err", text: result.error });
-                  return;
-                }
-                setMsg({
-                  kind: "ok",
-                  text:
-                    `✓ ${formatMoney(result.data.deducted)} taken from the payout — ` +
-                    `${formatMoney(result.data.balanceAfter)} still carried.`,
-                });
-                setState({ status: "hidden" });
-                router.refresh();
-              })
-            }
-            className={buttonCls.primary + " !px-3 !py-2 !text-xs"}
-            style={{ minHeight: "40px" }}
-          >
-            {pending ? "Recording…" : `Deduct ${cents !== null ? formatMoney(cents) : ""}`}
-          </button>
+          {/* The refusal renders HERE, against the press. `disabled` carries
+              the validity gate the old button had; the hint below says why. */}
+          <SaveButton
+            state={save}
+            onSave={() => void handleDeduct()}
+            label={`Deduct ${cents !== null ? formatMoney(cents) : ""}`}
+            savingLabel="Recording…"
+            disabled={!valid}
+          />
           {!valid && dollars.trim() !== "" && (
             <p className="basis-full text-xs font-semibold text-red-700 dark:text-red-400">
               Enter an amount between {formatMoney(1)} and {formatMoney(offer.maxDeductible)}.

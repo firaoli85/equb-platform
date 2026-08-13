@@ -11,6 +11,7 @@ describe("parsePositionSection — never trusts the URL", () => {
     expect(parsePositionSection("ahead")).toBe("ahead");
     expect(parsePositionSection("holding")).toBe("holding");
     expect(parsePositionSection("cash")).toBe("cash");
+    expect(parsePositionSection("weeks")).toBe("weeks");
   });
 
   it("falls back to the default for anything else", () => {
@@ -38,6 +39,7 @@ describe("positionSections — the dots mean something", () => {
     toCover: 0,
     holdingLessThanOwed: false,
     verdictKind: "surplus" as const,
+    outOfSequenceCount: 0,
   };
 
   it("a cycle in good order shows no dots at all", () => {
@@ -95,18 +97,41 @@ describe("positionSections — the dots mean something", () => {
     }
   });
 
+  // WEEK DATES ARE THE ONE STORED FACT ON THIS PAGE (rule 7), so their dot
+  // means something different from every other dot here: not "money needs
+  // you", but "a date cannot be true". A cycle running in order must show
+  // nothing at all, or the section that exists to catch a rare fault becomes a
+  // permanent decoration.
+  it("leaves Week dates clear while the cycle runs in order", () => {
+    const weeks = positionSections(clean).find((x) => x.key === "weeks")!;
+    expect(weeks.attention).toBe(false);
+    expect(weeks.count).toBeUndefined();
+  });
+
+  it("marks Week dates when a week is dated out of sequence (audit finding 29)", () => {
+    const weeks = positionSections({ ...clean, outOfSequenceCount: 1 }).find(
+      (x) => x.key === "weeks",
+    )!;
+    expect(weeks.attention).toBe(true);
+    // The count is FAULTS, not weeks: "20" beside a tab is a size, and a
+    // number that is normally absent is a finding.
+    expect(weeks.count).toBe(1);
+  });
+
   it("omits a zero count rather than rendering an empty bubble", () => {
     const s = positionSections(clean);
     expect(s.find((x) => x.key === "collection")!.count).toBeUndefined();
     expect(s.find((x) => x.key === "ahead")!.count).toBeUndefined();
+    expect(s.find((x) => x.key === "weeks")!.count).toBeUndefined();
   });
 
-  it("keeps the organizer's own order", () => {
+  it("keeps the organizer's own order, with the stored dates last", () => {
     expect(positionSections(clean).map((s) => s.key)).toEqual([
       "collection",
       "ahead",
       "holding",
       "cash",
+      "weeks",
     ]);
   });
 });

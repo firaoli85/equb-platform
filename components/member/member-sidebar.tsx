@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { signOutAction } from "@/app/actions/auth";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { isNavActive, MEMBER_SECONDARY, MEMBER_TABS, MemberNavIcon, type MemberNavItem } from "./member-nav";
 
 // THE DESKTOP SIDEBAR — the same destinations, the same active treatment, the
@@ -62,8 +64,37 @@ function NavRow({ item, active }: { item: MemberNavItem; active: boolean }) {
   );
 }
 
+// EXEMPT from SaveButton (UI_STANDARDS rule 6): signing out is not a save.
+// There is nothing to be dirty, nothing to confirm, and no success message to
+// write — a sign-out that works redirects to /login and replaces this whole
+// tree, which is a confirmation no sentence improves on.
+//
+// 6b still applies, and it was not being met. `void signOutAction()` threw the
+// rejection away: if the sign-out could not reach the server, the member
+// pressed the button, watched nothing happen, and had no way to tell whether
+// they were signed out or not — on a shared or borrowed phone that is the
+// question the button exists to answer. The failure now says so at the button,
+// via SaveFeedback, and says which way it went.
+
 export function MemberSidebar() {
   const pathname = usePathname();
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  const busy = save.kind === "saving";
+
+  async function signOut() {
+    setSave({ kind: "saving" });
+    try {
+      await signOutAction();
+      // No `setSave({ kind: "ok" })` and no reset: on success the action
+      // redirects, so the label stays "Signing out…" for the moment the
+      // navigation takes, which is exactly what is happening.
+    } catch {
+      setSave({
+        kind: "err",
+        message: "Not signed out: could not reach the server. You are STILL signed in on this device.",
+      });
+    }
+  }
 
   return (
     <aside className="hidden md:flex fixed top-14 left-0 bottom-0 w-60 z-30 flex-col border-r border-slate-200 dark:border-gray-800/60 bg-white dark:bg-[#0a0a0b] px-3 py-4">
@@ -86,21 +117,28 @@ export function MemberSidebar() {
         </div>
       </nav>
 
-      <button
-        type="button"
-        onClick={() => void signOutAction()}
-        className="mt-3 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-700 dark:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/40"
-        style={{ minHeight: "44px" }}
-      >
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-          />
-        </svg>
-        Sign out
-      </button>
+      <div className="mt-3 space-y-2">
+        <button
+          type="button"
+          disabled={busy}
+          aria-busy={busy}
+          onClick={() => void signOut()}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-700 dark:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
+          style={{ minHeight: "44px" }}
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+            />
+          </svg>
+          {busy ? "Signing out…" : "Sign out"}
+        </button>
+        {/* Only ever a refusal — see the note above the component. It never
+            auto-clears: "you are still signed in" is not news that expires. */}
+        <SaveFeedback state={save} className="text-xs" />
+      </div>
     </aside>
   );
 }

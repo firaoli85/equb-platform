@@ -1,14 +1,39 @@
+import { redirect } from "next/navigation";
 import { MemberPageTransition } from "@/components/member/member-page-transition";
 import { MemberSidebar } from "@/components/member/member-sidebar";
 import { MemberTabBar } from "@/components/member/member-tab-bar";
 import { ThemeToggle } from "@/components/member/theme-toggle";
 import { signOutAction } from "@/app/actions/auth";
+import { getMyAgreement } from "@/app/actions/agreement";
 
 // The member shell: top bar, desktop sidebar, mobile tab bar. Pages fetch
 // their own data and redirect to /login when signed out — the chrome is
 // identical on every member screen. The tab bar renders OUTSIDE the page
 // transition so its fixed positioning never sits inside a transform.
-export default function MemberLayout({ children }: { children: React.ReactNode }) {
+//
+// AND IT IS THE SIGNING GATE.
+//
+// It has to be here rather than in the proxy, and the reason is structural:
+// `lib/supabase/proxy.ts` runs as edge middleware and cannot reach the
+// database, so it can only check that a JWT exists. Whether a member owes a
+// signature is a question about rows. This layout wraps EVERY route under
+// /me, so there is no member page that can be reached without passing it — a
+// typed URL lands here exactly like a tab does.
+//
+// The signing screen deliberately lives at /agreement, OUTSIDE this layout.
+// Putting it under /me would make this redirect to itself.
+export default async function MemberLayout({ children }: { children: React.ReactNode }) {
+  // Null when nothing is owed, which is the ordinary answer — no welcome sent
+  // means no requirement (organizer ruling). An error is NOT treated as
+  // "signed": the portal stays shut and the screen at /agreement says why,
+  // because opening the money on a failed check is the wrong way to fail.
+  const owed = await getMyAgreement();
+  if (!owed.ok || owed.data !== null) redirect("/agreement");
+
+  return <MemberShell>{children}</MemberShell>;
+}
+
+function MemberShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh" style={{ background: "var(--page-bg)" }}>
       {/* Top bar */}

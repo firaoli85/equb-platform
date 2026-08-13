@@ -1,6 +1,8 @@
 "use server";
 
 import { CAPS } from "@/lib/paging";
+import { agreementOutstanding } from "@/lib/agreement";
+import { signingState } from "@/lib/agreement-view";
 import { duplicatePhoneRefusal } from "@/lib/person-record";
 import { revalidatePath } from "next/cache";
 import { totalContributed } from "@/lib/contribution";
@@ -62,10 +64,47 @@ export async function listPeople(searchTerm?: string) {
       where: { status: "ACTIVE" },
       select: { id: true },
     });
+
+    // ONE GROUPED READ FOR THE WHOLE DIRECTORY, not a query per person.
+    //
+    // The chip needs the LATEST signature against each participation, which is
+    // exactly what a `_max` on a grouped read answers — the same shape
+    // `listMessageThreads` uses for its per-person counts. Fetching signatures
+    // inside the `person` include would be one join per row and would carry
+    // `documentText` — the whole signed document, per signature — across for a
+    // four-word chip.
+    const signatures = await prisma.agreementSignature.groupBy({
+      by: ["participationId"],
+      _max: { signedAt: true },
+    });
+    const lastSignedAt = new Map(signatures.map((s) => [s.participationId, s._max.signedAt]));
+
     const data = people.map((person) => {
       const here = active
         ? (person.participations.find((p) => p.cycleId === active.id) ?? null)
         : null;
+      // THE OUTSTANDING PARTICIPATION, NOT THE LATEST ONE.
+      //
+      // Both this and `getMemberAgreementState` used to read a single
+      // participation while the GATE reads all of them — so a member welcomed
+      // in cycle 1, never signed, then added to cycle 2 was locked out of the
+      // portal while this chip said "not asked". The chip has to answer the
+      // same question the gate does, and the answer that matters is "does this
+      // person owe a signature anywhere", not "what did their newest
+      // participation say".
+      //
+      // Only when nothing is owed does the most recent one answer, so a member
+      // who has signed still shows when and against what.
+      const owing =
+        person.participations.find(
+          (p) =>
+            p.agreementRequiredAt !== null &&
+            agreementOutstanding({
+              requiredAt: p.agreementRequiredAt,
+              lastSignedAt: lastSignedAt.get(p.id) ?? null,
+            }),
+        ) ?? null;
+      const latest = owing ?? person.participations[person.participations.length - 1] ?? null;
       return {
         ...person,
         inActiveCycle: here !== null,
@@ -79,6 +118,16 @@ export async function listPeople(searchTerm?: string) {
         contributedThisCycle: here
           ? totalContributed(here.paymentEvents.map((e) => ({ amount: e.amount })))
           : 0,
+        /**
+         * Signed / waiting / not asked (the ruling's states, derived).
+         *
+         * Null `agreementRequiredAt` means no welcome was ever sent, which is
+         * "not asked" — not "not signed". Everyone already mid-cycle is there.
+         */
+        agreementSigning: signingState({
+          requiredAt: latest?.agreementRequiredAt ?? null,
+          signedAt: latest ? (lastSignedAt.get(latest.id) ?? null) : null,
+        }),
       };
     });
     return { ok: true as const, data };

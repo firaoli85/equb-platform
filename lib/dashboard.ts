@@ -3,7 +3,13 @@
 // time from stored money facts (2.14) — no cached totals, nothing stored.
 // Pure functions, cents as integers, window-aware everywhere (2.7).
 
-import { amountOutstanding, weeksBehind, weeksCredited } from "./derived";
+import {
+  amountOutstanding,
+  paymentStatus,
+  weeksBehind,
+  weeksCredited,
+  type PaymentStatusValue,
+} from "./derived";
 import { calculateFinishWeek } from "./money";
 import { inWindow as inMemberWindow, type WindowBreak } from "./participation-close";
 
@@ -295,22 +301,44 @@ export type WeekMemberStatus = {
   name: string;
   weeklyAmount: number;
   amountPaid: number;
-  status: "PAID" | "PARTIAL" | "UNPAID" | "DEFERRED" | "SKIPPED" | "LATE";
+  status: PaymentStatusValue;
+  /** True when the organizer marked it himself (2.2) — a NOTE, not a status. */
+  markedLate: boolean;
 };
 
 /**
  * Who has paid this week and who has not — in-window members only (2.7).
  *
- * The order matches paymentStatus (2.14): SKIPPED (nobody owed it), then PAID
- * (the money is there — PAID BEATS EVERYTHING), then DEFERRED (still owed,
- * just not chased — and it BEATS the organizer's own mark, ruling Aug 2026),
- * then a week he marked LATE himself (2.2), then PARTIAL/UNPAID.
+ * IT ASKS `paymentStatus`. It used to re-implement the ladder, and the copy
+ * drifted from the original in the way a second copy always eventually does.
  *
- * The mark is the ONLY route to LATE here: this list is about the CURRENT
- * week, whose window has not closed, so the calendar cannot produce one.
+ * THE DEFECT, from live use. Week 12's window closed on 7 August. On 13 August
+ * /admin/this-week showed "Marked late 0 — Nobody" and put all seven unpaid
+ * members under "Have not paid" — the label for a week still OPEN. They were
+ * LATE, and `paymentStatus` had been returning LATE for those rows the whole
+ * time; this function was not asking it. The hand-written ladder here had no
+ * date and no clock at all, so the ONLY route to LATE it could see was the
+ * organizer's manual mark.
+ *
+ * The comment that stood here made the assumption explicit and wrong — "this
+ * list is about the CURRENT week, whose window has not closed". It is not:
+ * /admin/this-week has a week SELECTOR offering every week the cycle has, so
+ * this renders past weeks routinely. A screen that groups by status must
+ * therefore be told the week's own DATE and the day it is being read on.
+ *
+ * The mark is ONE ROUTE TO LATE, never a category beside it. It rides along as
+ * `markedLate` so a screen can note how a week became late, and the status
+ * says only that it IS.
  */
 export function weekMemberStatus(input: {
   weekNumber: number;
+  /**
+   * The week's own stored date (rule 7). Without it a closed window is
+   * invisible here, which is precisely how seven late members were filed as
+   * "have not paid".
+   */
+  weekDate: Date;
+  today: Date;
   participations: readonly (DashboardParticipation & { name: string })[];
   payments: readonly DashboardPayment[];
   /** Cycle-wide: this week did not happen, so nobody owes it. */
@@ -332,17 +360,17 @@ export function weekMemberStatus(input: {
       name: participation.name,
       weeklyAmount: participation.weeklyAmount,
       amountPaid,
-      status: input.isSkipped
-        ? "SKIPPED"
-        : amountPaid >= participation.weeklyAmount
-          ? "PAID"
-          : payment?.isDeferred
-            ? "DEFERRED"
-            : payment?.markedLate
-              ? "LATE"
-              : amountPaid > 0
-                ? "PARTIAL"
-                : "UNPAID",
+      // THE ONE ENGINE (2.19). Not a ladder that looks like it.
+      status: paymentStatus({
+        amountPaid,
+        amountDue: participation.weeklyAmount,
+        isDeferred: payment?.isDeferred ?? false,
+        isSkipped: input.isSkipped ?? false,
+        markedLate: payment?.markedLate ?? false,
+        weekDate: input.weekDate,
+        today: input.today,
+      }),
+      markedLate: payment?.markedLate ?? false,
     });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));

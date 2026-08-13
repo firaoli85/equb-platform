@@ -26,8 +26,10 @@ import {
   reshuffle,
   selectWinningSlot,
   undrawnWindowWarnings,
+  winnerPlanArityRefusal,
   type WheelNumber,
   type WheelParticipation,
+  type WinnerPlanMode,
 } from "@/lib/wheel";
 
 const WARNING_WEEKS_AHEAD = 3;
@@ -443,20 +445,22 @@ export async function reshuffleSlots() {
 
 export async function createWinnerPlan(input: {
   luckyNumberIds: string[];
-  mode: "ALONE" | "TOGETHER" | "OPEN_PARTNER";
+  mode: WinnerPlanMode;
   weekId?: string;
 }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
     const ids = [...new Set(input.luckyNumberIds)];
-    if (ids.length === 0) return { ok: false as const, error: "Pick at least one number." };
-    if (input.mode === "TOGETHER" && ids.length < 2) {
-      return { ok: false as const, error: "TOGETHER needs at least two numbers." };
-    }
-    if (input.mode === "OPEN_PARTNER" && ids.length !== 1) {
-      return { ok: false as const, error: "Open-partner takes exactly one number." };
-    }
+    // 2.3 — HOW MANY NUMBERS THE MODE TAKES, ENFORCED HERE BECAUSE THE SETUP
+    // PAGE IS ONE CALLER. "Win alone" had no branch at all: whatever the
+    // mode, every picked id went into ONE slot under ONE plan below, so #3
+    // and #7 declared ALONE were committed as a pair winning the same week.
+    // The rule and its exact wording live in lib/wheel.ts so the page can
+    // state the same sentence at the control before the round trip — a
+    // second copy here would be a second chance to disagree with it.
+    const arity = winnerPlanArityRefusal({ mode: input.mode, count: ids.length });
+    if (arity) return { ok: false as const, error: arity };
 
     // Validation and writes share ONE serializable transaction (same reason
     // as saveSlots): a draw committed between them could otherwise pull a

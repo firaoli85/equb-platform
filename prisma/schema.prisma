@@ -41,6 +41,7 @@ model Person {
   ledgerEntries    LedgerEntry[]
   messageLogs      MessageLog[]
   signInSessions   SignInSession[]
+  agreementSignatures AgreementSignature[]
   @@map("people")
 }
 
@@ -181,6 +182,21 @@ model Participation {
   startWeek      Int      @default(1)
   weeksCommitted Int
   status         ParticipationStatus @default(ACTIVE)
+  // SENDING THE WELCOME IS WHAT REQUIRES A SIGNATURE (organizer ruling).
+  //
+  // Null means this member was never sent one, and is therefore not gated —
+  // which is exactly how the 27 members already mid-cycle stay untouched
+  // without a date comparison or an exemption list. Sending the welcome to
+  // anyone, new or existing, is the deliberate act that brings them into
+  // signing.
+  //
+  // A TIMESTAMP, NOT A FLAG, and that is what removes the whole re-sign
+  // problem. The gate asks "is there a signature NEWER than this?", so
+  // sending again — after changing someone from 10 weeks to 12 — sets a later
+  // moment and gates them once more against the CURRENT terms. There is no
+  // re-sign flow to build because a new send IS the new requirement.
+  agreementRequiredAt DateTime?
+  signatures     AgreementSignature[]
   // WHERE THEY STOPPED (2.18). Inclusive: closing at week 12 keeps weeks 1–12
   // expected and drops 13 onward. Their window ends here, and because every
   // derived figure in the platform already asks "is this week in their
@@ -516,6 +532,78 @@ model Setting {
   value     String
   updatedAt DateTime @updatedAt
   @@map("settings")
+}
+
+// THE AGREEMENT WORDING, VERSIONED BY APPEND (2.6, 2.23).
+//
+// Editable by the organizer like a message template — but an edit MINTS A NEW
+// ROW rather than overwriting one. That is the whole safety property: a
+// signature is bound by hash to the text it was shown, so a row that could be
+// rewritten in place would leave every past signature pointing at wording that
+// no longer exists. Versions accumulate; none is ever edited or deleted.
+//
+// The body holds the CLAUSE TEMPLATE with {placeholders}. It is not the
+// document — the document is what `renderAgreement` produces once a real
+// participation's figures are substituted in, and that rendered text is what
+// gets hashed and stored with the signature.
+model AgreementVersion {
+  id        String   @id @default(cuid())
+  /** 1, 2, 3 … — what the member sees quoted on the document they sign. */
+  version   Int      @unique
+  /** The clause template, {placeholders} unsubstituted. */
+  body      String
+  /** Why this version exists, for the organizer reading the list later. */
+  note      String?
+  createdAt DateTime @default(now())
+  signatures AgreementSignature[]
+  @@map("agreement_versions")
+}
+
+// ONE SIGNATURE, AND THE EVIDENCE AROUND IT.
+//
+// Append-only in spirit and in practice: nothing in the platform updates or
+// deletes one of these. A member who signs again after a second welcome gets a
+// SECOND row, so the whole history of what they agreed to and when is readable
+// years later.
+//
+// WHAT IS HERE IS WHAT A BROWSER CAN HONESTLY GIVE. There is no MAC address
+// column: a web page cannot read one on any browser, and a column that can
+// never be filled is a claim the record cannot support.
+model AgreementSignature {
+  id              String   @id @default(cuid())
+  participationId String
+  /** Denormalised on purpose: the person outlives the participation (2.5). */
+  personId        String
+  agreementVersionId String
+  /**
+   * SHA-256 of the EXACT text rendered for them, hex.
+   *
+   * The load-bearing field. The version says which wording; this proves it
+   * character for character, including the figures that were theirs on the
+   * day — which the version alone cannot, because the figures are derived.
+   */
+  documentHash    String
+  /** The rendered text itself, verbatim. The hash proves it; this IS it. */
+  documentText    String
+  signedAt        DateTime @default(now())
+  /** Corroborating detail, never identity — carriers share addresses. */
+  ip              String
+  userAgent       String
+  browser         String
+  os              String
+  deviceType      String
+  /** "390x844" — from window.screen, sent with the signature. */
+  screen          String?
+  /** IANA zone from Intl.DateTimeFormat, e.g. "America/New_York". */
+  timezone        String?
+  /** City/region/country when the host provides geo headers, else null. */
+  location        String?
+  participation   Participation    @relation(fields: [participationId], references: [id], onDelete: Cascade)
+  person          Person           @relation(fields: [personId], references: [id], onDelete: Cascade)
+  agreementVersion AgreementVersion @relation(fields: [agreementVersionId], references: [id])
+  @@index([participationId, signedAt])
+  @@index([personId])
+  @@map("agreement_signatures")
 }
 
 enum CycleStatus {

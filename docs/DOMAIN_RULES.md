@@ -512,10 +512,41 @@ proposals cross the wire by id only"*.
 Validated on the server as well as the client — the UI merely reflecting a lock is not a
 lock.
 
+### "Win alone" takes exactly one number
+
+The three modes answer §2.3's question — *do these numbers win in the SAME week, or
+different weeks?* — and they answer it about how numbers **relate**, not about how many
+the organizer may commit in one press.
+
+| Mode | Numbers | Means |
+|---|---|---|
+| Win alone | exactly **1** | this number wins its week by itself; nothing joins its slot |
+| Win together | **2 or more** | these numbers share one slot and one week |
+| Open partner | exactly **1** | this number wins its week; the shuffle may attach one other |
+
+**Multiple numbers under "win alone" was never coherent.** A week holds at most one plan —
+`createWinnerPlan` refuses a second on an assigned week, and `selectWinningSlot`,
+`recordDraw` and `restoreFulfilledPlan` all read a week's plan with a single lookup — and
+the commit control offers exactly **one** week. So several numbers each winning *alone*
+would need several *different* weeks, and nothing in one press says which number keeps the
+week that was chosen. The action instead wrote every picked id into ONE slot, which made
+them a pair winning the same week: the exact opposite of what the organizer had just
+declared, with a confirmation that agreed with him on the way past.
+
+**Separate is still fully expressible** — one plan per number, each on its own week,
+committed one at a time. That costs nothing: numbers stay pickable, and the week dropdown
+already hides weeks that hold a plan. `OPEN_PARTNER` has always carried this same
+one-at-a-time rule, for this same reason.
+
+The refusal names both ways out rather than only saying no, and the mode enum never
+reaches a sentence the organizer reads — every screen uses `winnerPlanModeLabel`, so the
+refusal quotes the dropdown option verbatim.
+
 **Pinned by:** `lib/arrangement.test.ts` → *"locked numbers cannot be moved by ANY path
 (2.3)"*, *"validateArrangement — the server backstop (2.3) holds on its own"*;
 `lib/wheel.test.ts` → *"reshuffle — THE pinned defect (2.3): frozen means frozen"*,
-*"selectWinningSlot — plan first, then chance (2.2/2.3)"*.
+*"selectWinningSlot — plan first, then chance (2.2/2.3)"*, and the ALONE arity block —
+*"GUARD — the ALONE rule has an owner, and both callers use it"*.
 
 ---
 

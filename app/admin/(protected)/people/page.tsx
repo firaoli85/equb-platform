@@ -30,6 +30,10 @@ export default async function PeoplePage({
         nameEnglish: `${p.nameEnglishFirst} ${p.nameEnglishLast ?? ""}`.trim(),
         phone: p.phone,
         contributedThisCycle: p.contributedThisCycle,
+        // Signed / waiting / not asked, derived in listPeople from ONE grouped
+        // signature read (never a query per row). "Not asked" is the ordinary
+        // state — a welcome that was never sent is not a gap in the list.
+        signing: p.agreementSigning,
         pinState:
           p.pinHash !== null
             ? ("own" as const)

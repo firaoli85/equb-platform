@@ -10,9 +10,11 @@ import {
 } from "@/lib/messaging-engine";
 import { WHATSAPP_STATEMENTS_BLOCKED_REASON } from "@/lib/setting-defaults";
 import { applicableTypes, isMessageKey, renderMessage, type MessageKey } from "@/lib/messages";
+import { messagingSubject } from "@/lib/messaging-subject";
 import { CAPS } from "@/lib/paging";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
+import { portalUrlValue, welcomeSendCheck } from "@/lib/welcome-send";
 import { winnerExtrasForParticipation } from "@/lib/winner-extras";
 import { getSetting } from "@/lib/settings";
 
@@ -63,6 +65,7 @@ const LABELS: Record<string, string> = {
   LATE_NOTICE: "Late notice",
   WINNER_ANNOUNCEMENT: "Winner announcement",
   CYCLE_CLOSING_STATEMENT: "Closing statement",
+  WHATSAPP_WELCOME: "Welcome message",
 };
 
 export async function getMemberMessaging(input: { personId: string }) {
@@ -75,14 +78,49 @@ export async function getMemberMessaging(input: { personId: string }) {
 
     const person = await prisma.person.findUnique({
       where: { id: input.personId },
-      select: { id: true, nameEnglishFirst: true, phone: true, noMessages: true },
+      select: {
+        id: true,
+        nameEnglishFirst: true,
+        phone: true,
+        noMessages: true,
+        // Their own PIN override — the welcome describes signing in with a
+        // PIN, and this member may be the one person for whom that is false.
+        pinLoginAllowed: true,
+      },
     });
     if (!person) return { ok: false as const, error: "Person not found." };
 
-    const active = await prisma.participation.findFirst({
-      where: { personId: person.id, status: "ACTIVE", cycle: { status: "ACTIVE" } },
-      select: { id: true, cycle: { select: { status: true } } },
-    });
+    // WHAT THIS PERSON'S STATEMENTS ARE ABOUT — one question, one answer.
+    //
+    // THE DEFECT (audit gap 8). This read ONE row — an ACTIVE participation in
+    // an ACTIVE cycle — and spent it on two facts that then contradicted each
+    // other: `cycleClosed: active === null` and `participationId: active?.id`.
+    // Mutually exclusive by construction, so the closing statement 2.18
+    // requires for every member at cycle end could not be sent from a profile
+    // in EITHER state — refused as "the cycle is still running" while it ran,
+    // and left with no participationId and no preview the moment it closed.
+    //
+    // DRAFT cycles are excluded in SQL: nothing has happened in one, so there
+    // is no position to state. Everything else is decided by the pure rule in
+    // lib/messaging-subject.ts, which returns the id, the participation state
+    // and the CYCLE's status TOGETHER — the only way they cannot disagree.
+    //
+    // Unbounded on purpose and bounded by the domain: ONE ROW PER CYCLE THIS
+    // PERSON WAS EVER IN, and cycles are a handful, ever (the same reason
+    // app/actions/member-history.ts is exempt in lib/bounded-queries.test.ts).
+    // Taking the "first few" would be worse than unbounded — it could drop the
+    // running cycle and silently answer about the wrong one.
+    const subject = messagingSubject(
+      await prisma.participation.findMany({
+        where: { personId: person.id, cycle: { status: { in: ["ACTIVE", "CLOSED"] } } },
+        select: {
+          id: true,
+          status: true,
+          cycle: { select: { status: true, closedAt: true } },
+        },
+      }),
+    );
+    const participationId = subject.participationId;
 
     const [history, historyTotal] = await Promise.all([
       prisma.messageLog.findMany({
@@ -93,13 +131,19 @@ export async function getMemberMessaging(input: { personId: string }) {
       prisma.messageLog.count({ where: { personId: person.id } }),
     ]);
 
-    const loaded = active ? await loadStandingFacts(active.id) : null;
+    // STANDING IS LOADED FOR A CLOSED CYCLE TOO, and that is the second half of
+    // the fix. `loaded` was gated on the ACTIVE participation, so once the
+    // cycle closed there was no preview to read either — the organizer would
+    // have been pressing send on text he had never seen (2.20). A closed
+    // cycle's rows survive until the clean delete (2.9), so the same derivation
+    // still produces the same final figures.
+    const loaded = participationId ? await loadStandingFacts(participationId) : null;
 
     // Whether any of their numbers has been drawn — what makes a winner
     // announcement have something to say.
-    const drawn = active
+    const drawn = participationId
       ? await prisma.payout.findFirst({
-          where: { luckyNumber: { participationId: active.id } },
+          where: { luckyNumber: { participationId } },
           select: { draw: { select: { week: { select: { weekNumber: true } } } } },
         })
       : null;
@@ -107,48 +151,87 @@ export async function getMemberMessaging(input: { personId: string }) {
     // THE FACTS THE WINNER ANNOUNCEMENT NEEDS, derived through the SAME
     // helper the batch uses. Both the preview below and the send re-derive
     // from here, so what the organizer reads is what the member receives.
-    const winnerExtras = active ? await winnerExtrasForParticipation(prisma, active.id) : null;
+    const winnerExtras = participationId
+      ? await winnerExtrasForParticipation(prisma, participationId)
+      : null;
 
     const types = applicableTypes({
       name: person.nameEnglishFirst,
       weeksBehind: loaded?.standing.weeksBehind ?? 0,
       amountOutstanding: loaded?.standing.amountOutstanding ?? 0,
       drawnWeek: drawn?.draw?.week.weekNumber ?? null,
-      // The closing statement belongs to a cycle that has ended. A member with
-      // no active participation has no live cycle to close.
-      cycleClosed: active === null,
+      // BOTH READ OFF THE SAME RESOLUTION. `cycleClosed` is the CYCLE's status
+      // and nothing else (2.9); `participation` is whether there is a live
+      // participation behind the id below. Deriving either from the other is
+      // the defect this action shipped.
+      cycleClosed: subject.cycleClosed,
+      participation: subject.participation,
       noMessages: person.noMessages,
       hasPhone: (person.phone?.trim() ?? "") !== "",
     });
+
+    // WHAT THIS MEMBER'S STATE CANNOT ANSWER FOR.
+    //
+    // `applicableTypes` is pure and decides from the member alone, which is
+    // right — but the welcome has two blocks that are about the PLATFORM: no
+    // sign-in address, and the phone-digit PIN switched off. Both would produce
+    // a message that is wrong about how to get in, and a member who follows a
+    // wrong instruction concludes the account does not work.
+    //
+    // Applied here rather than passed into applicableTypes so the pure function
+    // keeps one subject, and read through the same rule the send path uses
+    // (lib/welcome-send.ts) so the greyed button and the refusal say the same
+    // thing.
+    const welcomeCheck = welcomeSendCheck({
+      portalUrl: portalUrlValue(await getSetting("portalUrl")),
+      defaultPinFromPhone: await getSetting("defaultPinFromPhone"),
+      pinLoginEnabled: await getSetting("pinLoginEnabled"),
+      memberPinLoginAllowed: person.pinLoginAllowed,
+      memberName: person.nameEnglishFirst,
+    });
+    const welcomeBlocked = welcomeCheck.ok ? null : welcomeCheck.reason;
 
     // The preview is rendered from the SAME facts the send will use (2.21).
     // It is built for every applicable type up front rather than on demand,
     // because the organizer's question is "which of these should I send", and
     // that is answered by reading them, not by clicking through them.
     const templates = loaded ? await loadTemplates() : null;
-    const withPreviews = types.map((t) => ({
-      key: t.key,
-      label: LABELS[t.key] ?? t.key,
-      applicable: t.applicable,
-      reason: t.reason,
-      chasing: t.chasing,
-      preview:
-        t.applicable && loaded && templates
-          ? renderMessage(
-              t.key,
-              loaded.facts,
-              t.key === "WINNER_ANNOUNCEMENT" ? (winnerExtras ?? {}) : {},
-              // The organizer's OWN wording, not the default — a preview of
-              // text he did not write is a preview of the wrong message.
-              templates.get(t.key)?.body,
-            )
-          : null,
-    }));
+    const withPreviews = types.map((t) => {
+      // The platform-level block, applied only where it applies. It replaces
+      // the reason rather than sitting beside it, because a member reading two
+      // reasons has to work out which one is stopping the send.
+      const blocked = t.applicable && t.key === "WHATSAPP_WELCOME" ? welcomeBlocked : null;
+      return {
+        key: t.key,
+        label: LABELS[t.key] ?? t.key,
+        applicable: t.applicable && blocked === null,
+        reason: blocked ?? t.reason,
+        chasing: t.chasing,
+        // RENDERED EVEN WHEN BLOCKED, on purpose: the organizer's next question
+        // after "why not" is "what would it have said", and the preview is
+        // where the empty address shows itself as a hole in the sentence.
+        preview:
+          t.applicable && loaded && templates
+            ? renderMessage(
+                t.key,
+                loaded.facts,
+                t.key === "WINNER_ANNOUNCEMENT" ? (winnerExtras ?? {}) : {},
+                // The organizer's OWN wording, not the default — a preview of
+                // text he did not write is a preview of the wrong message.
+                templates.get(t.key)?.body,
+              )
+            : null,
+      };
+    });
 
     return {
       ok: true as const,
       data: {
-        participationId: active?.id ?? null,
+        // The id and the applicability came out of ONE resolution, so an
+        // applicable type without an id to send it with is no longer
+        // constructible — the property lib/member-messaging-wiring.test.ts
+        // pins, and the one nothing was checking.
+        participationId,
         types: withPreviews,
         // Stated once, at the top, rather than repeated on every button.
         blockedReason: STATEMENTS_DELIVERABLE ? null : WHATSAPP_STATEMENTS_BLOCKED_REASON,

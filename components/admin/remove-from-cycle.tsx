@@ -8,6 +8,7 @@ import {
 } from "@/app/actions/participation-removal";
 import type { RemovalChoice, RemovalConsequences } from "@/lib/participation-removal";
 import { Alert, buttonCls, inputCls } from "@/components/ui/primitives";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatMoney } from "@/lib/format";
 
 // REMOVING SOMEONE FROM A CYCLE (2.23).
@@ -122,40 +123,128 @@ export function RemoveFromCycle({
   const [preview, setPreview] = useState<Preview | null>(null);
   const [choice, setChoice] = useState<RemovalChoice | null>(null);
   const [typed, setTyped] = useState("");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [pending, start] = useTransition();
+  /**
+   * ONE STATE FOR THE REMOVAL (UI_STANDARDS rule 6).
+   *
+   * It was a `msg` banner at the TOP of this panel, a second copy of the
+   * refusal down by the button, and a `pending` boolean saying the same thing
+   * as "saving". The panel is tall — the attachment summary, two choice
+   * panels each listing their consequences, and the typed-name box sit
+   * between the banner and the button — so a refusal shown up there is the
+   * off-screen message rule 6b exists for, and the duplicate could disagree
+   * with it. `busy` is DERIVED from this state; there is no second copy to
+   * fall out of step.
+   */
+  const [save, setSave] = useState<SaveState>({ kind: "idle" });
+  /**
+   * Working out what is attached is not a save, so it does not belong in the
+   * save state: its failure belongs where the ATTACHMENTS would have been,
+   * never beside a button nobody has pressed yet.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /**
+   * The removal still runs inside a transition, so the `router.refresh()`
+   * that follows stays non-urgent. Its pending flag is deliberately not
+   * taken — `busy` below is the ONE name for "a write is in flight".
+   */
+  const [, startWrite] = useTransition();
   const [loading, startLoad] = useTransition();
+  const busy = save.kind === "saving";
 
   useEffect(() => {
     if (!open || preview) return;
     startLoad(async () => {
       const result = await participationRemovalPreview({ participationId });
       if (!result.ok) {
-        setMsg({ kind: "err", text: result.error });
+        setLoadError(result.error);
         return;
       }
+      setLoadError(null);
       setPreview(result.data as Preview);
     });
   }, [open, preview, participationId]);
 
   const nameOk = typed.trim().toLowerCase() === personName.trim().toLowerCase();
+  // A dead button with no explanation reads as a broken app. This names the
+  // one thing still missing, in the order it is asked for.
+  const notReadyHint = !preview
+    ? "Still working out what is attached to them."
+    : !choice
+      ? "Choose what happens to their money records first."
+      : `Type ${personName} to confirm.`;
+
+  function handleRemove() {
+    if (!choice) return;
+    startWrite(async () => {
+      setSave({ kind: "saving" });
+      try {
+        const result = await removeFromCycle({ participationId, choice, typedName: typed });
+        if (!result.ok) {
+          // THE PANEL STAYS OPEN holding the reason, with the choice and the
+          // typed name still in place to retry. A refusal thrown away with
+          // the panel is UI_STANDARDS 6b's exact failure.
+          setSave({ kind: "err", message: `Not removed: ${result.error}` });
+          return;
+        }
+        // WHICH OF THE TWO OUTCOMES HAPPENED, AND WHAT IT DID TO THE MONEY.
+        // The two choices do very different things to real figures, and the
+        // cash position moves in the direction nobody expects when the member
+        // had already collected — so the confirmation says which one ran and
+        // which way the money went, not "Removed."
+        const d = result.data;
+        setSave({
+          kind: "ok",
+          message:
+            `${d.name} removed from ${d.cycle}` +
+            (d.choice === "keep-money-records"
+              ? " — their money records kept."
+              : " completely, as if they had never been in it.") +
+            (d.cashPositionDelta === 0
+              ? " The cash position is unchanged."
+              : ` The cash position ${d.cashPositionDelta > 0 ? "rises" : "falls"} by ` +
+                `${formatMoney(Math.abs(d.cashPositionDelta))}.`) +
+            (d.numbersReturning.length > 0
+              ? ` ${d.numbersReturning.map((n) => `#${n}`).join(", ")} back on the wheel.`
+              : ""),
+        });
+        // CLOSE ONLY ON SUCCESS.
+        setOpen(false);
+        router.refresh();
+      } catch {
+        // A thrown call used to leave the button un-busy with nothing said —
+        // the organizer's "it did nothing" with no reason to quote (6b).
+        setSave({
+          kind: "err",
+          message: "Could not reach the server — nothing was removed.",
+        });
+      }
+    });
+  }
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={buttonCls.dangerQuiet + " !text-xs"}
-      >
-        Remove from this cycle
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            // A freshly opened panel carries no refusal from a previous
+            // attempt — it would sit beside a button nobody has pressed yet.
+            setSave({ kind: "idle" });
+            setOpen(true);
+          }}
+          className={buttonCls.dangerQuiet + " !text-xs"}
+        >
+          Remove from this cycle
+        </button>
+        {/* A successful removal COLLAPSES the panel, so a confirmation living
+            inside it would go with it. This is where it is read. */}
+        <SaveFeedback state={save} />
+      </div>
     );
   }
 
   return (
     <div className="space-y-3 rounded-2xl border-2 border-gray-300 dark:border-gray-700 p-4">
-      {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
-
       <div>
         <h3 className="text-sm font-black text-gray-900 dark:text-white">
           Remove {personName} from {preview?.attachments.cycleName ?? "this cycle"}?
@@ -166,11 +255,16 @@ export function RemoveFromCycle({
         </p>
       </div>
 
-      {loading && !preview && (
+      {/* A preview that FAILED is not "still loading", and it is not a refusal
+          from the button either — the reason goes where the attachments would
+          have been. */}
+      {loadError !== null ? (
+        <Alert kind="err">Could not work out what is attached to them: {loadError}</Alert>
+      ) : loading && !preview ? (
         <p className="text-xs text-gray-600 dark:text-gray-400">
           Working out what is attached to them…
         </p>
-      )}
+      ) : null}
 
       {preview && (
         <>
@@ -245,65 +339,44 @@ export function RemoveFromCycle({
         </>
       )}
 
-      {/* THE REASON, AT THE BUTTON. The attachment summary, two tall choice
-          panels and the typed-name box sit between this and the `msg` at the
-          top of the panel (UI_STANDARDS 6b). */}
-      {msg?.kind === "err" && (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
-        >
-          {msg.text}
-        </p>
-      )}
-
+      {/* THE FEEDBACK IS PART OF THE BUTTON. It used to be a banner at the top
+          of this panel with a second copy down here — and the attachment
+          summary, two tall choice panels and the typed-name box sit between
+          them. `SaveButton` renders both the refusal and the confirmation
+          beside the control that was pressed, so there is nowhere else for
+          them to land (UI_STANDARDS 6, 6b). */}
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
+          disabled={busy}
           onClick={() => {
             setOpen(false);
             setChoice(null);
             setTyped("");
-            setMsg(null);
+            setSave({ kind: "idle" });
           }}
           className={buttonCls.secondary + " !text-xs"}
         >
           Cancel
         </button>
-        <button
-          type="button"
-          disabled={pending || !choice || !nameOk}
-          onClick={() =>
-            start(async () => {
-              if (!choice) return;
-              setMsg(null);
-              const result = await removeFromCycle({ participationId, choice, typedName: typed });
-              if (!result.ok) {
-                setMsg({ kind: "err", text: result.error });
-                return;
-              }
-              setMsg({
-                kind: "ok",
-                text:
-                  `✓ ${result.data.name} removed from ${result.data.cycle}` +
-                  (result.data.numbersReturning.length > 0
-                    ? ` — ${result.data.numbersReturning.map((n) => `#${n}`).join(", ")} back on the wheel.`
-                    : "."),
-              });
-              setOpen(false);
-              router.refresh();
-            })
-          }
-          className={choice === "keep-money-records" ? buttonCls.primary : buttonCls.danger}
-        >
-          {pending
-            ? "Removing…"
-            : choice === "keep-money-records"
+        {/* The label and the colour still follow the CHOICE — the two outcomes
+            are not the same act, and the button must not read as one. */}
+        <SaveButton
+          state={save}
+          onSave={handleRemove}
+          onStateSettled={() => setSave({ kind: "idle" })}
+          label={
+            choice === "keep-money-records"
               ? "Remove, keep the records"
               : choice === "remove-completely"
                 ? "Remove completely"
-                : "Choose an option above"}
-        </button>
+                : "Choose an option above"
+          }
+          savingLabel="Removing…"
+          tone={choice === "keep-money-records" ? "primary" : "danger"}
+          dirty={Boolean(choice) && nameOk}
+          notDirtyHint={notReadyHint}
+        />
       </div>
     </div>
   );

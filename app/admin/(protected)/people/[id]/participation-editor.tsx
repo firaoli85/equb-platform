@@ -17,7 +17,7 @@ import { FeeCalculator } from "@/components/admin/fee-calculator";
 import { CloseParticipation } from "@/components/admin/close-participation";
 import { RemoveFromCycle } from "@/components/admin/remove-from-cycle";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
-import { SaveButton, type SaveState } from "@/components/ui/save-button";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { AmountInput, Checkbox, NumberInput, Radio, Select } from "@/components/ui/controls";
 import { DatePicker } from "@/components/ui/date-picker";
 import { moneyReceivedBounds } from "@/lib/date-bounds";
@@ -141,42 +141,98 @@ export function ParticipationEditor(props: {
     weeks: props.show?.weeks ?? true,
   };
   const router = useRouter();
-  const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+
+  // THE REPORTED DEFECT, ONE CONTROL DOWN.
+  //
+  // Rule 6 was written because the organizer changed 10 weeks to 12, pressed
+  // Save, and saw nothing — the confirmation rendered above the fold. The
+  // participation Save was fixed and moved to `SaveButton`. EVERY OTHER
+  // ACTION IN THIS FILE KEPT THE ORIGINAL BUG: one `banner` at line ~550 fed
+  // by `run()`, with the controls that produce it at 465, 1054, 1168, 1213,
+  // 1297 and 1302 — up to SEVEN HUNDRED AND FIFTY LINES below the message.
+  // Deleting a lucky number, a receipt, or the whole participation reported
+  // its success and its refusal somewhere the organizer was not looking.
+  //
+  // ONE state, keyed by WHICH control produced it. A row renders its own
+  // message and nothing else does; because it is one state, two controls can
+  // never disagree, and a new message replaces the last rather than stacking.
+  const [action, setAction] = useState<{ slot: string; state: SaveState }>({
+    slot: "",
+    state: { kind: "idle" },
+  });
+  /** Derived: any action in flight locks every control, as `busy` always did. */
+  const busy = action.state.kind === "saving";
+  /** This slot's message, or nothing — so a row renders only its own. */
+  const feedbackFor = (slot: string): SaveState =>
+    action.slot === slot ? action.state : { kind: "idle" };
+
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
    * A refusal from the action the dialog just ran — shown INSIDE the dialog,
    * beside the button that caused it (UI_STANDARDS 6b).
+   *
+   * IT HAD NO WRITER. The slot was wired to `<ConfirmDialog error={...}>` and
+   * `setDialogError` was only ever called with `null`, from `onCancel` — so
+   * `lib/refusal-placement.test.ts` passed on "the slot exists" while nothing
+   * could ever fill it, and `ask` below closed the dialog in a promise
+   * `.finally()` regardless of the outcome. Six destructive confirmations
+   * therefore threw their refusal away with the dialog that could have shown
+   * it. Both halves are fixed here.
    */
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
-  async function run(label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
-    setBanner(null);
-    setBusy(true);
+  /** Returns the refusal, or null on success — so `ask` can decide to close. */
+  async function runIn(
+    slot: string,
+    label: string,
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+  ): Promise<string | null> {
+    setAction({ slot, state: { kind: "saving" } });
     try {
       const result = await fn();
-      if (!result.ok) setBanner({ kind: "err", text: `Not saved: ${result.error}` });
-      else {
-        setBanner({ kind: "ok", text: `✓ ${label}` });
-        router.refresh();
+      if (!result.ok) {
+        const refused = `Not saved: ${result.error}`;
+        setAction({ slot, state: { kind: "err", message: refused } });
+        return refused;
       }
+      setAction({ slot, state: { kind: "ok", message: label } });
+      router.refresh();
+      return null;
     } catch {
-      setBanner({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
-    } finally {
-      setBusy(false);
+      const refused = "Could not reach the server — nothing was confirmed.";
+      setAction({ slot, state: { kind: "err", message: refused } });
+      return refused;
     }
   }
 
-  function ask(spec: ConfirmSpec, label: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
-    setConfirm(spec);
-    setOnConfirm(() => () => {
-      void run(label, fn).finally(() => {
-        setConfirm(null);
-        setOnConfirm(null);
+  /**
+   * The `run`/`ask` a ROW receives, already knowing which slot it writes to.
+   *
+   * Curried rather than adding a slot argument to `Ask`/`Run`, so the three
+   * row components keep the exact signatures they declare and none of their
+   * call sites change — the slot is the parent's business, not theirs.
+   */
+  const runVia = (slot: string): Run => (label, fn) => runIn(slot, label, fn).then(() => {});
+  const askVia =
+    (slot: string): Ask =>
+    (spec, label, fn) => {
+      setDialogError(null);
+      setConfirm(spec);
+      setOnConfirm(() => () => {
+        void (async () => {
+          const refused = await runIn(slot, label, fn);
+          // CLOSE ONLY ON SUCCESS. The `.finally()` this replaces ran on both
+          // paths, so a refusal was discarded with the dialog (6b).
+          if (refused === null) {
+            setConfirm(null);
+            setOnConfirm(null);
+          } else {
+            setDialogError(refused);
+          }
+        })();
       });
-    });
-  }
+    };
 
   // ————— Participation fields —————
   const [weeklyDollars, setWeeklyDollars] = useState(String(participation.weeklyAmount / 100));
@@ -279,7 +335,7 @@ export function ParticipationEditor(props: {
   function baseInput() {
     const cents = parseDollarsToCents(weeklyDollars);
     if (cents === null || cents < 1) {
-      setBanner({ kind: "err", text: "Weekly amount is invalid." });
+      setSaveState({ kind: "err", message: "Weekly amount is invalid." });
       return null;
     }
     return {
@@ -295,11 +351,10 @@ export function ParticipationEditor(props: {
     choice: "returned" | "ledger" | "credit" | "decline-credit";
     returnedAmount?: number;
     typedName: string;
-  }) {
+    /** Returns the refusal, or null — the dialog closes only on null. */
+  }): Promise<string | null> {
     const input = baseInput();
-    if (!input) return;
-    setBanner(null);
-    setBusy(true);
+    if (!input) return null;
     setSaveState({ kind: "saving" });
     try {
       const result = await updateParticipation(
@@ -325,20 +380,24 @@ export function ParticipationEditor(props: {
           weeksCommitted: input.weeksCommitted,
         });
         router.refresh();
-      } else if ("needsSettlement" in result && result.needsSettlement) {
+        return null;
+      }
+      if ("needsSettlement" in result && result.needsSettlement) {
         setSaveState({ kind: "idle" });
         setSettlement(result.needsSettlement);
         setChoice(result.needsSettlement.gap > 0 ? "returned" : "credit");
-      } else {
-        setSaveState({ kind: "err", message: `Not saved: ${result.error}` });
+        // NOT A REFUSAL. The settlement panel IS the next step and it opens
+        // below, so the dialog should close — there is nothing to show inside
+        // it and leaving it open would cover the panel it just produced.
+        return null;
       }
+      const refused = `Not saved: ${result.error}`;
+      setSaveState({ kind: "err", message: refused });
+      return refused;
     } catch {
-      setSaveState({
-        kind: "err",
-        message: "Could not reach the server — nothing was confirmed.",
-      });
-    } finally {
-      setBusy(false);
+      const refused = "Could not reach the server — nothing was confirmed.";
+      setSaveState({ kind: "err", message: refused });
+      return refused;
     }
   }
 
@@ -355,9 +414,9 @@ export function ParticipationEditor(props: {
     // refusal read as a silent no-op, which is how "it did not save" gets
     // reported with no error to quote.
     if (cap?.exceedsCap) {
-      setBanner({
+      setSaveState({
         kind: "err",
-        text:
+        message:
           `Not saved. Week ${input.startWeek + input.weeksCommitted - 1} is past the cycle's ` +
           `planned ${participation.plannedWeeks}, so this needs the override — tick “Allow ` +
           `${participation.personName} to keep paying past week ${participation.plannedWeeks}” ` +
@@ -454,15 +513,24 @@ export function ParticipationEditor(props: {
       confirmLabel: "Save participation",
     });
     setOnConfirm(() => () => {
-      void submitParticipation().finally(() => {
-        setConfirm(null);
-        setOnConfirm(null);
-      });
+      void (async () => {
+        const refused = await submitParticipation();
+        // CLOSE ONLY ON SUCCESS, like every other confirmation here. The
+        // `.finally()` this replaces closed on both paths; the refusal did
+        // reach the SaveButton below, but the dialog vanished as it arrived,
+        // which reads as the press having worked.
+        if (refused === null) {
+          setConfirm(null);
+          setOnConfirm(null);
+        } else {
+          setDialogError(refused);
+        }
+      })();
     });
   }
 
   function doRemove() {
-    ask(
+    askVia("remove")(
       {
         title: `Remove ${participation.personName} from ${participation.cycleName}?`,
         body: (
@@ -515,24 +583,33 @@ export function ParticipationEditor(props: {
     save: (onConflict?: "replace") => Promise<{ ok: boolean; error?: string; conflict?: NumberConflict }>;
     keep: (suggested: number) => void;
   }) {
-    setBanner(null);
+    // Every lucky-number write — adding one, editing one, replacing a
+    // conflicting one — reports at the numbers block, which is where all of
+    // them are pressed.
+    const slot = "number:new";
     setConflict(null);
-    setBusy(true);
+    setAction({ slot, state: { kind: "saving" } });
     try {
       const result = await args.save();
       if (result.ok) {
-        setBanner({ kind: "ok", text: `✓ ${args.label}` });
+        setAction({ slot, state: { kind: "ok", message: args.label } });
         router.refresh();
       } else if (result.conflict) {
+        // NOT A REFUSAL, a QUESTION. `NumberConflictPanel` opens naming the
+        // holder and offering Replace or Keep, and it IS this outcome's
+        // feedback — printing a refusal beside it would say the save had
+        // failed when it is still waiting on him.
+        setAction({ slot, state: { kind: "idle" } });
         // `args` already carries the label, the retry and the keep-handler.
         setConflict({ ...args, conflict: result.conflict });
       } else {
-        setBanner({ kind: "err", text: `Not saved: ${result.error}` });
+        setAction({ slot, state: { kind: "err", message: `Not saved: ${result.error}` } });
       }
     } catch {
-      setBanner({ kind: "err", text: "Could not reach the server — nothing was confirmed." });
-    } finally {
-      setBusy(false);
+      setAction({
+        slot,
+        state: { kind: "err", message: "Could not reach the server — nothing was confirmed." },
+      });
     }
   }
 
@@ -547,7 +624,10 @@ export function ParticipationEditor(props: {
   // ————— Render —————
   return (
     <div className="max-w-2xl space-y-8">
-      {banner && <Alert kind={banner.kind}>{banner.text}</Alert>}
+      {/* THE PAGE BANNER IS GONE. It carried the confirmation for nine
+          different controls, up to 750 lines above whichever one was pressed —
+          the reported defect, unchanged, in the very file it was reported
+          against. Every action now renders its own message at itself. */}
 
       <section className={`space-y-3 ${show.participation ? "" : "hidden"}`}>
         <h2 className="text-base font-bold text-gray-900 dark:text-white">Participation</h2>
@@ -686,6 +766,8 @@ export function ParticipationEditor(props: {
             participationId={participation.id}
             personName={participation.personName}
           />
+          {/* `doRemove`'s own outcome, beside the controls that trigger it. */}
+          <SaveFeedback state={feedbackFor("remove")} />
         </div>
 
         {settlement && (
@@ -770,9 +852,9 @@ export function ParticipationEditor(props: {
                       setFinishWithGroup(false);
                       setWeeks(String(settlement.balancingWeeksWhole));
                       setSettlement(null);
-                      setBanner({
+                      setSaveState({
                         kind: "ok",
-                        text: `Weeks set to ${settlement.balancingWeeksWhole} — at ${weeklyDollars ? `$${weeklyDollars}` : "the new weekly"} that entitles them to ${
+                        message: `Weeks set to ${settlement.balancingWeeksWhole} — at ${weeklyDollars ? `$${weeklyDollars}` : "the new weekly"} that entitles them to ${
                           Number.isInteger(settlement.balancingWeeksExact)
                             ? "exactly what they took"
                             : "the closest match to what they took"
@@ -857,7 +939,14 @@ export function ParticipationEditor(props: {
         <table className="w-full border-collapse text-sm">
           <tbody>
             {props.luckyNumbers.map((n) => (
-              <LuckyRow key={n.id} n={n} busy={busy} saveNumber={saveNumber} ask={ask} />
+              <LuckyRow
+                  key={n.id}
+                  n={n}
+                  busy={busy}
+                  saveNumber={saveNumber}
+                  ask={askVia(`number:${n.id}`)}
+                  feedback={feedbackFor(`number:${n.id}`)}
+                />
             ))}
           </tbody>
         </table>
@@ -873,7 +962,11 @@ export function ParticipationEditor(props: {
             disabled={busy}
             onClick={() => {
               const cents = parseDollarsToCents(newAmountDollars);
-              if (cents === null || cents < 1) return setBanner({ kind: "err", text: "New number amount is invalid." });
+              if (cents === null || cents < 1)
+                return setAction({
+                  slot: "number:new",
+                  state: { kind: "err", message: "New number amount is invalid." },
+                });
               const wanted = Number.parseInt(newNumber, 10);
               void saveNumber({
                 label: `Added #${wanted}.`,
@@ -893,6 +986,10 @@ export function ParticipationEditor(props: {
           </button>
         </div>
 
+        {/* Adding a number, and the conflict resolution that can follow it,
+            report here — under the control that started it. */}
+        <SaveFeedback state={feedbackFor("number:new")} />
+
         {conflict && (
           <NumberConflictPanel
             conflict={conflict.conflict}
@@ -910,11 +1007,14 @@ export function ParticipationEditor(props: {
             onKeep={(suggested) => {
               conflict.keep(suggested);
               setConflict(null);
-              setBanner({
-                kind: "ok",
-                text:
-                  `#${conflict.conflict.number} stays with ${conflict.conflict.holder.memberName}. ` +
-                  `The field now reads #${suggested} — press save to use it.`,
+              setAction({
+                slot: "number:new",
+                state: {
+                  kind: "ok",
+                  message:
+                    `#${conflict.conflict.number} stays with ${conflict.conflict.holder.memberName}. ` +
+                    `The field now reads #${suggested} — press save to use it.`,
+                },
               });
             }}
           />
@@ -933,7 +1033,14 @@ export function ParticipationEditor(props: {
           <table className="w-full border-collapse text-sm">
             <tbody>
               {props.events.map((event) => (
-                <EventRow key={event.id} event={event} busy={busy} run={run} ask={ask} />
+                <EventRow
+                    key={event.id}
+                    event={event}
+                    busy={busy}
+                    run={runVia(`receipt:${event.id}`)}
+                    ask={askVia(`receipt:${event.id}`)}
+                    feedback={feedbackFor(`receipt:${event.id}`)}
+                  />
               ))}
             </tbody>
           </table>
@@ -953,7 +1060,14 @@ export function ParticipationEditor(props: {
           </thead>
           <tbody>
             {props.weeks.map((w) => (
-              <WeekRow key={w.paymentId} w={w} busy={busy} run={run} ask={ask} />
+              <WeekRow
+                  key={w.paymentId}
+                  w={w}
+                  busy={busy}
+                  run={runVia(`week:${w.paymentId}`)}
+                  ask={askVia(`week:${w.paymentId}`)}
+                  feedback={feedbackFor(`week:${w.paymentId}`)}
+                />
             ))}
           </tbody>
         </table>
@@ -1006,11 +1120,14 @@ function LuckyRow({
   busy,
   saveNumber,
   ask,
+  feedback,
 }: {
   n: { id: string; number: number; amount: number };
   busy: boolean;
   saveNumber: SaveNumber;
   ask: Ask;
+  /** THIS number's message, rendered in THIS row (rule 6 beats 3 and 4). */
+  feedback: SaveState;
 }) {
   const [number, setNumber] = useState(String(n.number));
   const [dollars, setDollars] = useState(String(n.amount / 100));
@@ -1071,6 +1188,10 @@ function LuckyRow({
         >
           Delete
         </button>
+        {/* THIS row's message, in THIS row. Save and Delete for #7 both report
+            here — beside the buttons that were pressed, not at the top of a
+            page that may be a screen and a half away (rule 6, 6b). */}
+        <SaveFeedback state={feedback} className="mt-1 block" />
       </td>
     </tr>
   );
@@ -1081,11 +1202,14 @@ function EventRow({
   busy,
   run,
   ask,
+  feedback,
 }: {
   event: EventRowData;
   busy: boolean;
   run: Run;
   ask: Ask;
+  /** THIS receipt's message, rendered in THIS row (rule 6 beats 3 and 4). */
+  feedback: SaveState;
 }) {
   const [dollars, setDollars] = useState(String(event.amount / 100));
   const [method, setMethod] = useState<"" | "ZELLE" | "CASH" | "OTHER">(event.method ?? "");
@@ -1243,6 +1367,10 @@ function EventRow({
         >
           Delete
         </button>
+        {/* Deleting a receipt re-allocates every week this member has. The
+            confirmation says so, HERE — the receipts table can run to
+            hundreds of rows. */}
+        <SaveFeedback state={feedback} className="mt-1 block" />
       </td>
     </tr>
   );
@@ -1253,6 +1381,7 @@ function WeekRow({
   busy,
   run,
   ask,
+  feedback,
 }: {
   w: {
     paymentId: string;
@@ -1267,6 +1396,8 @@ function WeekRow({
   busy: boolean;
   run: Run;
   ask: Ask;
+  /** THIS week row's message, rendered in THIS row (rule 6 beats 3 and 4). */
+  feedback: SaveState;
 }) {
   const [isDeferred, setIsDeferred] = useState(w.isDeferred);
   const [notes, setNotes] = useState(w.notes ?? "");
@@ -1323,6 +1454,9 @@ function WeekRow({
         >
           Save
         </button>
+        {/* One week row of twenty. The confirmation belongs to the row that
+            was saved, not to the top of the table. */}
+        <SaveFeedback state={feedback} className="mt-1 block" />
       </td>
     </tr>
   );

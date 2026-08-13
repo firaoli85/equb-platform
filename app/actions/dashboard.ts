@@ -289,6 +289,10 @@ export async function getDashboard(input?: { weekNumber?: number }) {
           })),
         thisWeekMembers: weekMemberStatus({
           weekNumber: currentWeek,
+          // The week's own stored date decides whether its window has shut
+          // (rule 7). Without it the status ladder cannot see a closed week.
+          weekDate: cycle.weeks.find((w) => w.weekNumber === currentWeek)?.date ?? today,
+          today,
           participations: activeNamed,
           payments: flatPayments,
           isSkipped: cycle.weeks.find((w) => w.weekNumber === currentWeek)?.isSkipped ?? false,
@@ -305,6 +309,12 @@ export async function getDashboard(input?: { weekNumber?: number }) {
         selectedWeekTotals: series.find((w) => w.weekNumber === selectedWeek) ?? null,
         selectedWeekMembers: weekMemberStatus({
           weekNumber: selectedWeek,
+          // THE ONE THE DEFECT WAS ABOUT. The selector offers every week the
+          // cycle has, so this routinely renders a week whose window closed
+          // days ago — and with no date it reported all seven late members as
+          // "have not paid".
+          weekDate: cycle.weeks.find((w) => w.weekNumber === selectedWeek)?.date ?? today,
+          today,
           participations: activeNamed,
           payments: flatPayments,
           isSkipped: cycle.weeks.find((w) => w.weekNumber === selectedWeek)?.isSkipped ?? false,

@@ -5,7 +5,8 @@ import { prepareBatch, sendBatch } from "@/app/actions/messages";
 import { DEFAULT_TEMPLATES, MANUAL_MESSAGE_KEYS, type MessageKey } from "@/lib/messages";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/controls";
-import { Alert, buttonCls, Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { buttonCls, Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 
 // The manual send flow (2.20): pick a type → the system PREPARES (who is
 // suggested, the real rendered text each would get, who is excluded and
@@ -34,27 +35,42 @@ export function ComposeSend() {
   const [key, setKey] = useState<MessageKey>(MANUAL_MESSAGE_KEYS[0]);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState<"prepare" | "send" | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Map<string, Outcome> | null>(null);
 
+  // TWO CONTROLS, TWO FEEDBACK SLOTS — each message renders at the button that
+  // produced it (rule 6). One shared `error` string used to serve both, in a
+  // banner ABOVE the recipient list: a send refusal therefore appeared far
+  // above the send button, and the press read as having silently done nothing
+  // — the "Send N messages on WhatsApp" row of the UI_STANDARDS 6b audit.
+  const [prepare, setPrepare] = useState<SaveState>({ kind: "idle" });
+  const [send, setSend] = useState<SaveState>({ kind: "idle" });
+  const preparing = prepare.kind === "saving";
+  const sending = send.kind === "saving";
+  /** Either control working locks both. DERIVED — never a second flag. */
+  const busy = preparing || sending;
+
+  // PREPARE IS EXEMPT FROM THE SAVE SHAPE: it writes nothing, and its success
+  // is the recipient list appearing directly below the button — a "✓ prepared"
+  // beside it would be a second claim about the same thing. What it does owe
+  // rule 6b is its REFUSAL, at the control: that is the `SaveFeedback` in the
+  // button's own row, and the reason a `SaveState` is used here at all.
   async function handlePrepare() {
-    setBusy("prepare");
-    setError(null);
+    setPrepare({ kind: "saving" });
+    // A send summary belongs to the batch that produced it, not to a fresh one.
+    setSend({ kind: "idle" });
     setOutcomes(null);
     setRows(null);
     try {
       const result = await prepareBatch({ key });
       if (!result.ok) {
-        setError(result.error);
+        setPrepare({ kind: "err", message: `Not prepared: ${result.error}` });
         return;
       }
       setRows(result.data.rows);
       setNote(result.data.note);
+      setPrepare({ kind: "idle" });
     } catch {
-      setError("Could not reach the server. Try again.");
-    } finally {
-      setBusy(null);
+      setPrepare({ kind: "err", message: "Could not reach the server. Try again." });
     }
   }
 
@@ -81,6 +97,9 @@ export function ComposeSend() {
 
   function handleSend() {
     if (checkedRows.length === 0 || busy) return;
+    // A refusal belongs to the press that produced it. Reopening the dialog is
+    // a new press, so the old reason is withdrawn as it opens.
+    setSend({ kind: "idle" });
     setConfirm({
       title: `Send ${checkedRows.length} WhatsApp message${checkedRows.length === 1 ? "" : "s"} now?`,
       destructive: false,
@@ -101,37 +120,56 @@ export function ComposeSend() {
   }
 
   async function doSend() {
-    setBusy("send");
-    setError(null);
+    setSend({ kind: "saving" });
+    setDialogError(null);
     try {
       const result = await sendBatch({
         key,
         participationIds: checkedRows.map((r) => r.participationId),
       });
       if (!result.ok) {
-        // The send button is rendered BELOW the whole recipient list and
-        // `error` renders above it, so a whole-batch refusal ("Nobody is
-        // selected", a stale winner, presentation mode) appeared off-screen
-        // and the send read as having silently done nothing
-        // (UI_STANDARDS 6b). The dialog is still open — put it there.
-        setError(result.error);
-        setDialogError(result.error);
-        setBusy(null);
+        // The send button is rendered BELOW the whole recipient list, so a
+        // whole-batch refusal ("Nobody is selected", a stale winner,
+        // presentation mode) in a banner above it appeared off-screen and the
+        // send read as having silently done nothing (UI_STANDARDS 6b). It goes
+        // in the dialog — which STAYS OPEN, never closed in a `finally` — and
+        // beside the button it came back to.
+        const refused = `Not sent: ${result.error}`;
+        setSend({ kind: "err", message: refused });
+        setDialogError(refused);
         return;
       }
-      setOutcomes(new Map(result.data.results.map((r) => [r.participationId, r.outcome])));
+      const results = result.data.results;
+      const counts = { SENT: 0, ACCEPTED: 0, FAILED: 0, SKIPPED: 0 };
+      for (const r of results) counts[r.outcome.status] += 1;
+      setOutcomes(new Map(results.map((r) => [r.participationId, r.outcome])));
       setConfirm(null);
+
+      // WHAT ACTUALLY HAPPENED, WITH THE FIGURES. "Handed to WhatsApp" counts
+      // ACCEPTED as well as SENT because ACCEPTED is the ordinary outcome —
+      // Twilio has it and has confirmed nothing — and it is never called
+      // delivered here. A batch with a failure or a skip is RED and never
+      // clears: a partly-sent batch is the thing he has to act on.
+      const handed = counts.SENT + counts.ACCEPTED;
+      const trouble = [
+        counts.FAILED > 0 ? `${counts.FAILED} failed` : null,
+        counts.SKIPPED > 0 ? `${counts.SKIPPED} skipped` : null,
+      ].filter((s): s is string => s !== null);
+      const awaiting =
+        counts.ACCEPTED > 0
+          ? ` ${counts.ACCEPTED} still awaiting WhatsApp's delivery confirmation.`
+          : "";
+      const message =
+        trouble.length > 0
+          ? `Sent ${handed} of ${checkedRows.length} — ${trouble.join(", ")}.${awaiting} The reason is on each row and in the message log below.`
+          : `Sent ${handed} of ${checkedRows.length} on WhatsApp.${awaiting} Every one is in the message log below.`;
+      setSend(trouble.length > 0 ? { kind: "err", message } : { kind: "ok", message });
     } catch {
-      setError("Could not reach the server — check the message log before retrying.");
-      setDialogError("Could not reach the server — check the message log before retrying.");
-    } finally {
-      setBusy(null);
+      const refused = "Could not reach the server — check the message log before retrying.";
+      setSend({ kind: "err", message: refused });
+      setDialogError(refused);
     }
   }
-
-  const sentCount = outcomes
-    ? [...outcomes.values()].filter((o) => o.status === "SENT").length
-    : 0;
 
   return (
     <Card>
@@ -151,9 +189,10 @@ export function ComposeSend() {
                 setKey(value);
                 setRows(null);
                 setOutcomes(null);
-                setError(null);
+                setPrepare({ kind: "idle" });
+                setSend({ kind: "idle" });
               }}
-              disabled={busy !== null}
+              disabled={busy}
               ariaLabel="Message type"
               className="w-64"
               options={MANUAL_MESSAGE_KEYS.map((k) => ({
@@ -165,14 +204,14 @@ export function ComposeSend() {
           <button
             type="button"
             onClick={handlePrepare}
-            disabled={busy !== null}
+            disabled={busy}
             className={buttonCls.secondary}
           >
-            {busy === "prepare" ? "Preparing…" : "Prepare — show who gets what"}
+            {preparing ? "Preparing…" : "Prepare — show who gets what"}
           </button>
+          {/* The refusal, in the button's own row. */}
+          <SaveFeedback state={prepare} />
         </div>
-
-        {error && <Alert kind="err">{error}</Alert>}
 
         {rows !== null && (
           <>
@@ -196,7 +235,7 @@ export function ComposeSend() {
                       <input
                         type="checkbox"
                         checked={r.checked}
-                        disabled={r.blocked !== null || busy !== null || outcomes !== null}
+                        disabled={r.blocked !== null || busy || outcomes !== null}
                         onChange={() => toggle(r.participationId)}
                         className="mt-1 h-4 w-4"
                       />
@@ -242,32 +281,31 @@ export function ComposeSend() {
               </div>
             )}
 
-            {outcomes === null ? (
-              rows.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={busy !== null || checkedRows.length === 0}
-                  className={buttonCls.primary}
-                >
-                  {busy === "send"
-                    ? "Sending…"
-                    : `Send ${checkedRows.length} message${checkedRows.length === 1 ? "" : "s"} on WhatsApp`}
-                </button>
-              )
-            ) : (
-              <Alert kind={sentCount === checkedRows.length ? "ok" : "info"}>
-                {sentCount} of {checkedRows.length} sent. Details above and in the message log
-                below.
-              </Alert>
-            )}
+            {/* THE SEND FEEDBACK, BELOW THE WHOLE LIST — where the press was.
+                While the batch can still be sent it renders at the button; once
+                it has been sent the button is gone (a second press would send
+                twice) and the summary keeps its place. */}
+            {rows.length > 0 &&
+              (outcomes === null ? (
+                <SaveButton
+                  state={send}
+                  onSave={handleSend}
+                  label={`Send ${checkedRows.length} message${checkedRows.length === 1 ? "" : "s"} on WhatsApp`}
+                  savingLabel="Sending…"
+                  dirty={checkedRows.length > 0}
+                  disabled={preparing}
+                  notDirtyHint="Nobody is ticked — nothing would be sent."
+                />
+              ) : (
+                <SaveFeedback state={send} />
+              ))}
           </>
         )}
       </div>
       <ConfirmDialog
         spec={confirm}
         error={dialogError}
-        busy={busy === "send"}
+        busy={sending}
         onConfirm={() => void doSend()}
         onCancel={() => {
           setDialogError(null);

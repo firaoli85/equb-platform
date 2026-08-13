@@ -7,7 +7,8 @@ import { WeekActionPanel } from "@/components/admin/week-action-panel";
 import { PaymentEntry } from "@/components/admin/payment-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { AmountInput, Checkbox, Select } from "@/components/ui/controls";
-import { Alert, buttonCls, Pill, type PillTone } from "@/components/ui/primitives";
+import { buttonCls, Pill, type PillTone } from "@/components/ui/primitives";
+import { SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { bulkCatchUpAmount, type CatchUpWeek } from "@/lib/payments-view";
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import { oldestN, parseWeekRange, selectableWeekNumbers, weeksInRange } from "@/lib/week-selection";
@@ -66,10 +67,32 @@ export function MemberPayments({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [onConfirm, setOnConfirm] = useState<(() => void) | null>(null);
 
-  const [busy, setBusy] = useState<"preview" | "save" | "week" | "ledger" | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  // ONE SaveState PER PLACE A MESSAGE CAN BELONG (§2.10, UI_STANDARDS rule 6).
+  //
+  // There used to be a single `error` and a single `saved`, both drawn at the
+  // FOOT of the week list. The carried-balance "Record" button is in the header
+  // strip at the very top of this component; a week's panel can be forty rows
+  // above the message it produced. Whichever control he had just pressed, the
+  // answer appeared somewhere he was not looking — the exact defect rule 6
+  // exists to stop.
+  //
+  //   ledgerSave — the carried-balance Record button, in the header strip.
+  //   weekSave   — WHICH row reported, so the confirmation renders on that row
+  //                and on no other.
+  //   rangeSave  — "7 to 12" refused, beside the box that refused it.
+  //
+  // Recording a payment is not in this list, and that is deliberate:
+  // `PaymentEntry` renders its own SaveButton under its own commit button, and
+  // that message is the only place the WhatsApp outcome appears. Copying it
+  // down here is what put the sentence most likely to matter off-screen.
+  const [ledgerSave, setLedgerSave] = useState<SaveState>({ kind: "idle" });
+  const [weekSave, setWeekSave] = useState<{ weekNumber: number; state: SaveState } | null>(null);
+  const [rangeSave, setRangeSave] = useState<SaveState>({ kind: "idle" });
 
+  // DERIVED, never a second flag: `busy` was its own state naming which action
+  // was running, which is the same fact as `kind === "saving"` here. The ledger
+  // payment is the only action this component's dialog runs.
+  const ledgerBusy = ledgerSave.kind === "saving";
 
   const owing = selectableWeekNumbers(weeks);
   const selectedWeeks = weeks.filter((w) => selected.has(w.weekNumber));
@@ -77,8 +100,8 @@ export function MemberPayments({
 
   function select(next: Set<number>) {
     setSelected(next);
-    setError(null);
-    setSaved(null);
+    // Only the range box's own refusal is stale once the selection changes.
+    setRangeSave({ kind: "idle" });
   }
 
   function toggle(weekNumber: number) {
@@ -91,12 +114,18 @@ export function MemberPayments({
   function applyRange() {
     const range = parseWeekRange(rangeText);
     if (!range) {
-      setError(`"${rangeText}" isn't a week range — try "7 to 12".`);
+      setRangeSave({
+        kind: "err",
+        message: `"${rangeText}" isn't a week range — try "7 to 12".`,
+      });
       return;
     }
     const inRange = weeksInRange(weeks, range);
     if (inRange.length === 0) {
-      setError(`No owed weeks between ${range.from} and ${range.to}.`);
+      setRangeSave({
+        kind: "err",
+        message: `No owed weeks between ${range.from} and ${range.to}.`,
+      });
       return;
     }
     select(new Set([...selected, ...inRange]));
@@ -117,18 +146,15 @@ export function MemberPayments({
     setDialogError(null);
     setOnConfirm(() => () => {
       void (async () => {
-        setBusy("week");
-        try {
-          const refusal = await action();
-          if (typeof refusal === "string" && refusal.length > 0) {
-            setDialogError(refusal);
-            return;
-          }
-          setConfirm(null);
-          setOnConfirm(null);
-        } finally {
-          setBusy(null);
+        // The action owns its own "saving" — that is what the dialog's busy
+        // state is read from, so there is no second flag saying the same thing.
+        const refusal = await action();
+        if (typeof refusal === "string" && refusal.length > 0) {
+          setDialogError(refusal);
+          return;
         }
+        setConfirm(null);
+        setOnConfirm(null);
       })();
     });
   }
@@ -165,7 +191,9 @@ export function MemberPayments({
           {openEntry ? "Close" : "Record payment"}
         </button>
         {carriedBalance > 0 && personId && (
-          <span className="ml-auto flex items-center gap-2 text-xs text-amber-800 dark:text-amber-400">
+          // A DIV, not a span: the confirmation below is a paragraph, and a
+          // paragraph inside a span is not markup any of this can rely on.
+          <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-amber-800 dark:text-amber-400">
             <span className="tabular-nums">
               Carried balance: <strong>{formatMoney(carriedBalance)}</strong>
             </span>
@@ -177,7 +205,7 @@ export function MemberPayments({
             />
             <button
               type="button"
-              disabled={busy !== null || parseDollarsToCents(ledgerDollars) === null}
+              disabled={ledgerBusy || parseDollarsToCents(ledgerDollars) === null}
               onClick={() => {
                 const cents = parseDollarsToCents(ledgerDollars);
                 if (cents === null) return;
@@ -199,20 +227,33 @@ export function MemberPayments({
                     destructive: false,
                   },
                   async () => {
-                    const result = await recordLedgerPayment({ personId, amount: cents });
-                    // RETURN the refusal so the dialog keeps it. Setting
-                    // `error` alone put it at the foot of a long week table,
-                    // while this button is in the header strip at the top.
-                    if (!result.ok) {
-                      setError(result.error);
-                      return result.error;
+                    setLedgerSave({ kind: "saving" });
+                    try {
+                      const result = await recordLedgerPayment({ personId, amount: cents });
+                      // BOTH, and each does something the other cannot: the
+                      // RETURNED refusal keeps the dialog open with the reason
+                      // inside it, and `ledgerSave` keeps that reason beside
+                      // this button after he cancels out of the dialog.
+                      if (!result.ok) {
+                        setLedgerSave({ kind: "err", message: `Not recorded: ${result.error}` });
+                        return result.error;
+                      }
+                      setLedgerSave({
+                        kind: "ok",
+                        message: `Recorded ${formatMoney(cents)} against ${memberName}'s carried balance — ${formatMoney(result.data.remaining)} still carried. This cycle's weeks are untouched.`,
+                      });
+                      setLedgerDollars("");
+                      router.refresh();
+                      return null;
+                    } catch {
+                      // WITHOUT THIS the rejection escapes the dialog's
+                      // handler: nothing clears "saving", so the dialog sits
+                      // on "Working…" for good and no reason is ever shown.
+                      const reason =
+                        "Could not reach the server — the ledger payment was NOT recorded.";
+                      setLedgerSave({ kind: "err", message: reason });
+                      return reason;
                     }
-                    setSaved(
-                      `✓ Ledger payment recorded — ${formatMoney(result.data.remaining)} still carried.`,
-                    );
-                    setLedgerDollars("");
-                    router.refresh();
-                    return null;
                   },
                 );
               }}
@@ -220,7 +261,10 @@ export function MemberPayments({
             >
               Record
             </button>
-          </span>
+            {/* AT THE BUTTON THAT WAS PRESSED. This message used to render at
+                the foot of the week list, past the whole table. */}
+            <SaveFeedback state={ledgerSave} />
+          </div>
         )}
       </div>
 
@@ -241,24 +285,26 @@ export function MemberPayments({
               isSkipped: w.isSkipped,
               isDeferred: w.isDeferred,
             }))}
-            onRecorded={(message) => {
+            onRecorded={() => {
               // THE PANEL STAYS OPEN, and that IS the fix.
               //
-              // It used to close here. AllocationEntry already renders its own
-              // confirmation 24 lines under its own commit button — exactly
-              // where rule 6 wants it — and closing destroyed that element in
-              // the same batched render, so it never painted. The replacement
-              // copy was hoisted to `saved` below, ~190 lines and a whole week
-              // table away. The loss was noticed; the replacement was put
-              // somewhere he was not looking.
+              // It used to close here. PaymentEntry already renders its own
+              // confirmation under its own commit button — exactly where rule 6
+              // wants it — and closing destroyed that element in the same
+              // batched render, so it never painted. The replacement copy was
+              // hoisted to a `saved` banner ~190 lines and a whole week table
+              // away. The loss was noticed; the replacement was put somewhere
+              // he was not looking.
               //
               // That message is the ONLY place the WhatsApp outcome appears
               // ("accepted by Twilio — delivery not yet confirmed"), so the
               // sentence most likely to matter was guaranteed to be off-screen.
               //
-              // Leaving it open also suits the job: recording several weeks
-              // for one member is the common case, and he closes it himself.
-              setSaved(message);
+              // The far copy is now gone too: the message is not repeated
+              // here, because the one that counts is already at the button.
+              // Leaving the panel open also suits the job — recording several
+              // weeks for one member is the common case, and he closes it
+              // himself.
               router.refresh();
             }}
           />
@@ -284,7 +330,8 @@ export function MemberPayments({
           <button type="button" onClick={() => select(new Set())} className={buttonCls.ghost + " !text-xs"}>
             Clear
           </button>
-          <span className="flex items-center gap-1.5">
+          {/* A DIV, not a span: the refusal beside it is a paragraph. */}
+          <div className="flex flex-wrap items-center gap-1.5">
             <input
               type="text"
               value={rangeText}
@@ -302,7 +349,10 @@ export function MemberPayments({
             <button type="button" onClick={applyRange} className={buttonCls.ghost + " !text-xs"}>
               Select range
             </button>
-          </span>
+            {/* "That isn't a week range" belongs beside the box he typed it
+                into, not at the bottom of the table (UI_STANDARDS 6b). */}
+            <SaveFeedback state={rangeSave} />
+          </div>
         </div>
 
         <ul className="divide-y divide-gray-100 dark:divide-gray-800/60 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
@@ -363,6 +413,16 @@ export function MemberPayments({
                     {expanded ? "Close" : "Actions"}
                   </button>
                 </div>
+                {/* THE CONFIRMATION FOR THIS ROW, ON THIS ROW. A week panel's
+                    result went to one banner at the foot of the list: for week
+                    3 of 40 that is thirty-seven rows below the panel he was
+                    working in, and the panel closes on save, so the screen he
+                    was looking at simply went blank. */}
+                {weekSave !== null && weekSave.weekNumber === w.weekNumber && (
+                  <div className="px-3 pb-2">
+                    <SaveFeedback state={weekSave.state} />
+                  </div>
+                )}
                 {expanded && (
                   <div className="px-3 pb-3">
                     {/* The SAME per-week panel the payments Members list and
@@ -378,7 +438,12 @@ export function MemberPayments({
                         isDeferred: w.isDeferred,
                       }}
                       onSaved={(msg) => {
-                        setSaved(msg);
+                        setWeekSave({
+                          weekNumber: w.weekNumber,
+                          // SaveFeedback draws its own tick, so the panel's
+                          // leading "✓ " would double up.
+                          state: { kind: "ok", message: msg.replace(/^✓\s*/, "") },
+                        });
                         setExpandedWeek(null); // the panel's snapshot is stale now
                         router.refresh();
                       }}
@@ -414,7 +479,11 @@ export function MemberPayments({
               WeekActionPanel below. Three components building a payment is
               three places a partial-payment rule has to be fixed.
               The selection still does its job: it hands the ticked weeks to
-              the shared entry, preselected. */}
+              the shared entry, preselected.
+              NOT A SaveButton, and not an exemption either: pressing this
+              saves nothing. It opens the entry above with the ticked weeks
+              filled in, and the confirmation for the money belongs to the
+              commit button in there — which is where PaymentEntry draws it. */}
           <button
             type="button"
             onClick={() => {
@@ -430,22 +499,17 @@ export function MemberPayments({
           </button>
         </div>
 
-        {error && (
-          <div className="mt-2">
-            <Alert kind="err">Not recorded: {error}</Alert>
-          </div>
-        )}
-        {saved && (
-          <div className="mt-2">
-            <Alert kind="ok">{saved}</Alert>
-          </div>
-        )}
+        {/* THE TWO BANNERS THAT USED TO SIT HERE ARE GONE. Every message they
+            carried now renders at the control that produced it: the ledger
+            confirmation in the header strip, a week's confirmation on its own
+            row, the range refusal beside the range box, and a recorded payment
+            under PaymentEntry's own commit button. */}
       </div>
 
       <ConfirmDialog
         spec={confirm}
         error={dialogError}
-        busy={busy === "week" || busy === "ledger"}
+        busy={ledgerBusy}
         onConfirm={() => onConfirm?.()}
         onCancel={() => {
           setDialogError(null);

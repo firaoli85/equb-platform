@@ -104,7 +104,11 @@ export async function updateSession(request: NextRequest) {
   if (path.startsWith("/admin") && path !== "/admin/login" && !isAdmin) {
     return redirectTo("/admin/login");
   }
-  if (path.startsWith("/me") && !claims) {
+  // /agreement is a member route that deliberately sits OUTSIDE /me — the
+  // member layout is what gates on signing, and a screen inside it could not
+  // redirect to itself. It still needs the same sign-in check as /me, or the
+  // agreement would be the one member page reachable while signed out.
+  if ((path.startsWith("/me") || path.startsWith("/agreement")) && !claims) {
     return redirectTo("/login");
   }
 

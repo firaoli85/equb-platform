@@ -16,6 +16,7 @@ import { NO_VALUE } from "./placeholder-kinds";
 import {
   APPROVED_TEMPLATE_KEYS,
   APPROVED_TEMPLATES,
+  DRAFT_TEMPLATES,
   type ApprovedTemplateKey,
 } from "./whatsapp-templates";
 
@@ -25,6 +26,12 @@ export const MESSAGE_KEYS = [
   "LATE_NOTICE",
   "WINNER_ANNOUNCEMENT",
   "CYCLE_CLOSING_STATEMENT",
+  // The welcome. A real message type with a real editable row — and NOT in
+  // APPROVED_TEMPLATES, because it has not been submitted to Meta (see the
+  // header of lib/whatsapp-templates.ts). Listed after the five and before
+  // LOCKOUT_NOTICE so `MANUAL_MESSAGE_KEYS[0]`, which is what the batch
+  // composer opens on, stays the behind notice.
+  "WHATSAPP_WELCOME",
   "LOCKOUT_NOTICE",
 ] as const;
 
@@ -81,6 +88,28 @@ export type StandingFacts = {
    * then falls back to the week number rather than printing nothing.
    */
   finishDate?: Date | null;
+  /**
+   * The calendar date their own window BEGINS — the day belonging to their
+   * start week, from the stored row (2.14), never projected off a cycle start
+   * date that may since have been corrected.
+   *
+   * Threaded exactly like finishDate above, and for the same reason: a member
+   * never reads a cycle week number (UI_STANDARDS 8c), so "from week 14" is not
+   * an available way to say this. Absent, the token renders as the no-value
+   * sentinel rather than inventing a day.
+   */
+  startDate?: Date | null;
+  /**
+   * Where a member signs in — the `portalUrl` setting, read at send time.
+   *
+   * NOT A DERIVED FIGURE, and it sits here anyway. The welcome is the one
+   * message that has to tell a member where to go, and the address has to be
+   * identical in the PREVIEW the organizer reads and in the message that
+   * leaves. Threading it through the one derivation both paths already share
+   * (loadStandingFacts) is what makes those the same string; asking each of the
+   * four render sites to fetch it themselves is how they stop being.
+   */
+  portalUrl?: string | null;
   weeksCredited: number;
   weeksBehind: number;
   amountOutstanding: number;
@@ -175,6 +204,18 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
     lastPaymentWeek: standing.lastPaymentWeek === null ? NO_VALUE : String(standing.lastPaymentWeek),
     finishWeek: String(standing.finishWeek),
     finishDate: standing.finishDate ? formatDateLongUTC(standing.finishDate) : String(standing.finishWeek),
+    // THE MEMBER'S OWN COUNT, PLURALISED — "10 weeks", never "10". The whole
+    // point of the token is that it reads as a sentence a member holds in their
+    // head ("I am paying for 10 weeks"), which is the frame UI_STANDARDS 8c
+    // reserves for them. {weeksTotal} above is the same number as a bare
+    // numeral, for templates that supply their own noun ("6 of 20 weeks").
+    weeksCommitted: `${standing.weeksCommitted} ${standing.weeksCommitted === 1 ? "week" : "weeks"}`,
+    startDate: standing.startDate ? formatDateLongUTC(standing.startDate) : NO_VALUE,
+    // No .trim() and no String(): the setting is trimmed at the write
+    // (updatePortalUrl), so an empty address is an empty string here, and the
+    // sentinel is what a default-denied placeholder must be — the send is
+    // refused for an empty portalUrl long before this renders.
+    portalUrl: standing.portalUrl ? standing.portalUrl : NO_VALUE,
     weeklyAmount: formatMoney(standing.weeklyAmount),
     totalPaid: formatMoney(standing.totalPaid),
     amountReceived:
@@ -211,6 +252,9 @@ export const PLACEHOLDER_DOCS: { token: string; description: string }[] = [
   { token: "{lastPaymentWeek}", description: "The week of their last recorded payment" },
   { token: "{finishWeek}", description: "The week their own window ends" },
   { token: "{finishDate}", description: "The calendar date their own window ends" },
+  { token: "{startDate}", description: "The calendar date their own window begins" },
+  { token: "{weeksCommitted}", description: "Their own count, in words — “10 weeks”" },
+  { token: "{portalUrl}", description: "Where a member signs in (Settings → Messaging)" },
   { token: "{weeklyAmount}", description: "Their weekly contribution" },
   { token: "{totalPaid}", description: "Everything they have paid this cycle" },
   { token: "{amountReceived}", description: "The payment just recorded (confirmation only)" },
@@ -287,6 +331,7 @@ const TEMPLATE_NAMES: Record<ApprovedTemplateKey, string> = {
  */
 export const LABELS_BY_KEY: Record<MessageKey, string> = {
   ...TEMPLATE_NAMES,
+  WHATSAPP_WELCOME: "Welcome message",
   LOCKOUT_NOTICE: "Lockout notice",
 };
 
@@ -299,6 +344,15 @@ const APPROVED_DEFAULTS = Object.fromEntries(
 
 export const DEFAULT_TEMPLATES: Record<MessageKey, { name: string; body: string }> = {
   ...APPROVED_DEFAULTS,
+  // WHATSAPP_WELCOME is absent from the APPROVED registry and present in the
+  // DRAFT one, so its body is read off DRAFT_TEMPLATES for the same reason the
+  // five above are read off APPROVED_TEMPLATES: the sentence is written once,
+  // and the row the organizer edits starts from the exact text that will be
+  // submitted. Editing it is allowed — nothing is locked until Meta owns it.
+  WHATSAPP_WELCOME: {
+    name: LABELS_BY_KEY.WHATSAPP_WELCOME,
+    body: DRAFT_TEMPLATES.WHATSAPP_WELCOME.namedBody,
+  },
   // LOCKOUT_NOTICE is deliberately absent from the registry — it has no
   // approved template and must never look sendable (see the header of
   // lib/whatsapp-templates.ts). Its wording is ours, so it is written here.
@@ -418,8 +472,24 @@ export function applicableTypes(state: {
   amountOutstanding: number;
   /** Their number has been drawn — a winner announcement has something to say. */
   drawnWeek: number | null;
-  /** The cycle has been closed, so a closing statement is real. */
+  /**
+   * The CYCLE has been closed (2.9) — its own status, never inferred from the
+   * absence of a participation. Those were treated as the same fact and are
+   * not: a member who stopped early has no live participation while the cycle
+   * runs on without them, and reading one as the other is what made the
+   * closing statement unsendable in BOTH states (see lib/messaging-subject.ts).
+   *
+   * It no longer gates the closing statement. It words the refusal for the
+   * three types that a finished cycle has genuinely taken away.
+   */
   cycleClosed: boolean;
+  /**
+   * What the caller resolved this member's statements to be ABOUT — "live",
+   * "ended", or "none" (lib/messaging-subject.ts). It arrives with the
+   * participation id it was derived beside, which is what stops the two from
+   * disagreeing.
+   */
+  participation: "live" | "ended" | "none";
   /** 2.28: they have asked to receive nothing. */
   noMessages: boolean;
   /** No number on file — nothing can be delivered anywhere. */
@@ -429,7 +499,30 @@ export function applicableTypes(state: {
     ? `${state.name} has no phone number on file, so nothing can be delivered.`
     : state.noMessages
       ? `${state.name} is marked as receiving no messages (2.28).`
-      : null;
+      : state.participation === "none"
+        ? // A MEMBER WITH NO PARTICIPATION IS NOT A MEMBER WHOSE CYCLE ENDED.
+          // The old code could not tell those apart — it had one boolean for
+          // both — so it told the organizer "the cycle is still running" about
+          // someone in no cycle at all, and offered a closing statement it had
+          // no id to send. Every statement is a position in a cycle (2.21); with
+          // no cycle there is no position, and that is its own sentence.
+          `${state.name} is not in a cycle — not the running one, and not a closed one whose records are still here. A statement states where a member stands in a cycle (2.21), so there is nothing to state.`
+        : null;
+
+  // WHAT A FINISHED PARTICIPATION TAKES AWAY, and what it does not.
+  //
+  // The batch prepares against the ACTIVE cycle and keeps the
+  // ACTIVE-participation filter for every type EXCEPT the closing statement
+  // (app/actions/messages.ts). The per-member path says the same thing here
+  // rather than inventing a second rule: once a participation is over, the
+  // three below have nothing true left to say, and the closing statement is
+  // precisely the one that does.
+  const notLive =
+    state.participation === "live"
+      ? null
+      : state.cycleClosed
+        ? `${state.name}'s cycle has closed. The closing statement is the statement for a finished cycle — anything still owed is now a carried balance on ${state.name} (2.18/2.19).`
+        : `${state.name} has stopped contributing to this cycle, so they are not chased for its weeks (rule 17). The closing statement still applies — the batch keeps them in that one too (2.18).`;
 
   const chasing = (key: MessageKey) =>
     (CHASING_MESSAGE_KEYS as readonly string[]).includes(key);
@@ -437,6 +530,9 @@ export function applicableTypes(state: {
   return MANUAL_MESSAGE_KEYS.map((key): ApplicableType => {
     if (blockedForAll) {
       return { key, applicable: false, reason: blockedForAll, chasing: chasing(key) };
+    }
+    if (notLive && key !== "CYCLE_CLOSING_STATEMENT") {
+      return { key, applicable: false, reason: notLive, chasing: chasing(key) };
     }
     switch (key) {
       case "BEHIND_NOTICE":
@@ -459,6 +555,21 @@ export function applicableTypes(state: {
               reason: `${state.name} owes nothing right now.`,
               chasing: true,
             };
+      case "WHATSAPP_WELCOME":
+        // ALWAYS APPLICABLE TO A LIVE MEMBER, and that is the ruling, not a
+        // gap. Sending the welcome is what requires a signature, and the
+        // document is always live — change someone from 10 weeks to 12, send it
+        // again, and they sign the CURRENT terms. So there is no "already
+        // welcomed" state to refuse: a second send is a deliberate second
+        // requirement, which is exactly the re-sign flow that then does not
+        // need building.
+        //
+        // The two things that genuinely stop it — no sign-in address, and the
+        // phone-digit PIN switched off — are PLATFORM settings, not this
+        // member's state, so they are not decided here. They live in one pure
+        // rule (lib/welcome-send.ts) that the send path and every caller of
+        // this function ask separately.
+        return { key, applicable: true, reason: null, chasing: false };
       case "WINNER_ANNOUNCEMENT":
         return state.drawnWeek !== null
           ? { key, applicable: true, reason: null, chasing: false }
@@ -468,15 +579,45 @@ export function applicableTypes(state: {
               reason: `${state.name}'s number has not been drawn yet, so there is no payout to announce.`,
               chasing: false,
             };
-      case "CYCLE_CLOSING_STATEMENT":
-        return state.cycleClosed
-          ? { key, applicable: true, reason: null, chasing: false }
-          : {
-              key,
-              applicable: false,
-              reason: "The cycle is still running — the closing statement is sent when it ends.",
-              chasing: false,
-            };
+      case "CYCLE_CLOSING_STATEMENT": {
+        // A CLOSING STATEMENT STATES A FINAL POSITION. It is offered exactly
+        // when there IS one.
+        //
+        // The old rule required `cycleClosed`, which the profile derived as
+        // "there is no active participation" — two mutually exclusive halves,
+        // so the statement could not be sent at any moment of a cycle's life.
+        //
+        // The first repair removed the check ALTOGETHER, and that was worse
+        // than the bug: at week 1 of a running cycle the type became
+        // applicable to a contributing member, and the message reads "your
+        // Equb closing statement: you paid 0 of 20 weeks, $0.00 in total" —
+        // a false statement, delivered to a real member, in Meta's approved
+        // wording. A gap that blocks a true message is cheaper than one that
+        // sends a false one.
+        //
+        // TWO STATES HAVE A FINAL POSITION, and they are exactly the two the
+        // batch reaches:
+        //   the CYCLE has closed          → everyone's position is final;
+        //   the MEMBER's participation has ended while it runs on (2.18) →
+        //     theirs is final even though the cycle's is not.
+        // A live member of a running cycle has neither, and is told so.
+        //
+        // On closing day itself the organizer uses the batch, which is what
+        // app/actions/cycle-close.ts instructs and the only path that has ever
+        // worked before the status flips.
+        if (state.cycleClosed || state.participation === "ended") {
+          return { key, applicable: true, reason: null, chasing: false };
+        }
+        return {
+          key,
+          applicable: false,
+          reason:
+            `${state.name} is still contributing to a cycle that is still running. A closing ` +
+            `statement states their FINAL position, so it is sent when the cycle ends — from ` +
+            `“Send to many”, which reaches everyone at once.`,
+          chasing: false,
+        };
+      }
       default:
         return { key, applicable: false, reason: "Not sent by hand.", chasing: chasing(key) };
     }

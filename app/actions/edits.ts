@@ -11,6 +11,14 @@ import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { refuseIfCycleClosed } from "@/lib/cycle-guard";
+// The week-date bound is enforced HERE as well as in the picker (rule 11:
+// "a bound that lives in the UI is a hint"). See updateWeek.
+import {
+  isWithinBounds,
+  outOfBoundsMessage,
+  toIsoDay,
+  weekDateBounds,
+} from "@/lib/date-bounds";
 import { manualLateAdvice } from "@/lib/derived";
 import { deleteDrawIfEmpty, freedWeekClause, purgeEmptyWinnerPlans } from "@/lib/draw-cascade";
 import {
@@ -1610,11 +1618,53 @@ export async function setWeekNote(input: {
 
 // ————————————————— Weeks —————————————————
 
+/**
+ * A WEEK'S OWN DATE, CORRECTED FROM A SCREEN (2.23, rule 7).
+ *
+ * This action was correct and had **zero callers**. The editor that reached it
+ * died with `/admin/cycle/weeks`, and nothing replaced it — so the one stored
+ * fact every elapsed/late/behind figure derives from could only be corrected
+ * with raw SQL, which 2.23 forbids in those words. The proof it was orphaned
+ * is that `weekDateBounds`, the only bound this write has, had no production
+ * caller either: just its own test. `/admin/cycle/position` calls it now
+ * (ADMIN_IA §3 puts "the stored dates that are authoritative" on that page).
+ *
+ * THREE THINGS CHANGED WHEN THE CALLER ARRIVED, each one a defect this file
+ * has already been bitten by elsewhere:
+ *
+ *   `isSkipped` IS OPTIONAL NOW. There is no skip control on any screen and
+ *   there must not be one — docs/CYCLE_POSITION_SPEC.md PART 2 removed the
+ *   concept from the UI on purpose ("there are no skipped weeks in an Equb,
+ *   every week is a commitment") and docs/MANUAL_QA_CHECKLIST.md makes its
+ *   absence a PASS condition. A REQUIRED flag forces every caller to send a
+ *   value it does not own, and sending the wrong one silently replays every
+ *   participation in the cycle. Omitted means "leave it exactly as stored".
+ *
+ *   `notes` OMITTED NOW KEEPS WHAT IS THERE. It was `input.notes?.trim() ||
+ *   null`, so a caller that did not send notes erased them — audit finding 7
+ *   ("notes erased by omission"), waiting in a fresh location. Pass `null` to
+ *   clear deliberately; pass nothing to leave it alone.
+ *
+ *   THE SEQUENCE BOUND IS ENFORCED HERE, not only in the picker (rule 11: "a
+ *   bound that lives in the UI is a hint"). Audit finding 29: the server
+ *   accepted a week dated on or before its predecessor. That does not merely
+ *   look wrong — it moves who counts as overdue, and it mis-dates every week
+ *   generated afterwards, because `nextWeekDates` anchors on the last stored
+ *   row.
+ *
+ * NO REPLAY FOR A DATE CHANGE, deliberately. Money is allocated by week
+ * NUMBER and each receipt already sits on its own week row; elapsed and late
+ * are derived at read time from this very column (2.14). So the correction is
+ * complete the moment the row is written. The skip toggle replays because
+ * skipping changes what is OWED, which is a different fact.
+ */
 export async function updateWeek(input: {
   weekId: string;
   date: string;
-  isSkipped: boolean;
-  notes?: string;
+  /** Omit to keep the stored value. There is no skip control — see above. */
+  isSkipped?: boolean;
+  /** Omit to keep the stored note; `null` or "" clears it. */
+  notes?: string | null;
 }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
@@ -1629,16 +1679,41 @@ export async function updateWeek(input: {
       });
       // Audit H5: toggling isSkipped rebuilds EVERY participation in the
       // cycle — on a CLOSED cycle that desyncs every frozen ledger entry the
-      // close wrote, in one call.
+      // close wrote, in one call. A date correction is no safer on closed
+      // books: it moves the elapsed boundary the close froze its ledger
+      // against, so both are refused by the same line.
       const frozen = frozenCycleRefusal(before.cycle);
       if (frozen) throw new Error(frozen);
+
+      // WEEKS RUN IN ORDER, AND THE SERVER IS WHERE THAT IS TRUE. The
+      // neighbours are read inside the same serializable transaction, so a
+      // concurrent edit to week 11 cannot let week 12 slip past it.
+      const previous = await tx.week.findFirst({
+        where: { cycleId: before.cycleId, weekNumber: { lt: before.weekNumber } },
+        orderBy: { weekNumber: "desc" },
+        select: { weekNumber: true, date: true },
+      });
+      const next = await tx.week.findFirst({
+        where: { cycleId: before.cycleId, weekNumber: { gt: before.weekNumber } },
+        orderBy: { weekNumber: "asc" },
+        select: { weekNumber: true, date: true },
+      });
+      const bounds = weekDateBounds({ previousWeek: previous, nextWeek: next });
+      if (!isWithinBounds(toIsoDay(date), bounds)) {
+        // The picker's own reason, verbatim — a refusal that names the two
+        // neighbouring weeks and their dates is something he can act on.
+        throw new Error(outOfBoundsMessage(bounds) ?? "That date is outside the range allowed here.");
+      }
+
+      const isSkipped = input.isSkipped ?? before.isSkipped;
+      const notes = input.notes === undefined ? before.notes : (input.notes ?? "").trim() || null;
       const after = await tx.week.update({
         where: { id: input.weekId },
-        data: { date, isSkipped: input.isSkipped, notes: input.notes?.trim() || null },
+        data: { date, isSkipped, notes },
       });
       // A skip-toggle changes what every member owes that week — replay all
       // receipts in the cycle (2.15; D-32 immediate recalculation).
-      if (before.isSkipped !== input.isSkipped) {
+      if (before.isSkipped !== isSkipped) {
         const participations = await tx.participation.findMany({
           where: { cycleId: before.cycleId },
           select: { id: true },
@@ -1647,11 +1722,23 @@ export async function updateWeek(input: {
           await rebuildParticipationPayments(tx, p.id);
         }
       }
+      const moved = toIsoDay(before.date) !== toIsoDay(after.date);
       await logAudit(tx, {
         entity: "Week",
         entityId: input.weekId,
         action: "update",
-        summary: `Week ${before.weekNumber} edited${before.isSkipped !== input.isSkipped ? ` (skipped ${before.isSkipped} -> ${input.isSkipped}; all members recalculated)` : ""}`,
+        // "Week 12 edited" told a reader nothing about the fact that moved.
+        // The date IS the record here, so the summary carries it (rule 15:
+        // a wrong entry is answered by a new one, so each must be readable
+        // on its own).
+        summary:
+          `Week ${before.weekNumber} edited` +
+          (moved
+            ? `: date ${toIsoDay(before.date)} -> ${toIsoDay(after.date)} (elapsed/late for this week re-derive from it)`
+            : "") +
+          (before.isSkipped !== isSkipped
+            ? ` (skipped ${before.isSkipped} -> ${isSkipped}; all members recalculated)`
+            : ""),
         before: { date: before.date, isSkipped: before.isSkipped, notes: before.notes },
         after: { date: after.date, isSkipped: after.isSkipped, notes: after.notes },
       });
@@ -1659,6 +1746,12 @@ export async function updateWeek(input: {
     });
     revalidateAdmin();
     revalidatePath("/admin/cycle/position");
+    // Every week-shaped surface reads the stored date (rule 7), so a
+    // correction that refreshed only the page it was made on would leave the
+    // grid and the dashboard quoting the old day.
+    revalidatePath("/admin/payments");
+    revalidatePath("/admin/this-week");
+    revalidatePath("/admin");
     return { ok: true as const, data };
   } catch (e) {
     console.error("updateWeek failed:", e);

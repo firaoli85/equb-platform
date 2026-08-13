@@ -1,4 +1,6 @@
-﻿import { describe, expect, it } from "vitest";
+﻿import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import {
   cashPosition,
   cashSeries,
@@ -184,15 +186,27 @@ describe("receivedByMember — what the received figure is made of", () => {
 });
 
 describe("weekMemberStatus — who has paid and who has not", () => {
+  // AN OPEN WEEK. These cases are about PAID / PARTIAL / UNPAID / DEFERRED,
+  // and every one of them turns LATE the moment the window shuts — which is
+  // the whole point of the fix below and would drown these assertions.
+  const OPEN = { weekDate: new Date("2026-08-09T00:00:00Z"), today: new Date("2026-08-10T00:00:00Z") };
   it("classifies in-window members and skips out-of-window ones", () => {
     const rows = weekMemberStatus({
       weekNumber: 5,
+      ...OPEN,
       participations,
       payments: [pay("a", 5, 25_000)],
     });
     // Late (week-12 joiner) is out of window at week 5 — not listed at all.
     expect(rows).toEqual([
-      { participationId: "a", name: "Early", weeklyAmount: 25_000, amountPaid: 25_000, status: "PAID" },
+      {
+        participationId: "a",
+        name: "Early",
+        weeklyAmount: 25_000,
+        amountPaid: 25_000,
+        status: "PAID",
+        markedLate: false,
+      },
     ]);
   });
 
@@ -204,6 +218,7 @@ describe("weekMemberStatus — who has paid and who has not", () => {
     ];
     const rows = weekMemberStatus({
       weekNumber: 2,
+      ...OPEN,
       participations: many,
       payments: [pay("p", 2, 10_000), pay("d", 2, 0, true)],
     });
@@ -380,5 +395,161 @@ describe("the cash position week by week", () => {
 
   it("survives an empty cycle without inventing a position", () => {
     expect(cashSeries({ weeks: [], payments: [], payouts: [], elapsedThroughWeek: 0 })).toEqual([]);
+  });
+});
+
+// A CLOSED WINDOW MAKES A WEEK LATE, HOWEVER IT BECAME LATE.
+//
+// THE REPORTED DEFECT, reproduced exactly. Week 12's window closed on 7 August
+// 2026. Read on the 13th, /admin/this-week showed:
+//
+//     "Marked late 0 — Nobody."
+//     "Have not paid 7"  ← Mulualem, Markos, Miraf, Surashe, Alex, Getahun, Firaoli
+//
+// All seven were LATE: unpaid, and the window had shut six days earlier.
+// `paymentStatus` had been returning LATE for those rows the whole time —
+// `weekMemberStatus` was not asking it. It carried its own copy of the status
+// ladder, and that copy had no date and no clock, so the ONLY route to LATE it
+// could see was the organizer's manual mark.
+//
+// COULD NOT HAVE PASSED BEFORE: every assertion below turns on a week whose
+// window has closed, and the old implementation could not produce LATE for one.
+describe("weekMemberStatus — the closed-window collapse (2.19: one engine)", () => {
+  // The live figures: week 12 fell on Sunday 2 August, so its five-day window
+  // shut on the 7th. Today is the 13th.
+  const WEEK_12 = new Date("2026-08-02T00:00:00Z");
+  const THE_13TH = new Date("2026-08-13T00:00:00Z");
+
+  const seven = [
+    "Mulualem",
+    "Markos",
+    "Miraf",
+    "Surashe",
+    "Alex",
+    "Getahun",
+    "Firaoli",
+  ].map((name) => ({
+    id: name.toLowerCase(),
+    name,
+    weeklyAmount: 50_000,
+    startWeek: 1,
+    weeksCommitted: 20,
+  }));
+
+  const rowsOn = (today: Date, over: Partial<DashboardPayment> = {}) =>
+    weekMemberStatus({
+      weekNumber: 12,
+      weekDate: WEEK_12,
+      today,
+      participations: seven,
+      payments: seven.map((p) => ({
+        participationId: p.id,
+        weekNumber: 12,
+        amountPaid: 0,
+        isDeferred: false,
+        isSkipped: false,
+        markedLate: false,
+        ...over,
+      })),
+    });
+
+  it("puts every unpaid member in LATE once the window has closed", () => {
+    const rows = rowsOn(THE_13TH);
+    expect(rows).toHaveLength(7);
+    expect(rows.every((r) => r.status === "LATE")).toBe(true);
+  });
+
+  // THE HEADLINE. "Have not paid" is the label for a week still OPEN, and the
+  // screen was filing seven closed-window members under it.
+  it("puts NONE of them in UNPAID", () => {
+    expect(rowsOn(THE_13TH).filter((r) => r.status === "UNPAID")).toEqual([]);
+  });
+
+  // …and none of them was marked by hand, which is why the "Marked late"
+  // section read 0 while seven people were late.
+  it("reports them late WITHOUT any manual mark", () => {
+    expect(rowsOn(THE_13TH).every((r) => r.markedLate === false)).toBe(true);
+  });
+
+  // THE OTHER SIDE OF THE SAME RULE: while the window is open they are not
+  // late, and calling them late would be an accusation before the deadline.
+  it("still reads UNPAID while the window is open", () => {
+    const dayFour = new Date("2026-08-06T00:00:00Z");
+    const rows = rowsOn(dayFour);
+    expect(rows.every((r) => r.status === "UNPAID")).toBe(true);
+  });
+
+  it("flips exactly on the day the window shuts", () => {
+    expect(rowsOn(new Date("2026-08-06T00:00:00Z"))[0].status).toBe("UNPAID");
+    expect(rowsOn(new Date("2026-08-07T00:00:00Z"))[0].status).toBe("LATE");
+  });
+
+  // THE MARK IS ONE ROUTE, NOT A CATEGORY. A marked member on a closed week is
+  // in the same section as everyone else, with a note on the row.
+  it("does not separate a marked member from a calendar-late one", () => {
+    const rows = weekMemberStatus({
+      weekNumber: 12,
+      weekDate: WEEK_12,
+      today: THE_13TH,
+      participations: seven.slice(0, 2),
+      payments: [
+        { participationId: "mulualem", weekNumber: 12, amountPaid: 0, isDeferred: false, isSkipped: false, markedLate: true },
+        { participationId: "markos", weekNumber: 12, amountPaid: 0, isDeferred: false, isSkipped: false, markedLate: false },
+      ],
+    });
+    expect(rows.map((r) => r.status)).toEqual(["LATE", "LATE"]);
+    // …and the row still says which is which.
+    expect(rows.find((r) => r.name === "Mulualem")!.markedLate).toBe(true);
+    expect(rows.find((r) => r.name === "Markos")!.markedLate).toBe(false);
+  });
+
+  // Money and the standing decisions still win over the calendar.
+  it("PAID, DEFERRED and SKIPPED all still beat a closed window", () => {
+    const one = [seven[0]];
+    const status = (over: Partial<DashboardPayment>, isSkipped = false) =>
+      weekMemberStatus({
+        weekNumber: 12,
+        weekDate: WEEK_12,
+        today: THE_13TH,
+        isSkipped,
+        participations: one,
+        payments: [
+          { participationId: "mulualem", weekNumber: 12, amountPaid: 0, isDeferred: false, isSkipped: false, markedLate: false, ...over },
+        ],
+      })[0].status;
+
+    expect(status({ amountPaid: 50_000 })).toBe("PAID");
+    expect(status({ isDeferred: true })).toBe("DEFERRED");
+    expect(status({}, true)).toBe("SKIPPED");
+    // A partial payment on a CLOSED week is late, not "partially paid" — the
+    // money did not arrive in time, and PARTIAL is an open-window state.
+    expect(status({ amountPaid: 20_000 })).toBe("LATE");
+  });
+});
+
+// The screen must not reintroduce a category for the mark.
+describe("the this-week screen groups by the derived status", () => {
+  const src = readFileSync(
+    join(import.meta.dirname, "..", "app/admin/(protected)/this-week/page.tsx"),
+    "utf8",
+  );
+
+  it("has no section that counts only the manual mark", () => {
+    expect(src).not.toContain('title: "Marked late"');
+  });
+
+  it("titles LATE from the shared vocabulary, not a hand-written phrase", () => {
+    expect(src).toMatch(/key: "LATE", title: STATUS_LABELS\.LATE\.text/);
+  });
+
+  // "Have not paid" reads as a verdict; "have not paid YET" reads as a window
+  // still open, which is what the section actually holds.
+  it("says the unpaid section is a week still open", () => {
+    expect(src).toContain('title: "Have not paid yet"');
+    expect(src).toContain("the payment window for this week is still open");
+  });
+
+  it("notes the mark on the ROW instead", () => {
+    expect(src).toMatch(/m\.markedLate && <Pill[^>]*>you marked this<\/Pill>/);
   });
 });
