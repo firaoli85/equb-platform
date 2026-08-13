@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from "firebase/auth";
 import { lookupMemberByPhone } from "@/app/actions/member";
@@ -13,7 +13,14 @@ import {
 } from "@/app/actions/auth";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { auth, firebaseMissingClientConfig, RECAPTCHA_CONTAINER_ID } from "@/lib/firebase/client";
+import { CodeInput } from "@/components/member/code-input";
 import { motionTokens } from "@/lib/motion-tokens";
+import {
+  RESEND_COOLDOWN_SECONDS,
+  resendBypassesCooldown,
+  resendIsTheRemedy,
+  resendState,
+} from "@/lib/resend-countdown";
 import {
   isValidE164,
   smsErrorLogLine,
@@ -192,6 +199,14 @@ export function LoginFlow() {
   // True when the member came through "Forgot your PIN?" — after the
   // code signs them in, they are offered a NEW PIN (skippable).
   const [recovering, setRecovering] = useState(false);
+  /** WHICH failure the last check was — decides whether resend is the remedy. */
+  const [otpOutcome, setOtpOutcome] = useState<string | null>(null);
+  /** Seconds until "Send it again" becomes pressable. */
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  /** Bumped to pull focus back to the first digit box. */
+  const [otpFocusToken, setOtpFocusToken] = useState(0);
+  /** Live-region text — the only confirmation a screen reader gets on resend. */
+  const [otpAnnounce, setOtpAnnounce] = useState("");
 
   // SMS state (Firebase Phone Auth — Google sends the code, so no carrier
   // A2P registration is involved).
@@ -213,6 +228,15 @@ export function LoginFlow() {
   const avatarInitial = lookup
     ? ([...(lookup.nameEnglishFirst || lookup.nameAmharic || "?")][0] ?? "?")
     : "?";
+
+  // The resend cooldown, ticking down once per second and stopping at zero.
+  // One interval, cleared on unmount — a timer left running after the member
+  // has signed in would keep the component alive for nothing.
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const id = setInterval(() => setOtpCooldown((n) => Math.max(0, n - 1)), 1000);
+    return () => clearInterval(id);
+  }, [otpCooldown]);
 
   // ── Step 1: phone lookup ────────────────────────────────────────
   function handlePhoneSubmit(e: React.FormEvent) {
@@ -519,7 +543,9 @@ export function LoginFlow() {
     if (otpStep === "sending" || otpStep === "verifying") return;
     setOtpStep("sending");
     setOtpError(null);
+    setOtpOutcome(null);
     setOtpCode("");
+    setOtpAnnounce("");
     try {
       const result = await requestWhatsAppCode({ phone: l.phone });
       if (!result.ok) {
@@ -528,23 +554,42 @@ export function LoginFlow() {
         return;
       }
       setOtpStep("sent");
+      // The cooldown restarts from every send, including a resend.
+      setOtpCooldown(RESEND_COOLDOWN_SECONDS);
+      // Announced rather than only shown: a member on a screen reader who
+      // presses "Send it again" gets no other confirmation that anything
+      // happened, because the button simply returns to its countdown.
+      setOtpAnnounce("Code sent");
+      setOtpFocusToken((n) => n + 1);
     } catch {
       setOtpError("Could not send the code. Try again.");
       setOtpStep("idle");
     }
   }
 
-  async function verifyOtp(e: React.FormEvent) {
-    e.preventDefault();
+  async function verifyOtp(e?: React.FormEvent) {
+    e?.preventDefault();
+    // The single guard against a double check. Auto-submit fires from the
+    // sixth digit and the button is still pressable, so both routes land here
+    // — and a second check spends one of the verification's limited attempts.
     if (!lookup || otpStep === "verifying") return;
     setOtpStep("verifying");
     setOtpError(null);
+    setOtpOutcome(null);
     try {
       const result = await signInWithWhatsAppCode({ phone: lookup.phone, code: otpCode });
       if (!result.ok) {
         setOtpError(result.error);
+        // Not every refusal carries an outcome — the throttle and the
+        // "enter the code" guard return before Twilio is ever reached, and
+        // neither has a Verify outcome to report. Those leave it null, which
+        // offers no remedy rather than the wrong one.
+        setOtpOutcome("outcome" in result ? result.outcome : null);
         setOtpStep("sent");
+        // Cleared and refocused: the member retypes without hunting for the
+        // box, and a stale wrong code cannot be resubmitted by accident.
         setOtpCode("");
+        setOtpFocusToken((n) => n + 1);
         return;
       }
       if (recovering || usedDefault) {
@@ -916,16 +961,19 @@ export function LoginFlow() {
               </button>
             ) : (
               <form onSubmit={verifyOtp} className="space-y-3">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
+                <CodeInput
                   value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  aria-label="Verification code"
-                  style={{ fontSize: "28px", letterSpacing: "0.5em", textAlign: "center" }}
-                  className="w-full font-mono py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600 transition-colors"
+                  onChange={setOtpCode}
+                  // Auto-submit on the sixth digit — a member who has just
+                  // typed the last digit should not have to find a button.
+                  // verifyOtp's own in-flight guard makes the button harmless.
+                  onComplete={() => void verifyOtp()}
+                  disabled={otpStep === "verifying"}
+                  focusToken={otpFocusToken}
                 />
+                {/* KEPT ALONGSIDE THE AUTO-SUBMIT, not replaced by it: a
+                    keyboard or screen-reader user needs a real control to
+                    activate, and auto-submit alone leaves them nothing. */}
                 <button
                   type="submit"
                   disabled={otpStep === "verifying" || otpCode.length !== 6}
@@ -937,9 +985,62 @@ export function LoginFlow() {
               </form>
             )}
 
+            {/* ── Resend ───────────────────────────────────────────────
+                Only once a code has actually been sent. The wording is
+                "Send it again" and never "new code": inside Twilio's
+                10-minute window a re-request re-sends the SAME digits, and
+                a member promised a new code who receives the old one
+                concludes the system is broken. */}
+            {(otpStep === "sent" || otpStep === "verifying") && lookup && (() => {
+              const state = resendState({
+                secondsLeft: otpCooldown,
+                sending: false,
+                // A dead verification cannot be waited out — the error that
+                // says "request a new one" has to be able to offer it.
+                bypassCooldown: resendBypassesCooldown(otpOutcome),
+              });
+              return (
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => void sendOtp(lookup)}
+                    disabled={!state.enabled || otpStep === "verifying"}
+                    data-testid="otp-resend"
+                    style={{ touchAction: "manipulation" }}
+                    className="text-xs font-semibold text-indigo-700 transition-colors hover:text-indigo-800 disabled:cursor-default disabled:font-normal disabled:text-gray-500 dark:text-indigo-400 dark:hover:text-indigo-300 dark:disabled:text-gray-400"
+                  >
+                    {state.label}
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Rule 6b — under whichever button was pressed, the send or the
                 verify, because the two swap places in the same slot. */}
             {otpError && <ErrorMsg msg={otpError} />}
+
+            {/* NO ERROR MAY NAME AN ACTION THE SCREEN DOES NOT OFFER (2.10).
+                "unavailable" is our outage, our credentials or our config —
+                resending cannot fix any of it, so the remedy offered is to
+                wait, not to press a button that will fail the same way. */}
+            {otpError && otpOutcome === "unavailable" && (
+              <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                Nothing is wrong with your code. Try again in a moment, or use your PIN.
+              </p>
+            )}
+            {otpError && resendIsTheRemedy(otpOutcome) && (
+              <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                {otpOutcome === "rate-limited"
+                  ? "You can send it again once the timer above runs out."
+                  : "Use “Send it again” above to get a fresh code."}
+              </p>
+            )}
+
+            {/* The ONLY confirmation a screen-reader user gets when they press
+                "Send it again" — the button just returns to its countdown. */}
+            <p className="sr-only" role="status" aria-live="polite">
+              {otpAnnounce}
+            </p>
 
             <div className="text-center">
               <button

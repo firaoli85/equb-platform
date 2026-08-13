@@ -39,6 +39,37 @@ import {
 import { classifyTwilioStatus, type DeliveryClass } from "./twilio-status";
 
 const VERIFY_BASE = "https://verify.twilio.com/v2/Services";
+
+// THE TWO VERIFY ENDPOINTS ARE ASYMMETRIC, AND THAT ASYMMETRY COST FOUR BUILDS.
+//
+// Send is PLURAL. Check is SINGULAR. They do not match, they are not a typo,
+// and making them agree breaks whichever one you "corrected".
+//
+//   POST /v2/Services/{sid}/Verifications        ← create a verification
+//   POST /v2/Services/{sid}/VerificationCheck    ← check a code
+//
+// The check used to post to /VerificationChecks. Twilio answered every single
+// time with:
+//
+//   {"code":20404,"message":"The requested resource
+//    /v2/Services/VAb84.../VerificationChecks was not found", ...}
+//
+// That message names the PATH, not a verification — it was saying "this
+// endpoint does not exist", and it was read for four builds as "your code
+// expired". A member entering a correct code seconds after it arrived was
+// told it had expired, because the request never reached an endpoint at all.
+//
+// Confirmed against the Twilio SDK's own source, whose path works today
+// against this same Verify Service:
+//   node_modules/twilio/lib/rest/verify/v2/service/verificationCheck.js:29
+//     instance._uri = `/Services/${serviceSid}/VerificationCheck`;
+//   node_modules/twilio/lib/rest/verify/v2/service/verification.js:222
+//     instance._uri = `/Services/${serviceSid}/Verifications`;
+//
+// Named constants so neither can be retyped at a call site, and so the pair
+// is visible together rather than 130 lines apart.
+const VERIFICATIONS_PATH = "Verifications";
+const VERIFICATION_CHECK_PATH = "VerificationCheck";
 const API_BASE = "https://api.twilio.com/2010-04-01";
 
 /** Where Twilio posts delivery updates. Must match the webhook route. */
@@ -401,6 +432,63 @@ export async function sendWhatsAppMessage(args: {
   }
 }
 
+/**
+ * EVERY NON-OK VERIFY RESPONSE, WRITTEN DOWN.
+ *
+ * A member was told their login code had expired seconds after it arrived. By
+ * the time anyone looked, Twilio had deleted the verification — a 10-minute
+ * TTL — and the cause was gone for good. Nothing had recorded the response:
+ * the check read `res.status`, returned a bucket, and discarded the body.
+ *
+ * So both halves now log the COMPLETE body. One stable prefix per half, so a
+ * production log can be grepped for either.
+ *
+ * THE TYPED CODE IS NEVER LOGGED. It is a live credential for the seconds it
+ * exists, and a login-code value in a log file is a login-code value anyone
+ * with log access can use. The phone is masked to its last four for the same
+ * reason — enough to match a member to a report, not enough to be a directory.
+ */
+function verifyLog(half: "check" | "send", to: string, what: string, detail: string): void {
+  console.error(
+    `[verify-${half}] ${new Date().toISOString()} to=***${to.slice(-4)} ${what}\n` +
+      `  ${detail}`,
+  );
+}
+
+/**
+ * A phone value shown FAITHFULLY but not in full.
+ *
+ * The open question is about FORMAT, not digits: whether Twilio filed a
+ * verification against "whatsapp:+1301…" while the check queries "+1301…".
+ * That difference is in the prefix, and printing the whole number to answer it
+ * would put a member's line in a log file for no gain.
+ *
+ * So every character except the middle digits survives — a "whatsapp:" prefix,
+ * a leading "+", stray whitespace, a wrong country code all remain visible —
+ * and the length is printed alongside, so a difference that masking would hide
+ * still shows up as a different count.
+ */
+function describeTo(value: string): string {
+  const total = (value.match(/\d/g) ?? []).length;
+  let seen = 0;
+  // Indexed by position among DIGITS, not among characters — otherwise a
+  // "whatsapp:" prefix shifts the window and masks the wrong end.
+  const masked = value.replace(/\d/g, (d) => {
+    const keep = seen < 2 || seen >= total - 4;
+    seen++;
+    return keep ? d : "*";
+  });
+  return `${JSON.stringify(masked)} (len ${value.length})`;
+}
+
+/** Which credential is missing — named, so the log says what to fix. */
+function credsMissingDetail(): string {
+  const missing = (["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"] as const).filter(
+    (name) => !process.env[name]?.trim(),
+  );
+  return `Missing: ${missing.join(", ") || "(none — credentials() refused for another reason)"}`;
+}
+
 /** Start a WhatsApp login-code verification (Twilio Verify, channel whatsapp). */
 export async function sendWhatsAppVerification(
   toE164Phone: string,
@@ -433,7 +521,7 @@ export async function sendWhatsAppVerification(
     };
   }
   try {
-    const res = await fetch(`${VERIFY_BASE}/${serviceSid}/Verifications`, {
+    const res = await fetch(`${VERIFY_BASE}/${serviceSid}/${VERIFICATIONS_PATH}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -441,8 +529,15 @@ export async function sendWhatsAppVerification(
       },
       body: new URLSearchParams({ To: toE164Phone, Channel: "whatsapp" }).toString(),
     });
+    // Read ONCE, for both branches. A Response body can only be consumed once,
+    // and the success path needs it too now.
+    const sentText = await res.text();
     if (!res.ok) {
-      const failed = failure("login code", res.status, await res.text());
+      // The body is captured BEFORE it is classified. `failure()` keeps the
+      // code and a summary; this keeps everything, which is what was missing
+      // when a real failure had to be reconstructed after the fact.
+      verifyLog("send", toE164Phone, `HTTP ${res.status}`, sentText);
+      const failed = failure("login code", res.status, sentText);
       if (failed.ok) return { ok: false, error: "Send failed." };
       return {
         ok: false,
@@ -451,19 +546,80 @@ export async function sendWhatsAppVerification(
         permanent: failed.permanent ?? false,
       };
     }
+    // THE SUCCESSFUL SEND RESPONSE HAS NEVER BEEN LOOKED AT.
+    //
+    // This returned a bare { ok: true } and discarded the body — so when a
+    // freshly created verification was checked seconds later and came back
+    // 20404, there was no record of what Twilio had actually created. Logging
+    // fired only on failure, and the send had not failed.
+    //
+    // The body carries sid, service_sid, status and — the one that matters —
+    // the `to` Twilio ECHOES BACK. If Twilio filed the verification against
+    // "whatsapp:+1301…" while the check queries "+1301…", the two never meet,
+    // and this line is where that becomes visible instead of inferred.
+    //
+    // No code is logged: the send response does not contain one, and it stays
+    // that way.
+    try {
+      const created = JSON.parse(sentText) as {
+        sid?: string;
+        service_sid?: string;
+        status?: string;
+        channel?: string;
+        to?: string;
+      };
+      console.error(
+        `[verify-send-ok] ${new Date().toISOString()} to=***${toE164Phone.slice(-4)}\n` +
+          `  sid         : ${created.sid ?? "(absent)"}\n` +
+          `  service_sid : ${created.service_sid ?? "(absent)"}\n` +
+          `  status      : ${created.status ?? "(absent)"}\n` +
+          `  channel     : ${created.channel ?? "(absent)"}\n` +
+          `  to (echoed) : ${created.to === undefined ? "(absent)" : describeTo(created.to)}\n` +
+          `  we sent To  : ${describeTo(toE164Phone)}`,
+      );
+    } catch {
+      console.error(
+        `[verify-send-ok] ${new Date().toISOString()} to=***${toE164Phone.slice(-4)} ` +
+          `HTTP ${res.status} but the body did not parse:\n  ${sentText.slice(0, 500)}`,
+      );
+    }
     return { ok: true };
   } catch (e) {
-    return {
-      ok: false,
-      error: `Could not reach Twilio: ${e instanceof Error ? e.message : String(e)}`,
-    };
+    const detail = e instanceof Error ? e.message : String(e);
+    verifyLog("send", toE164Phone, "network error", detail);
+    return { ok: false, error: `Could not reach Twilio: ${detail}` };
   }
 }
 
-// "approved" — code is correct
-// "expired"  — 404: verification not found, already used, or timed out
-// "invalid"  — wrong code, still pending
-export type VerifyCheckResult = "approved" | "expired" | "invalid";
+/**
+ * WHAT ACTUALLY HAPPENED when a login code was checked.
+ *
+ * THE DEFECT THIS REPLACES. There were two failure buckets: 404 became
+ * "expired", and EVERYTHING ELSE became "invalid" — which the UI showed as
+ * "That code is not right." Eight unrelated failures wore that sentence,
+ * including a Twilio outage, a rate limit, bad credentials and missing
+ * configuration. A member whose code was perfectly correct was told they had
+ * typed it wrong, and the organizer had nothing to look at: the response body
+ * was read for `status` and discarded.
+ *
+ * These are the outcomes a member can be told apart, and the reason each one
+ * exists is that it needs DIFFERENT words.
+ */
+export type VerifyCheckResult =
+  /** The code is right. */
+  | "approved"
+  /** Wrong code, verification still pending — they can try again. */
+  | "wrong-code"
+  /** No pending verification: expired, already used, canceled, or out of
+   *  attempts. A new code is the only way forward. */
+  | "no-verification"
+  /** Twilio is rate-limiting us. Waiting is the answer, not retyping. */
+  | "rate-limited"
+  /**
+   * OUR PROBLEM, NOT THEIRS — outage, auth failure, missing config, network.
+   * The one outcome that must never be worded as a wrong code.
+   */
+  | "unavailable";
 
 /** Check a WhatsApp login code. Any transport failure counts as invalid. */
 export async function checkWhatsAppVerification(
@@ -471,11 +627,34 @@ export async function checkWhatsAppVerification(
   code: string,
 ): Promise<VerifyCheckResult> {
   const creds = credentials();
-  if (!creds.ok) return "invalid";
+  if (!creds.ok) {
+    verifyLog("check", toE164Phone, "no credentials", credsMissingDetail());
+    return "unavailable";
+  }
   const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID?.trim();
-  if (!serviceSid) return "invalid";
+  if (!serviceSid) {
+    verifyLog("check", toE164Phone, "no service SID", "TWILIO_VERIFY_SERVICE_SID is not set.");
+    return "unavailable";
+  }
+  // WHAT THE CHECK IS ABOUT TO SEND, IN THIS PROCESS, ON THIS REQUEST.
+  //
+  // The two halves have been compared by reading env vars and by a standalone
+  // probe. Neither proves they agree on a REAL request pair in a running
+  // server: a probe reads the same .env.local the server read at boot, and a
+  // server that booted before an env change is holding different values than
+  // the probe just read. This line and [verify-send-ok] are the same process,
+  // seconds apart, so they can be compared character by character.
+  //
+  // The code is deliberately absent — it is a live credential.
+  console.error(
+    `[verify-check-req] ${new Date().toISOString()} to=***${toE164Phone.slice(-4)}\n` +
+      `  service_sid : ${serviceSid}\n` +
+      `  To (exact)  : ${describeTo(toE164Phone)}\n` +
+      `  url         : ${VERIFY_BASE}/${serviceSid}/${VERIFICATION_CHECK_PATH}`,
+  );
+
   try {
-    const res = await fetch(`${VERIFY_BASE}/${serviceSid}/VerificationChecks`, {
+    const res = await fetch(`${VERIFY_BASE}/${serviceSid}/${VERIFICATION_CHECK_PATH}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -483,11 +662,43 @@ export async function checkWhatsAppVerification(
       },
       body: new URLSearchParams({ To: toE164Phone, Code: code }).toString(),
     });
-    if (res.status === 404) return "expired";
-    if (!res.ok) return "invalid";
-    const parsed = JSON.parse(await res.text()) as { status?: string };
-    return parsed.status === "approved" ? "approved" : "invalid";
-  } catch {
-    return "invalid";
+
+    // THE BODY IS READ ONCE AND KEPT. It used to be read only for `status` on
+    // the success path and thrown away on every failure — which is why the
+    // verification behind a real "expired" was already deleted by Twilio
+    // before anyone could look at it, and the cause is now unrecoverable.
+    const text = await res.text();
+
+    if (!res.ok) {
+      // The complete body, never a summary. `20404` versus anything else is
+      // the whole diagnosis, and a truncated line loses it.
+      verifyLog("check", toE164Phone, `HTTP ${res.status}`, text);
+      if (res.status === 404) return "no-verification";
+      if (res.status === 429) return "rate-limited";
+      // 401, 403, every 5xx: ours to fix, and never the member's fault.
+      return "unavailable";
+    }
+
+    let status: string | undefined;
+    try {
+      status = (JSON.parse(text) as { status?: string }).status;
+    } catch {
+      // A 200 we cannot parse is not a wrong code — it is a broken response.
+      verifyLog("check", toE164Phone, "HTTP 200, unparseable body", text);
+      return "unavailable";
+    }
+
+    if (status === "approved") return "approved";
+    // Canceled reads to the member exactly like a lapsed one: the code they
+    // hold can no longer work, and only a new one will.
+    if (status === "canceled") {
+      verifyLog("check", toE164Phone, "HTTP 200, canceled", text);
+      return "no-verification";
+    }
+    // "pending" — the verification is alive and the code did not match.
+    return "wrong-code";
+  } catch (e) {
+    verifyLog("check", toE164Phone, "network error", e instanceof Error ? e.message : String(e));
+    return "unavailable";
   }
 }

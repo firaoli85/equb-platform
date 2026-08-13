@@ -465,11 +465,29 @@ export async function signInWithWhatsAppCode(input: { phone: string; code: strin
     const person = candidates[0];
 
     const check = await checkWhatsAppVerification(toE164(phone), code);
-    if (check === "expired") {
-      return { ok: false as const, error: "That code has expired — request a new one." };
-    }
     if (check !== "approved") {
-      return { ok: false as const, error: "That code is not right." };
+      // ONE SENTENCE PER OUTCOME, and the last one is why this exists.
+      //
+      // This used to be two buckets: 404 → "has expired", everything else →
+      // "That code is not right." A Twilio outage, a rate limit, bad
+      // credentials and missing config all told the member they had mistyped
+      // a code that was perfectly correct — sending them to retype it, which
+      // could not work, instead of telling them to wait or to contact the
+      // organizer. Blaming a member for our own failure is the defect.
+      const MESSAGES: Record<Exclude<typeof check, "approved">, string> = {
+        "wrong-code": "That code isn't right — check the most recent message and try again.",
+        "no-verification": "That code is no longer valid — request a new one.",
+        "rate-limited": "Too many attempts — wait a few minutes and try again.",
+        unavailable:
+          "We couldn't check your code just now — this is on our side, not yours. " +
+          "Try again in a moment.",
+      };
+      // The OUTCOME travels with the message, unchanged — the mapping above is
+      // untouched. The screen needs to know WHICH failure this was, because
+      // the remedy differs: a dead verification is fixed by sending again, an
+      // outage on our side is not, and an error that names an action the
+      // screen cannot offer is the 2.10 gap this closes.
+      return { ok: false as const, error: MESSAGES[check], outcome: check };
     }
 
     const session = await mintBridgeSession(person);

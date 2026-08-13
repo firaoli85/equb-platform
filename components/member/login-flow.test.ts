@@ -65,7 +65,21 @@ describe("setting a new PIN is a save, so SaveButton owns it", () => {
   it("does not mirror the message into state through an effect", () => {
     // An effect has not run at first paint, so the confirmation would be
     // absent from the markup exactly when it is needed.
-    expect(source).not.toContain("useEffect");
+    //
+    // NARROWED FROM "no useEffect anywhere". That blanket ban was right while
+    // this file had no legitimate effect, and it stopped being right when the
+    // resend countdown arrived — a once-per-second interval is exactly what an
+    // effect is for, and it has nothing to do with the save message. What the
+    // lesson actually forbids is DERIVING the message from state in an effect,
+    // so that is what is asserted now.
+    const effects = source.split("useEffect(").slice(1);
+    for (const body of effects) {
+      const head = body.slice(0, body.indexOf("}, ["));
+      expect(head, "an effect must not set the save message").not.toContain("setPinSave");
+      expect(head, "an effect must not set the save message").not.toContain("setNewPinError");
+    }
+    // The message is still derived at render, not stored.
+    expect(source).not.toContain("useEffect(() => setPinSave");
   });
 });
 

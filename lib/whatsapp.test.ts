@@ -277,18 +277,26 @@ describe("Twilio 63112 — Meta disabled the Business Account", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("logs ONE plain line naming the cause — not a stack", async () => {
+  it("logs a plain line naming the cause — not a stack", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubGlobal("fetch", vi.fn(async () => twilioResponse(400, { code: 63112, message: "x" })));
     const { sendWhatsAppVerification } = await freshModule();
 
     await sendWhatsAppVerification("+12405550187");
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    const line = String(errorSpy.mock.calls[0][0]);
-    expect(line).toContain("Meta has disabled");
-    expect(line).toContain("63112");
-    expect(line).toContain("Not retrying");
-    expect(line).toContain("whatsappEnabled");
+    // TWO lines now, deliberately, and the count is no longer pinned: the raw
+    // [verify-send] capture of Twilio's complete body, then this diagnosis.
+    // The capture exists because a real failure was once unrecoverable — the
+    // verification behind it had been deleted before anyone could look, and
+    // nothing had kept the response. What this test still holds is that the
+    // DIAGNOSIS is one readable sentence rather than a stack trace.
+    const diagnosis = errorSpy.mock.calls
+      .map((c) => String(c[0]))
+      .find((line) => line.includes("Meta has disabled"));
+    expect(diagnosis, "the 63112 diagnosis line is missing").toBeDefined();
+    expect(diagnosis).toContain("63112");
+    expect(diagnosis).toContain("Not retrying");
+    expect(diagnosis).toContain("whatsappEnabled");
+    expect(diagnosis).not.toContain("    at ");
   });
 
   it("OTHER Twilio errors stay non-permanent and keep their own message", async () => {
@@ -448,5 +456,221 @@ describe("StatusCallback — the only way to hear a message failed", () => {
     vi.stubEnv("APP_BASE_URL", "localhost:3000");
     const { statusCallbackUrl } = await freshModule();
     expect(statusCallbackUrl()).toBeNull();
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// THE LOGIN-CODE CHECK MUST NEVER BLAME THE MEMBER FOR OUR FAILURE.
+//
+// There were two buckets: 404 → "expired", everything else → "That code is
+// not right." So a Twilio outage, a rate limit, bad credentials and missing
+// config all told a member they had mistyped a code that was perfectly
+// correct — and sent them to retype it, which could not work.
+//
+// One member hit this for real on 12 Aug: a code that had arrived seconds
+// earlier was rejected as expired. The verification behind it was deleted by
+// Twilio (10-minute TTL) before anyone could look, because nothing recorded
+// the response body. The cause is gone for good.
+// ————————————————————————————————————————————————————————————————
+
+describe("checkWhatsAppVerification — one outcome per real cause", () => {
+  const CASES: {
+    what: string;
+    status: number;
+    body: unknown;
+    expected: string;
+  }[] = [
+    { what: '200 "pending" — genuinely the wrong code', status: 200, body: { status: "pending" }, expected: "wrong-code" },
+    { what: '200 "approved"', status: 200, body: { status: "approved" }, expected: "approved" },
+    { what: '200 "canceled" — the code can no longer work', status: 200, body: { status: "canceled" }, expected: "no-verification" },
+    { what: "404 / 20404 — no pending verification", status: 404, body: { code: 20404, message: "not found" }, expected: "no-verification" },
+    { what: "429 — Twilio is rate-limiting US", status: 429, body: { code: 20429, message: "Too Many Requests" }, expected: "rate-limited" },
+    { what: "401 — our credentials are wrong", status: 401, body: { code: 20003, message: "Authenticate" }, expected: "unavailable" },
+    { what: "403 — our account is forbidden", status: 403, body: { code: 20003, message: "Forbidden" }, expected: "unavailable" },
+    { what: "500 — Twilio is down", status: 500, body: { message: "Internal Server Error" }, expected: "unavailable" },
+    { what: "503 — Twilio is unavailable", status: 503, body: { message: "Service Unavailable" }, expected: "unavailable" },
+    { what: "200 with an unparseable body", status: 200, body: "<html>not json</html>", expected: "unavailable" },
+  ];
+
+  for (const c of CASES) {
+    it(`${c.what} → ${c.expected}`, async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({
+          ok: c.status >= 200 && c.status < 300,
+          status: c.status,
+          text: async () => (typeof c.body === "string" ? c.body : JSON.stringify(c.body)),
+        })),
+      );
+      const { checkWhatsAppVerification } = await freshModule();
+      expect(await checkWhatsAppVerification("+12405550187", "123456")).toBe(c.expected);
+    });
+  }
+
+  it("a network throw → unavailable, never wrong-code", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("ECONNRESET"); }));
+    const { checkWhatsAppVerification } = await freshModule();
+    expect(await checkWhatsAppVerification("+12405550187", "123456")).toBe("unavailable");
+  });
+
+  it("missing credentials → unavailable, never wrong-code", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("TWILIO_ACCOUNT_SID", "");
+    vi.stubEnv("TWILIO_AUTH_TOKEN", "");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { checkWhatsAppVerification } = await freshModule();
+    expect(await checkWhatsAppVerification("+12405550187", "123456")).toBe("unavailable");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("missing service SID → unavailable, never wrong-code", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("TWILIO_VERIFY_SERVICE_SID", "");
+    const { checkWhatsAppVerification } = await freshModule();
+    expect(await checkWhatsAppVerification("+12405550187", "123456")).toBe("unavailable");
+  });
+
+  // THE ASSERTION THE WHOLE BUILD EXISTS FOR. Stated separately from the table
+  // so it cannot be weakened by editing a row.
+  it("NO outage or misconfiguration is ever reported as a wrong code", async () => {
+    const OURS = [401, 403, 500, 502, 503, 504];
+    for (const status of OURS) {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => ({ ok: false, status, text: async () => "{}" })),
+      );
+      const { checkWhatsAppVerification } = await freshModule();
+      const result = await checkWhatsAppVerification("+12405550187", "123456");
+      expect(result, `HTTP ${status}`).toBe("unavailable");
+      expect(result, `HTTP ${status} must never read as the member's mistake`).not.toBe(
+        "wrong-code",
+      );
+    }
+  });
+});
+
+describe("every non-OK Verify response is written to the server log", () => {
+  it("logs the COMPLETE body, with a stable prefix and a masked number", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const BODY = '{"code":20404,"message":"The requested resource ... was not found","status":404}';
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404, text: async () => BODY })));
+    const { checkWhatsAppVerification } = await freshModule();
+
+    await checkWhatsAppVerification("+12405550187", "123456");
+    const line = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(line).toContain("[verify-check]");
+    expect(line).toContain("HTTP 404");
+    // The whole body — 20404 versus anything else is the entire diagnosis.
+    expect(line).toContain(BODY);
+    // Masked to the last four; a log is not a phone directory.
+    expect(line).toContain("***0187");
+    expect(line).not.toContain("+12405550187");
+  });
+
+  it("NEVER logs the code the member typed — it is a live credential", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, text: async () => "{}" })));
+    const { checkWhatsAppVerification } = await freshModule();
+
+    await checkWhatsAppVerification("+12405550187", "918273");
+    const line = errorSpy.mock.calls.map((c) => c.map(String).join(" ")).join("\n");
+    expect(line).not.toContain("918273");
+  });
+
+  it("the SEND half logs its failures too, under its own prefix", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const BODY = '{"code":63112,"message":"Channel Sender disabled"}';
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 400, text: async () => BODY })));
+    const { sendWhatsAppVerification } = await freshModule();
+
+    await sendWhatsAppVerification("+12405550187");
+    const line = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(line).toContain("[verify-send]");
+    expect(line).toContain(BODY);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// THE ENDPOINT PATHS. ASSERTED, BECAUSE NOTHING EVER LOOKED AT THEM.
+//
+// The check posted to /VerificationChecks — PLURAL — for four builds. Twilio's
+// endpoint is /VerificationCheck, SINGULAR. Every request 20404'd, and the
+// member was told their correct code had expired.
+//
+// 44 tests were green the whole time. Every one of them mocked `fetch` and
+// asserted on the RESULT; not one inspected the URL, so a request to an
+// endpoint that does not exist looked exactly like a request to one that does.
+// That is the gap these close: the URL is now part of the contract.
+//
+// THE TWO PATHS ARE ASYMMETRIC AND MUST STAY THAT WAY:
+//   send  → /Verifications      (plural)
+//   check → /VerificationCheck  (singular)
+// Making them agree breaks whichever one is "corrected". Confirmed against
+// the Twilio SDK's own source, which works today against this same service.
+//
+// WHAT A WRONG PATH LOOKS LIKE — so it is recognised next time rather than
+// mistaken for a lapsed code:
+//   {"code":20404,"message":"The requested resource
+//    /v2/Services/VAb84.../VerificationChecks was not found"}
+// A 20404 naming the PATH is a wrong endpoint. A missing verification is the
+// same code, but the platform can only tell them apart by reading the message.
+// ————————————————————————————————————————————————————————————————
+
+describe("the Verify endpoint paths", () => {
+  async function urlFor(call: "send" | "check"): Promise<string> {
+    const urls: string[] = [];
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify({ sid: "VE1", service_sid: "VAtest", status: "pending", to: "+12405550187" }),
+        };
+      }),
+    );
+    const mod = await freshModule();
+    if (call === "send") await mod.sendWhatsAppVerification("+12405550187");
+    else await mod.checkWhatsAppVerification("+12405550187", "123456");
+    return urls[0];
+  }
+
+  it("CHECK posts to /VerificationCheck — singular", async () => {
+    const url = await urlFor("check");
+    expect(url.endsWith("/VerificationCheck"), url).toBe(true);
+  });
+
+  it("CHECK does NOT post to /VerificationChecks — the four-build bug", async () => {
+    const url = await urlFor("check");
+    expect(url.endsWith("/VerificationChecks"), url).toBe(false);
+    expect(url, "plural is the endpoint that does not exist").not.toContain("VerificationChecks");
+  });
+
+  it("SEND posts to /Verifications — plural, and must not be 'corrected'", async () => {
+    const url = await urlFor("send");
+    expect(url.endsWith("/Verifications"), url).toBe(true);
+  });
+
+  it("the two are DIFFERENT — the asymmetry is the point", async () => {
+    const send = await urlFor("send");
+    const check = await urlFor("check");
+    expect(send).not.toBe(check);
+    expect(send.endsWith("s")).toBe(true);
+    expect(check.endsWith("s")).toBe(false);
+  });
+
+  it("both hang off the same v2 service base", async () => {
+    for (const call of ["send", "check"] as const) {
+      const url = await urlFor(call);
+      expect(url, call).toContain("https://verify.twilio.com/v2/Services/");
+      expect(url, call).toContain("VAtest");
+    }
   });
 });
