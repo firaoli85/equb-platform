@@ -31,6 +31,7 @@ import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { getSetting, WHATSAPP_DISABLED_REASON } from "@/lib/settings";
 import { portalUrlValue, welcomeSendCheck } from "@/lib/welcome-send";
+import { sendTelegramGroupMessage } from "@/lib/telegram";
 import { calculatePayout } from "@/lib/wheel";
 import { whatsAppMissingConfig } from "@/lib/whatsapp";
 
@@ -159,8 +160,12 @@ export async function getMessagingOverview(input?: { logPage?: number }) {
         })),
         log: log.map((entry) => ({
           id: entry.id,
-          person: `${entry.person.nameEnglishFirst} ${entry.person.nameEnglishLast ?? ""}`.trim(),
-          personAmharic: entry.person.nameAmharic,
+          // A row with no person is a GROUP BROADCAST (channel TELEGRAM) —
+          // said in words, not left as a blank where a name belongs.
+          person: entry.person
+            ? `${entry.person.nameEnglishFirst} ${entry.person.nameEnglishLast ?? ""}`.trim()
+            : "Group broadcast",
+          personAmharic: entry.person?.nameAmharic ?? "",
           templateKey: entry.templateKey,
           body: entry.body,
           channel: entry.channel,
@@ -607,5 +612,55 @@ export async function setNoMessages(input: { personId: string; noMessages: boole
   } catch (e) {
     console.error("setNoMessages failed:", e);
     return { ok: false as const, error: `Could not save. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * POST ONE ANNOUNCEMENT TO THE TELEGRAM GROUP (D-10, D-37 — Cycle-2 build,
+ * feature D). One bot, one chat, one message to everyone; manual only.
+ *
+ * THE LOG FOLLOWS THE ENGINE'S RULE. An attempt that reached Telegram is
+ * recorded — SENT on its ok (Telegram's ok means the message IS in the chat,
+ * unlike Twilio's "queued"), FAILED with Telegram's own description
+ * otherwise. A refusal BEFORE the wire (no bot configured, empty, too long)
+ * writes no row: a message that was never attempted did not fail at the
+ * provider, and the organizer reads the reason at the control instead.
+ *
+ * The row has NO person — a group message is not part of anyone's personal
+ * history — and `toPhone` carries the group chat id, which is the address the
+ * message actually went to.
+ */
+export async function sendGroupAnnouncement(input: { text: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (await getSetting("presentationMode")) {
+      return { ok: false as const, error: PRESENTATION_HIDDEN };
+    }
+    const result = await sendTelegramGroupMessage(input.text);
+    if (!result.ok && !result.attempted) {
+      return { ok: false as const, error: result.error };
+    }
+
+    await prisma.messageLog.create({
+      data: {
+        personId: null,
+        templateId: null,
+        templateKey: "TELEGRAM_BROADCAST",
+        body: input.text.trim(),
+        channel: "TELEGRAM",
+        toPhone: process.env.TELEGRAM_GROUP_CHAT_ID ?? "",
+        trigger: "MANUAL",
+        status: result.ok ? "SENT" : "FAILED",
+        error: result.ok ? null : result.error,
+      },
+    });
+    revalidatePath("/admin/messages");
+
+    if (!result.ok) return { ok: false as const, error: result.error };
+    return { ok: true as const };
+  } catch (e) {
+    console.error("sendGroupAnnouncement failed:", e);
+    return { ok: false as const, error: `Could not send. ${errorMessage(e)}` };
   }
 }

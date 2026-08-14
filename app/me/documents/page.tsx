@@ -1,15 +1,22 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getMyPortal } from "@/app/actions/member";
+import { getMySignedAgreements } from "@/app/actions/agreement";
+import { SignedAgreements } from "@/components/member/signed-agreements";
 
 export const dynamic = "force-dynamic";
 
-// Documents — nothing is shared yet in this build; the empty state is an
-// honest invitation, never a dead end.
+// Documents — the member's own signed agreements (Cycle-2 build, feature B).
+//
+// Each card is the EXACT text stored beside their signature, never a
+// re-render from the current version: the member reads the words they
+// actually agreed to. A member who has not signed sees the honest empty
+// state saying what will appear here. The query behind this is scoped to the
+// signed-in member's own signature rows by construction — the action takes
+// no input at all.
 export default async function DocumentsPage() {
-  const result = await getMyPortal();
+  const result = await getMySignedAgreements();
   if (!result.ok) {
-    if (result.error === "signed-out") redirect("/login");
+    if (result.error === "Not signed in.") redirect("/login");
     return (
       <p className="text-center py-10 text-sm text-gray-600 dark:text-gray-300">{result.error}</p>
     );
@@ -24,21 +31,7 @@ export default async function DocumentsPage() {
         </Link>
       </div>
 
-      <div className="rounded-2xl bg-white dark:bg-[#141414] border border-gray-100 dark:border-gray-800 shadow-sm px-5 py-10 text-center animate-fade-in-up">
-        <div className="w-12 h-12 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 flex items-center justify-center mb-3">
-          <svg className="w-6 h-6 text-indigo-500 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-        </div>
-        <p className="text-sm font-semibold text-gray-900 dark:text-white">No documents yet</p>
-        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-          When the organizer shares something with the group, it appears here.
-        </p>
-      </div>
+      <SignedAgreements agreements={result.data} />
     </div>
   );
 }

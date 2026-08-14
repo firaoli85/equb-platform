@@ -13,7 +13,9 @@ import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { parsePage } from "@/lib/paging";
 import { ChannelStatus } from "./channel-status";
 import { ComposeSend } from "./compose-send";
+import { GroupAnnouncement } from "./group-announcement";
 import { TemplatesEditor } from "./templates-editor";
+import { telegramMissingConfig } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -178,6 +180,12 @@ export default async function MessagesPage({
             member&apos;s derived state. Nothing leaves until you press send (2.20).
           </SectionHeading>
           <ComposeSend />
+          {/* THE OTHER CHANNEL, THE OTHER SHAPE (D-10): one message to the
+              whole Telegram group, nothing per member. It lives beside the
+              batch because both answer "tell people something" — the batch
+              tells each member their own position, this tells everyone the
+              same sentence. */}
+          <GroupAnnouncement missingConfig={telegramMissingConfig()} />
         </div>
       )}
 

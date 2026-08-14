@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { listDraftCycles } from "@/app/actions/cycles";
 import { Card, EmptyState, Pill } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { DraftCycles } from "./draft-cycles";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +47,7 @@ const day = (d: Date) =>
   d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 export default async function CyclesIndexPage() {
-  const [archives, cycles] = await Promise.all([
+  const [archives, cycles, draftsResult] = await Promise.all([
     prisma.cycleArchive.findMany({ orderBy: { closedAt: "desc" } }),
     prisma.cycle.findMany({
       orderBy: [{ status: "asc" }, { startDate: "desc" }],
@@ -59,10 +61,16 @@ export default async function CyclesIndexPage() {
         _count: { select: { participations: true } },
       },
     }),
+    // Through the ACTION, not a second query shape — the drafts section and
+    // the activate/delete controls must agree on what a draft is.
+    listDraftCycles(),
   ]);
 
   const archivedIds = new Set(archives.map((a) => a.cycleId));
-  const live = cycles.filter((c) => c.status !== "CLOSED");
+  // Drafts get their own section below, with the controls that act on them —
+  // they are no longer folded into "Running now", where a draft linked to
+  // /admin/cycle (the ACTIVE cycle's page) and offered nothing a draft needs.
+  const live = cycles.filter((c) => c.status === "ACTIVE");
   // A CLOSED cycle with no archive row should not exist — closing writes one —
   // but if it does, it is listed rather than silently dropped.
   const closedWithoutArchive = cycles.filter((c) => c.status === "CLOSED" && !archivedIds.has(c.id));
@@ -107,9 +115,7 @@ export default async function CyclesIndexPage() {
                     >
                       {c.name}
                     </Link>
-                    <Pill tone={c.status === "ACTIVE" ? "good" : "neutral"}>
-                      {c.status === "ACTIVE" ? "active" : "draft"}
-                    </Pill>
+                    <Pill tone="good">active</Pill>
                     <span className="ml-auto text-xs tabular-nums text-gray-600 dark:text-gray-400">
                       {c._count.participations} member{c._count.participations === 1 ? "" : "s"}
                     </span>
@@ -123,6 +129,9 @@ export default async function CyclesIndexPage() {
           </ul>
         )}
       </section>
+
+      {/* ————— Drafts — section and header render only when drafts exist ————— */}
+      {draftsResult.ok && <DraftCycles drafts={draftsResult.data} />}
 
       {/* ————— The record ————— */}
       <section className="space-y-3 animate-fade-in-up-2" aria-labelledby="archived">

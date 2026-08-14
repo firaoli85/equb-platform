@@ -118,7 +118,12 @@ model MessageTemplate {
 // the row is append-only — the log is the organizer's proof of what was said.
 model MessageLog {
   id          String            @id @default(cuid())
-  personId    String
+  // NULL FOR A GROUP BROADCAST (D-10: one bot, one chat, one message to
+  // everyone). A Telegram group announcement goes to the chat, not to a
+  // member, so there is no person to attach — and inventing one would put a
+  // group message in somebody's personal history. Every per-member surface
+  // filters by personId and never sees these rows.
+  personId    String?
   templateId  String?
   templateKey String
   body        String
@@ -129,7 +134,7 @@ model MessageLog {
   providerSid String?
   error       String?
   createdAt   DateTime          @default(now())
-  person      Person            @relation(fields: [personId], references: [id])
+  person      Person?           @relation(fields: [personId], references: [id])
   template    MessageTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
   @@index([personId])
   @@index([createdAt])

@@ -183,6 +183,40 @@ describe("the DATABASE accepts every MessageSendStatus the schema declares", () 
   }
 });
 
+// THE SAME DRIFT CLASS, FOR THE GROUP BROADCAST (Cycle-2 build, feature D).
+//
+// `channel` is TEXT, not an enum, so 'TELEGRAM' cannot hit enum drift — but
+// the broadcast's row has NO PERSON, and that is a schema-vs-database gap of
+// exactly the ACCEPTED shape: schema.prisma says `personId String?`, and if
+// the DROP NOT NULL migration is ever missing from a database, the first real
+// announcement posts to the group and then THROWS on the way to recording it
+// — message delivered, no row to prove it. Attempted for real, rolled back.
+describe("the DATABASE accepts a group-broadcast row: channel TELEGRAM, no person", () => {
+  it("a null-person TELEGRAM row is writable against the live database", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.messageLog.create({
+          data: {
+            personId: null,
+            templateId: null,
+            templateKey: "TELEGRAM_BROADCAST",
+            body: "group-broadcast writability probe",
+            channel: "TELEGRAM",
+            toPhone: "-1000000000000",
+            trigger: "MANUAL",
+            status: "SENT",
+            providerSid: null,
+            error: null,
+          },
+        });
+        // The insert has already been executed by Postgres — a NOT NULL
+        // refusal would have thrown before this line.
+        throw new RollbackProbe();
+      }),
+    ).rejects.toThrow(RollbackProbe);
+  });
+});
+
 /** Thrown to roll a probe transaction back. Never an error worth reporting. */
 class RollbackProbe extends Error {
   constructor() {

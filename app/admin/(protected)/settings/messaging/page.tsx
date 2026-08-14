@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getPlatformSettings } from "@/app/actions/settings";
 import { Alert } from "@/components/ui/primitives";
+import { telegramMissingConfig } from "@/lib/telegram";
 import { MessagingForm } from "./messaging-form";
 
 export const dynamic = "force-dynamic";
@@ -41,11 +42,25 @@ export default async function MessagingSettingsPage() {
             </dd>
           </div>
           <div>
+            {/* DERIVED, NEVER A STORED CLAIM (§5.15). This line said
+                "working" while zero Telegram code existed — a sentence nobody
+                could check. Now it reads the same config check the send path
+                refuses on, so the two cannot disagree. */}
             <dt className="font-semibold text-gray-900 dark:text-white">
-              Telegram group — working
+              Telegram group —{" "}
+              {telegramMissingConfig().length === 0 ? "configured" : "not configured"}
             </dt>
             <dd className="mt-0.5 max-w-prose text-gray-700 dark:text-gray-300">
-              The weekly group broadcast only. One bot, one chat, one message to everyone.
+              The weekly group broadcast only: one bot, one chat, one message to everyone, sent
+              by hand from Messages → Send.
+              {telegramMissingConfig().length > 0 && (
+                <>
+                  {" "}
+                  Not configured — set{" "}
+                  <code className="font-mono text-xs">{telegramMissingConfig().join(" and ")}</code>{" "}
+                  in <code className="font-mono text-xs">.env.local</code> once the bot exists.
+                </>
+              )}
             </dd>
           </div>
           <div>

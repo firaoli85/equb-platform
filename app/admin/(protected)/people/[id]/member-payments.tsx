@@ -98,10 +98,22 @@ export function MemberPayments({
   const selectedWeeks = weeks.filter((w) => selected.has(w.weekNumber));
   const amount = bulkCatchUpAmount(selectedWeeks);
 
+  // A CONFIRMATION CLEARS THE MOMENT ITS TRUTH CAN GO STALE (organizer,
+  // Aug 2026). "Covers week 3 in full" is a statement about the moment it was
+  // saved; beside a NEW selection it reads as a claim about THAT. So any new
+  // selection and any other action on this page clears it — the mechanism's
+  // own six-second fade is only the ceiling, whichever comes first. Failures
+  // are not cleared here: an unresolved refusal outlives a selection change
+  // (rule 6b), it is the reason something did NOT happen.
+  function clearStaleConfirmation() {
+    setWeekSave((current) => (current !== null && current.state.kind === "ok" ? null : current));
+  }
+
   function select(next: Set<number>) {
     setSelected(next);
     // Only the range box's own refusal is stale once the selection changes.
     setRangeSave({ kind: "idle" });
+    clearStaleConfirmation();
   }
 
   function toggle(weekNumber: number) {
@@ -227,6 +239,7 @@ export function MemberPayments({
                     destructive: false,
                   },
                   async () => {
+                    clearStaleConfirmation();
                     setLedgerSave({ kind: "saving" });
                     try {
                       const result = await recordLedgerPayment({ personId, amount: cents });
@@ -263,7 +276,10 @@ export function MemberPayments({
             </button>
             {/* AT THE BUTTON THAT WAS PRESSED. This message used to render at
                 the foot of the week list, past the whole table. */}
-            <SaveFeedback state={ledgerSave} />
+            <SaveFeedback
+              state={ledgerSave}
+              onStateSettled={() => setLedgerSave({ kind: "idle" })}
+            />
           </div>
         )}
       </div>
@@ -405,7 +421,10 @@ export function MemberPayments({
                   </span>
                   <button
                     type="button"
-                    onClick={() => setExpandedWeek(expanded ? null : w.weekNumber)}
+                    onClick={() => {
+                      clearStaleConfirmation();
+                      setExpandedWeek(expanded ? null : w.weekNumber);
+                    }}
                     aria-expanded={expanded}
                     aria-label={`Actions for week ${w.weekNumber}`}
                     className={buttonCls.ghost + " !px-2 !text-xs"}
@@ -420,7 +439,10 @@ export function MemberPayments({
                     was looking at simply went blank. */}
                 {weekSave !== null && weekSave.weekNumber === w.weekNumber && (
                   <div className="px-3 pb-2">
-                    <SaveFeedback state={weekSave.state} />
+                    <SaveFeedback
+                      state={weekSave.state}
+                      onStateSettled={() => setWeekSave(null)}
+                    />
                   </div>
                 )}
                 {expanded && (
@@ -487,6 +509,7 @@ export function MemberPayments({
           <button
             type="button"
             onClick={() => {
+              clearStaleConfirmation();
               setPreselect([...selected].sort((a, b) => a - b));
               setOpenEntry(true);
               setSelected(new Set());

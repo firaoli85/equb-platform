@@ -103,6 +103,11 @@ export const SETTINGS_LINKS: NavLink[] = [
     hint: "Closing wait, fee, numbering",
   },
   {
+    label: "Member agreement",
+    href: "/admin/settings/agreement",
+    hint: "The wording members sign, versioned",
+  },
+  {
     label: "Your account",
     href: "/admin/settings/account",
     hint: "Your own devices and sessions",

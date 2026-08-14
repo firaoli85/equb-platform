@@ -9,8 +9,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
       <header>
         <h1 className="text-2xl font-black text-gray-900 dark:text-white">Settings</h1>
         <p className="mt-1 max-w-prose text-sm text-gray-600 dark:text-gray-400">
-          Four separate decisions, kept separate: who can get in, how the platform talks to
-          members, the rules a cycle runs by, and your own account.
+          Separate decisions, kept separate: who can get in, how the platform talks to members,
+          the rules a cycle runs by, the agreement members sign, and your own account.
         </p>
       </header>
       <div className="flex flex-col gap-6 lg:flex-row lg:gap-10">

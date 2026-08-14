@@ -123,6 +123,10 @@ export async function listMessageThreads(
     });
     const latestByPerson = new Map<string, string>();
     for (const row of latest) {
+      // A GROUP BROADCAST HAS NO PERSON (channel TELEGRAM, personId null) and
+      // therefore no thread here — the centre is the per-member view, and a
+      // message to everyone is not a conversation with anyone.
+      if (row.personId === null) continue;
       const known = countByPerson.get(row.personId);
       if (known?.lastAt && row.createdAt.getTime() === known.lastAt.getTime()) {
         latestByPerson.set(row.personId, row.status);

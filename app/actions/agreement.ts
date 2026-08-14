@@ -288,12 +288,41 @@ export async function signMyAgreement(input: {
 
     const participation = await prisma.participation.findUnique({
       where: { id: input.participationId },
-      select: { id: true, personId: true, agreementRequiredAt: true },
+      select: {
+        id: true,
+        personId: true,
+        agreementRequiredAt: true,
+        status: true,
+        cycle: { select: { status: true } },
+        signatures: { orderBy: { signedAt: "desc" }, take: 1, select: { signedAt: true } },
+        _count: { select: { payments: { where: { amountPaid: { gt: 0 } } } } },
+      },
     });
     if (!participation || participation.personId !== person.id) {
       return { ok: false as const, error: "That agreement is not yours." };
     }
-    if (participation.agreementRequiredAt === null) {
+    // THE SAME RULE THE GATE READS — BOTH ROUTES (5.10: two functions
+    // answering one question is the same defect as none).
+    //
+    // THE REPORTED CONTRADICTION. This checked `agreementRequiredAt === null`
+    // alone — the welcome route — while getMyAgreement had moved to
+    // `agreementRequirement`, which also gates a member who has never paid.
+    // For exactly that member (gated, unsigned, no welcome) the screen showed
+    // the document with "Sign and see my payments" — TRUE, the gate wanted
+    // their signature — and pressing it answered "There is nothing to sign."
+    // Two exclusive states on one screen, because the read path and the write
+    // path were answering different questions.
+    //
+    // The sign button was the true state; this refusal was the stale rule.
+    if (
+      agreementRequirement({
+        requiredAt: participation.agreementRequiredAt,
+        lastSignedAt: participation.signatures[0]?.signedAt ?? null,
+        hasEverPaid: participation._count.payments > 0,
+        participationLive: participation.status === "ACTIVE",
+        cycleOpen: participation.cycle.status === "ACTIVE",
+      }) === null
+    ) {
       return { ok: false as const, error: "There is nothing to sign." };
     }
 
@@ -568,5 +597,69 @@ export async function publishAgreementVersion(input: { body: string; note?: stri
   } catch (e) {
     console.error("publishAgreementVersion failed:", e);
     return { ok: false as const, error: `Could not publish. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * MEMBER: every agreement they have signed, newest first — their own copies.
+ *
+ * The documents page renders these (Cycle-2 build, feature B). What renders
+ * is `documentText` — the EXACT text stored beside the signature, never a
+ * re-render from the current version: the wording may have moved on since,
+ * and a member re-reading "their agreement" must see the words they actually
+ * agreed to, figures and all. That is the entire reason the column exists.
+ *
+ * SCOPED BY THE SIGNED-IN MEMBER, structurally: the query's only filter is
+ * the personId resolved from their own session claims, so another member's
+ * signature is not reachable from here by any input — there IS no input.
+ */
+export async function getMySignedAgreements(): Promise<
+  | {
+      ok: true;
+      data: {
+        id: string;
+        signedAt: string;
+        version: number;
+        cycleName: string;
+        documentText: string;
+      }[];
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const claims = await getCurrentUser();
+    if (!claims) return { ok: false as const, error: "Not signed in." };
+    const person = await prisma.person.findFirst({
+      where: { authUserId: claims.sub },
+      select: { id: true },
+    });
+    if (!person) return { ok: true as const, data: [] };
+
+    // Bounded by the domain: one row per signature this person has ever
+    // given, and a member signs at most once per welcome sent to them.
+    const signatures = await prisma.agreementSignature.findMany({
+      where: { personId: person.id },
+      orderBy: { signedAt: "desc" },
+      select: {
+        id: true,
+        signedAt: true,
+        documentText: true,
+        agreementVersion: { select: { version: true } },
+        participation: { select: { cycle: { select: { name: true } } } },
+      },
+    });
+    return {
+      ok: true as const,
+      data: signatures.map((s) => ({
+        id: s.id,
+        signedAt: s.signedAt.toISOString(),
+        version: s.agreementVersion.version,
+        cycleName: s.participation.cycle.name,
+        documentText: s.documentText,
+      })),
+    };
+  } catch (e) {
+    console.error("getMySignedAgreements failed:", e);
+    return { ok: false as const, error: `Could not load your documents. ${errorMessage(e)}` };
   }
 }

@@ -759,8 +759,16 @@ describe("GUARD — the server re-checks the document before recording it", () =
   // it, any signed-in member could sign anybody's agreement.
   it("the participation is proved to belong to the signer", () => {
     expect(body).toMatch(/participation\.personId\s*!==\s*person\.id/);
-    expect(body, "a member could sign an agreement nobody was asked for").toMatch(
-      /participation\.agreementRequiredAt\s*===\s*null/,
+    // …and "nobody asked for this" is decided by the SAME two-route rule the
+    // gate reads (agreementRequirement), never by the welcome timestamp
+    // alone. The timestamp-only check was the reported contradiction: the
+    // gate showed a never-paid member the document while this refused their
+    // signature with "There is nothing to sign."
+    expect(body, "a member could sign an agreement nobody was asked for").toContain(
+      "agreementRequirement(",
+    );
+    expect(body, "the sign action fell back to the welcome-route-only check").not.toMatch(
+      /if\s*\(\s*participation\.agreementRequiredAt\s*===\s*null\s*\)/,
     );
   });
 });

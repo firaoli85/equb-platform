@@ -609,7 +609,7 @@ mid-cycle joiners running their own windows, as designed (§2.7, §2.22). 29 peo
 and **verified to the cent**: $197,175 received, $124,950 paid out at import. Figures
 move as payments are recorded.
 
-**Test suite:** ~2210 tests across 113 files, `tsc --noEmit` clean, `next build` compiles,
+**Test suite:** ~2240 tests across 118 files, `tsc --noEmit` clean, `next build` compiles,
 34 scripts under `scripts/` (20 `verify-*` behavioural checks against the live database
 that clean up after themselves, plus import/repair/diagnostic tools and the standing
 `npm run check:position`).
