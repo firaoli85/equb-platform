@@ -51,6 +51,19 @@ export default async function PeoplePage({
                 .map((pt) => `${pt.cycle.name}${pt.cycle.status === "ACTIVE" ? " (active)" : ""}`)
                 .join(", "),
         inActiveCycle: p.participations.some((pt) => pt.cycle.status === "ACTIVE"),
+        // The sort facts (14 Aug 2026): the ACTIVE participation's figures.
+        // weeksPaid is the weeks their money covers — contributed over weekly,
+        // floored — the same quotient the standing derivation calls
+        // weeksCredited, so the sort agrees with every other screen.
+        ...(() => {
+          const activePart = p.participations.find((pt) => pt.cycle.status === "ACTIVE") ?? null;
+          const weekly = activePart?.weeklyAmount ?? 0;
+          return {
+            weeklyAmount: weekly,
+            weeksCommitted: activePart?.weeksCommitted ?? 0,
+            weeksPaid: weekly > 0 ? Math.floor(p.contributedThisCycle / weekly) : 0,
+          };
+        })(),
       }))
     : [];
 

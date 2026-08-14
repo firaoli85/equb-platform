@@ -137,25 +137,32 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
   // facts than the freeform ones did — fewer variables is fewer chances of the
   // 21656 mismatch that fabricates figures — so these assert what the approved
   // sentence actually says, not what the old one used to.
-  it("BEHIND_NOTICE states their own weeks with dates, the counts, and the amount", () => {
-    // v2 (13 Aug 2026): the member's OWN numbering paired with dates. Both
-    // fixtures start at week 1, so own numbers coincide with the cycle's —
-    // the Henok divergence is pinned in lib/member-week-dates.test.ts.
+  it("BEHIND_NOTICE states the counts, the amount, and both week anchors (v3)", () => {
+    // v3 (14 Aug 2026): stupid-proof wording — behind count, catch-up
+    // amount, then the two anchors: paid-up-to and current week, each the
+    // member's OWN numbering with its full date. Both fixtures start at week
+    // 1, so own numbers coincide with the cycle's — the Henok divergence is
+    // pinned in lib/member-week-dates.test.ts.
     const text = renderMessage("BEHIND_NOTICE", BEHIND_MEMBER);
     expect(text).toContain("Meheret");
-    expect(text).toContain("as of your week 12 (Aug 2)");
-    expect(text).toContain("last payment on your week 5 (Jun 14)");
-    expect(text).toContain("6 of your 20 weeks are behind");
-    expect(text).toContain("$1,500 outstanding");
+    expect(text).toContain("you are 6 payments behind");
+    expect(text).toContain("That is $1,500 to catch up");
+    expect(text).toContain("paid up to your week 5 (Sunday, June 14)");
+    expect(text).toContain("the current week is week 12 (Sunday, August 2)");
   });
 
   it("LATE_NOTICE names the weeks whose windows actually closed, with their dates", () => {
     // Weeks 6–11 closed unpaid by Aug 5; week 12's window is still open.
+    // v3 list form: plain enumeration, dates grouped in one bracket, no
+    // ranges and no dashes.
     const text = renderMessage("LATE_NOTICE", BEHIND_MEMBER);
-    expect(text).toContain("your week(s) 6–11 (Jun 21 – Jul 26)");
+    expect(text).toContain(
+      "your week(s) 6, 7, 8, 9, 10 and 11 (Jun 21, Jun 28, Jul 5, Jul 12, Jul 19 and Jul 26)",
+    );
     // The amount and the named weeks come from the SAME boundary.
-    expect(text).toContain("$1,500");
-    expect(text).toContain("across 6 of your 20 weeks");
+    expect(text).toContain("That is $1,500 to catch up");
+    expect(text).toContain("paid up to your week 5 (Sunday, June 14)");
+    expect(text).toContain("the current week is week 12 (Sunday, August 2)");
   });
 
   it("PAYMENT_CONFIRMED states the receipt, the covered weeks with dates, and progress", () => {
@@ -169,17 +176,44 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     expect(text).toContain("6 of your 20 weeks");
   });
 
-  it("WINNER_ANNOUNCEMENT carries the payout, the finish DATE, and the weeks remaining", () => {
-    // v2: NO drawn-week reference at all, by design — and the finish DATE,
-    // which resolves D-38's divergence in 2.22's favour.
+  it("WINNER_ANNOUNCEMENT carries the payout, progress, payments left, and the finish DATE", () => {
+    // v3: NO drawn-week reference, and {{5}} is PAYMENTS left — the count
+    // owed, not calendar weeks — with the finish DATE as the run-until
+    // anchor (D-38's resolution retained).
     const text = renderMessage("WINNER_ANNOUNCEMENT", CURRENT_MEMBER, {
       payoutNet: 490_000,
     });
     expect(text).toContain("congratulations");
     expect(text).toContain("$4,900");
-    expect(text).toContain("until Sunday, September 27, 2026");
-    expect(text).toContain("14 of your weeks remaining");
+    expect(text).toContain("you have paid 6 of your 20 weeks");
+    expect(text).toContain("You have 14 payments left");
+    expect(text).toContain("your weeks run until Sunday, September 27, 2026");
     expect(text).not.toContain("week 8");
+  });
+
+  it("{paymentsLeft} is the COUNT OWED, not calendar weeks remaining (v3)", () => {
+    // The 13-Aug finding, pinned: the two numbers split whenever a member is
+    // behind or ahead. Both members below sit at cycle week 12 of a 20-week
+    // window, so both have 8 CALENDAR weeks left — and neither reads "8".
+    const behind = factsFrom("Meheret", {
+      weeklyAmount: 25_000,
+      weeksCommitted: 20,
+      cycleWeek: 12,
+      today: utc("2026-08-05"),
+      paidThroughWeek: 5,
+    });
+    const ahead = factsFrom("Tizita", {
+      weeklyAmount: 25_000,
+      weeksCommitted: 20,
+      cycleWeek: 12,
+      today: utc("2026-08-05"),
+      paidThroughWeek: 18,
+    });
+    expect(placeholderValues(behind).paymentsLeft).toBe("15"); // 20 − 5
+    expect(placeholderValues(ahead).paymentsLeft).toBe("2"); // 20 − 18
+    const behindText = renderMessage("WINNER_ANNOUNCEMENT", behind, { payoutNet: 490_000 });
+    expect(behindText).toContain("You have 15 payments left");
+    expect(behindText).not.toContain("8 payments");
   });
 
   it("CYCLE_CLOSING_STATEMENT is factual for a completed member ($0)", () => {
@@ -228,7 +262,7 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
     }
   });
 
-  it("a member with no payments renders an honest dash, not a fake number", () => {
+  it("a member with no payments reads 'the start', not a dash and not a fake number (v3)", () => {
     const never = factsFrom("Sara", {
       weeklyAmount: 25_000,
       weeksCommitted: 20,
@@ -237,7 +271,11 @@ describe("renderMessage — statements carry the TRUE derived state (2.21)", () 
       paidThroughWeek: 0,
     });
     expect(never.lastPaymentWeek).toBeNull();
-    expect(renderMessage("BEHIND_NOTICE", never)).toContain("week —");
+    const text = renderMessage("BEHIND_NOTICE", never);
+    // The fixed text owns "your week", and the never-paid form slots in as
+    // the organizer specified it: "…paid up to your week the start (…)".
+    expect(text).toContain("paid up to your week the start (Sunday, May 17)");
+    expect(text).not.toContain("—");
   });
 
   it("an unknown placeholder stays literal and is reported", () => {

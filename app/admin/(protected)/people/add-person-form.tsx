@@ -55,9 +55,9 @@ export function AddPersonForm() {
     >
       {(
         [
-          ["nameAmharic", "Amharic name *"],
-          ["nameEnglishFirst", "English first name *"],
-          ["nameEnglishLast", "English last name"],
+          ["nameEnglishFirst", "First name *"],
+          ["nameEnglishLast", "Last name"],
+          ["nameAmharic", "Amharic name (optional)"],
           ["phone", "Phone"],
         ] as const
       ).map(([key, label]) => (
@@ -84,7 +84,7 @@ export function AddPersonForm() {
         label="Add person"
         savingLabel="Adding…"
         dirty={dirty}
-        notDirtyHint="Fill in at least the Amharic and English first names."
+        notDirtyHint="Fill in at least the first name."
       />
     </form>
   );

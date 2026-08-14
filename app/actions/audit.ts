@@ -155,7 +155,7 @@ export async function listAuditLog(input: AuditFilterInput = {}) {
       //
       // So it says so, on screen, only when it has actually happened.
       const capReached = candidates.length === AUDIT_CANDIDATE_CAP;
-      const info = auditPageInfo(matched.length, filter.page);
+      const info = auditPageInfo(matched.length, filter.page, filter.pageSize);
       return {
         ok: true as const,
         data: {
@@ -178,7 +178,7 @@ export async function listAuditLog(input: AuditFilterInput = {}) {
     // The other branch counts in SQL and pages properly, so nothing is ever
     // cut: the field is present and null so both shapes match.
     const total = await prisma.auditLog.count({ where });
-    const info = auditPageInfo(total, filter.page);
+    const info = auditPageInfo(total, filter.page, filter.pageSize);
     const rows = await prisma.auditLog.findMany({
       where,
       orderBy: { createdAt: "desc" },

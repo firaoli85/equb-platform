@@ -33,7 +33,6 @@ export function PatternsView({
     name: string;
     weeks: number[];
   } | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
 
   /**
    * That member's own window, from the grid's OWN cells (2.19: nothing is
@@ -60,7 +59,6 @@ export function PatternsView({
 
   return (
     <div className="space-y-3">
-      {saved && <Alert kind="ok">{saved}</Alert>}
 
       {picked && (
         <div
@@ -86,7 +84,10 @@ export function PatternsView({
             weeks={weeksFor(picked.participationId)}
             preselect={picked.weeks}
             onRecorded={(message) => {
-              setSaved(message);
+              // PaymentEntry stays mounted and confirms in place — echoing it
+              // into a persistent Alert here said the same thing twice and
+              // left the copy behind after the inline one faded.
+              void message;
               router.refresh();
             }}
           />
@@ -98,7 +99,6 @@ export function PatternsView({
         onPick={(participationId, weeks) => {
           const member = strips.find((s) => s.participationId === participationId);
           if (!member) return;
-          setSaved(null);
           setPicked({ participationId, name: member.name, weeks });
         }}
       />

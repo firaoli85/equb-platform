@@ -355,8 +355,10 @@ describe("redactCycleDetail", () => {
     const redacted = redactCycleDetail(full);
     expect(leaks(redacted)).toEqual([]);
     const p = redacted.participations[0];
-    expect(p.person.nameAmharic).toBe("#5");
-    expect(p.person.nameEnglishFirst).toBe("");
+    // The label sits in the LATIN slot since the Latin-primary flip — that
+    // is the field the roster leads with, so it is what a screen share shows.
+    expect(p.person.nameEnglishFirst).toBe("#5");
+    expect(p.person.nameAmharic).toBe("");
     expect(p.weeklyAmount).toBe(0);
     expect(p.luckyNumbers[0].amount).toBe(0);
     expect(p.luckyNumbers[0].number).toBe(5);

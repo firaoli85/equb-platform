@@ -96,6 +96,55 @@ describe("the approved registry reproduces Meta's wording exactly", () => {
   });
 });
 
+// ————————————————————————————————————————————————————————————————————————
+// NO DASHES IN FIXED TEMPLATE TEXT — the organizer's v3 standing rule
+// (14 Aug 2026), for ALL member-facing text going forward: maximally simple,
+// "stupid-proof" sentences; a dash is punctuation a reader can misread and a
+// writer can mistype three different ways.
+//
+// TWO EXEMPTIONS, PINNED AND SHRINKING: payment_confirmed_v2 and
+// whatsapp_welcome were approved BEFORE the rule and carry an em dash each —
+// Meta-frozen wording nobody may edit (5.3). They stay exempt until the day
+// they are resubmitted, at which point their new bodies fall under this
+// guard and the exemption list must LOSE the key, never gain one.
+// ————————————————————————————————————————————————————————————————————————
+describe("GUARD — no dashes in registry fixed text (v3 standing rule)", () => {
+  const PRE_V3_EXEMPT: readonly string[] = ["PAYMENT_CONFIRMED", "WHATSAPP_WELCOME"];
+  /** Fixed text only — the {{n}} slots are values, composed elsewhere. */
+  const fixedText = (body: string) => body.replace(/\{\{\d+\}\}/g, "");
+
+  for (const key of APPROVED_TEMPLATE_KEYS) {
+    if (PRE_V3_EXEMPT.includes(key)) continue;
+    it(`${key}: fixed text carries no em or en dash`, () => {
+      const text = fixedText(APPROVED_TEMPLATES[key].approvedBody);
+      expect(text, `${key} fixed text contains an em dash`).not.toContain("—");
+      expect(text, `${key} fixed text contains an en dash`).not.toContain("–");
+    });
+  }
+
+  it("the exemption list cannot grow past the two pre-v3 bodies", () => {
+    expect(PRE_V3_EXEMPT).toEqual(["PAYMENT_CONFIRMED", "WHATSAPP_WELCOME"]);
+    // And each exempt body really is the pre-v3 one still — the day either
+    // changes, its exemption must be removed with it.
+    expect(APPROVED_TEMPLATES.PAYMENT_CONFIRMED.contentSid).toBe(
+      "HXf357ad3b5f22055d701a9e8f2b3816cc",
+    );
+    expect(APPROVED_TEMPLATES.WHATSAPP_WELCOME.contentSid).toBe(
+      "HX90da7257223b48177b95dbbb132ea182",
+    );
+  });
+
+  // NON-VACUITY, in-memory: the scan sees a planted dash. The live plant
+  // (dash into a v3 body → build fails → restore) is run once at build time
+  // and recorded in the build report, not repeated here.
+  it("the scan catches a planted dash and ignores one inside a slot value", () => {
+    expect(fixedText("That is {{3}} to catch up — please pay.")).toContain("—");
+    // A dash arriving INSIDE a variable's value is composed text, not fixed
+    // text, and the fixed-text scan must not look at it.
+    expect(fixedText("recorded on your week(s) {{3}}.")).not.toContain("–");
+  });
+});
+
 describe("LOCKOUT_NOTICE is undeliverable BY DESIGN", () => {
   it("is a real message key", () => {
     expect(MESSAGE_KEYS).toContain("LOCKOUT_NOTICE");

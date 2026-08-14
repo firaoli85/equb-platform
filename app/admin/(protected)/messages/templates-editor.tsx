@@ -264,7 +264,7 @@ export function TemplatesEditor({
                   ? [{ value: "", label: "No active members" }]
                   : members.map((m) => ({
                       value: m.participationId,
-                      label: `${m.nameAmharic} (${m.nameEnglish})`,
+                      label: m.nameAmharic ? `${m.nameEnglish} (${m.nameAmharic})` : m.nameEnglish,
                     }))
               }
             />

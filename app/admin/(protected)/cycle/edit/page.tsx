@@ -3,6 +3,7 @@ import { getActiveCycleDetail } from "@/app/actions/cycles";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import { getSetting } from "@/lib/settings";
 import { CycleEditForm } from "./cycle-edit-form";
+import { personDisplayName } from "@/lib/person-name";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function CycleEditPage() {
           .filter((p) => p.status === "ACTIVE")
           .map((p) => ({
             id: p.id,
-            name: `${p.person.nameAmharic} — ${p.person.nameEnglishFirst}`,
+            name: personDisplayName(p.person),
             weeklyAmount: p.weeklyAmount,
             weeksCommitted: p.weeksCommitted,
           }))}

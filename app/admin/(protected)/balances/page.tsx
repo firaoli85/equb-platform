@@ -11,7 +11,8 @@ import {
 import { StatCard } from "@/components/ui/stat-card";
 import { Pager } from "@/components/ui/pager";
 import { formatDateUTC, formatMoney } from "@/lib/format";
-import { parsePage } from "@/lib/paging";
+import { PAGE_SIZES, parsePage, parsePageSize } from "@/lib/paging";
+import { PageSizeSelect } from "@/components/ui/page-size";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +23,11 @@ export const dynamic = "force-dynamic";
 export default async function BalancesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string | string[] }>;
+  searchParams: Promise<{ page?: string | string[]; pageSize?: string | string[] }>;
 }) {
-  const result = await listCarriedBalances({ page: parsePage((await searchParams).page) });
+  const query = await searchParams;
+  const pageSize = parsePageSize(query.pageSize, PAGE_SIZES.balances);
+  const result = await listCarriedBalances({ page: parsePage(query.page), pageSize });
   if (!result.ok) {
     if (result.error === PRESENTATION_HIDDEN) return <PresentationHidden what="Carried balances" />;
     return (
@@ -103,9 +106,11 @@ export default async function BalancesPage({
                     >
                       {r.name}
                     </Link>
-                    <span className="truncate text-xs text-gray-600 dark:text-gray-400">
-                      {r.nameAmharic}
-                    </span>
+                    {r.nameAmharic && (
+                      <span className="truncate text-xs text-gray-600 dark:text-gray-400">
+                        {r.nameAmharic}
+                      </span>
+                    )}
                     {r.forgiven > 0 && (
                       <Pill tone="neutral">{formatMoney(r.forgiven)} written off</Pill>
                     )}
@@ -140,12 +145,15 @@ export default async function BalancesPage({
       {/* Always rendered, even on one page: a list that shows part of
           itself while looking whole is how someone concludes a debt was
           settled when it was only on page two. */}
-      <Pager
-        info={page}
-        noun={{ one: "person carries a balance", many: "people carry a balance" }}
-        label="Balance pages"
-        hrefFor={(n) => `/admin/balances?page=${n}`}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Pager
+          info={page}
+          noun={{ one: "person carries a balance", many: "people carry a balance" }}
+          label="Balance pages"
+          hrefFor={(n) => `/admin/balances?page=${n}${pageSize !== PAGE_SIZES.balances ? `&pageSize=${pageSize}` : ""}`}
+        />
+        <PageSizeSelect dflt={PAGE_SIZES.balances} storageKey="admin-balances-page-size" />
+      </div>
 
     </main>
   );

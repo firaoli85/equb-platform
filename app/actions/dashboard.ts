@@ -24,6 +24,7 @@ import {
   weeksLeavingExpectation,
 } from "@/lib/participation-close";
 import { undrawnWindowWarnings } from "@/lib/wheel";
+import { personDisplayName } from "@/lib/person-name";
 
 const MS_PER_DAY = 86_400_000;
 function utcDay(date: Date): number {
@@ -171,7 +172,7 @@ export async function getDashboard(input?: { weekNumber?: number }) {
     // drops them from "behind" entirely — they are not late, they stopped.
     const activeNamed = cycle.participations.map((p) => ({
       id: p.id,
-      name: `${p.person.nameAmharic} — ${p.person.nameEnglishFirst}`,
+      name: personDisplayName(p.person),
       weeklyAmount: p.weeklyAmount,
       startWeek: p.startWeek,
       weeksCommitted: p.weeksCommitted,
@@ -204,7 +205,7 @@ export async function getDashboard(input?: { weekNumber?: number }) {
       participations: cycle.participations.map((p) => ({
         id: p.id,
         personId: p.personId,
-        name: `${p.person.nameAmharic} — ${p.person.nameEnglishFirst}`,
+        name: personDisplayName(p.person),
         weeklyAmount: p.weeklyAmount,
         weeksCommitted: p.weeksCommitted,
         status: p.status,
@@ -361,7 +362,7 @@ export async function getDashboard(input?: { weekNumber?: number }) {
         .filter((p) => p.person.pinLockedUntil !== null && p.person.pinLockedUntil > today)
         .map((p) => ({
           personId: p.person.id,
-          name: `${p.person.nameAmharic} — ${p.person.nameEnglishFirst}`,
+          name: personDisplayName(p.person),
           minutesLeft: Math.max(
             1,
             Math.ceil((p.person.pinLockedUntil!.getTime() - today.getTime()) / 60_000),

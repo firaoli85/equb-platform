@@ -96,23 +96,17 @@ function ThreadList({
   const router = useRouter();
   const [query, setQuery] = useState(search);
 
-  // TYPE-AND-WAIT, not type-and-thrash. The search runs on the server so it
-  // reaches every person, not only the current page — and a request per
-  // keystroke would send one for "T", "Ts", "Tsi". 250ms is below the point
-  // where a search feels laggy and above the point where it fires mid-word.
-  const settled = useRef(search);
-  useEffect(() => {
-    if (query === settled.current) return;
-    const timer = setTimeout(() => {
-      settled.current = query;
-      const params = new URLSearchParams();
-      params.set("section", "people");
-      if (query.trim()) params.set("q", query.trim());
-      if (selected) params.set("person", selected);
-      router.replace(`/admin/messages?${params}`);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [query, router, selected]);
+  // APPLIED ON ENTER OR THE BUTTON, never mid-typing (14 Aug 2026 ruling:
+  // filters do not fire on change alone). The debounce this replaces sent a
+  // server search per pause — and re-filtered the list under the reader
+  // before they finished the name.
+  const applySearch = () => {
+    const params = new URLSearchParams();
+    params.set("section", "people");
+    if (query.trim()) params.set("q", query.trim());
+    if (selected) params.set("person", selected);
+    router.replace(`/admin/messages?${params}`);
+  };
 
   const hrefFor = (personId: string) => {
     const params = new URLSearchParams({ section: "people", person: personId });
@@ -123,17 +117,31 @@ function ThreadList({
   return (
     <aside className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#141414]">
       <div className="border-b border-gray-100 p-3 dark:border-gray-800">
-        <label className="block">
-          <span className="sr-only">Search people by name or phone</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name or phone"
-            data-testid="thread-search"
-            className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
-          />
-        </label>
+        <form
+          className="flex gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            applySearch();
+          }}
+        >
+          <label className="block min-w-0 flex-1">
+            <span className="sr-only">Search people by name or phone</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name or phone"
+              data-testid="thread-search"
+              className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
+            />
+          </label>
+          <button
+            type="submit"
+            className="min-h-11 shrink-0 rounded-xl border border-gray-300 px-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/5"
+          >
+            Search
+          </button>
+        </form>
         {/* A SEARCH MUST NEVER READ AS "NOBODY". Stating the roster size next
             to the match count is what separates "no such member" from "no
             match for what you typed". */}
@@ -146,7 +154,12 @@ function ThreadList({
 
       {threads.length === 0 ? (
         <p className="px-3.5 py-4 text-sm text-gray-600 dark:text-gray-400">
-          Nobody matches that. Clear the search to see everyone.
+          {/* An empty ROSTER is not a failed search — telling the reader to
+              clear a search they never typed sends them hunting for a filter
+              that is not on. */}
+          {search.trim()
+            ? "Nobody matches that. Clear the search to see everyone."
+            : "Nobody is in the directory yet."}
         </p>
       ) : (
         <ul className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -165,11 +178,13 @@ function ThreadList({
               >
                 <span className="flex items-baseline gap-2">
                   <span className="truncate text-sm font-bold text-gray-900 dark:text-white">
-                    {t.nameAmharic}
-                  </span>
-                  <span className="truncate text-xs text-gray-600 dark:text-gray-400">
                     {t.nameEnglish}
                   </span>
+                  {t.nameAmharic && (
+                    <span className="truncate text-xs text-gray-600 dark:text-gray-400">
+                      {t.nameAmharic}
+                    </span>
+                  )}
                 </span>
                 <span
                   className={
@@ -280,8 +295,10 @@ function Conversation({
     <section className="flex min-w-0 flex-col gap-3">
       <header className="rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-[#141414]">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="text-base font-black text-gray-900 dark:text-white">{person.nameAmharic}</h2>
-          <span className="text-sm text-gray-600 dark:text-gray-400">{person.nameEnglish}</span>
+          <h2 className="text-base font-black text-gray-900 dark:text-white">{person.nameEnglish}</h2>
+          {person.nameAmharic && (
+            <span className="text-sm text-gray-600 dark:text-gray-400">{person.nameAmharic}</span>
+          )}
           <Link
             href={`/admin/people/${person.id}`}
             className="ml-auto text-xs font-semibold text-indigo-700 hover:underline dark:text-indigo-400"
@@ -381,12 +398,19 @@ function ConversationFilters({
   filter: ConversationFilter;
 }) {
   const router = useRouter();
-  const go = (next: Partial<ConversationFilter>) => {
-    const merged = { ...filter, ...next };
+  // PICKED locally, APPLIED on the button (14 Aug 2026 ruling). The applied
+  // state stays in the URL; applying also drops `cpage`, which used to
+  // strand the reader on an out-of-range conversation page.
+  const [picked, setPicked] = useState<ConversationFilter>(filter);
+  const dirty =
+    picked.templateKey !== filter.templateKey ||
+    (picked.from ?? "") !== (filter.from ?? "") ||
+    (picked.to ?? "") !== (filter.to ?? "");
+  const apply = () => {
     const params = new URLSearchParams({ section: "people", person: personId });
-    if (merged.templateKey !== "all") params.set("type", merged.templateKey);
-    if (merged.from) params.set("from", merged.from);
-    if (merged.to) params.set("to", merged.to);
+    if (picked.templateKey !== "all") params.set("type", picked.templateKey);
+    if (picked.from) params.set("from", picked.from);
+    if (picked.to) params.set("to", picked.to);
     router.push(`/admin/messages?${params}`);
   };
 
@@ -397,8 +421,13 @@ function ConversationFilters({
           Type
         </span>
         <select
-          value={filter.templateKey}
-          onChange={(e) => go({ templateKey: e.target.value as ConversationFilter["templateKey"] })}
+          value={picked.templateKey}
+          onChange={(e) =>
+            setPicked((p) => ({
+              ...p,
+              templateKey: e.target.value as ConversationFilter["templateKey"],
+            }))
+          }
           aria-label="Filter by message type"
           data-testid="filter-type"
           className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
@@ -418,8 +447,8 @@ function ConversationFilters({
         </span>
         <input
           type="date"
-          value={filter.from ?? ""}
-          onChange={(e) => go({ from: e.target.value || null })}
+          value={picked.from ?? ""}
+          onChange={(e) => setPicked((p) => ({ ...p, from: e.target.value || null }))}
           aria-label="Only messages from this date"
           data-testid="filter-from"
           className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
@@ -431,13 +460,27 @@ function ConversationFilters({
         </span>
         <input
           type="date"
-          value={filter.to ?? ""}
-          onChange={(e) => go({ to: e.target.value || null })}
+          value={picked.to ?? ""}
+          onChange={(e) => setPicked((p) => ({ ...p, to: e.target.value || null }))}
           aria-label="Only messages up to this date"
           data-testid="filter-to"
           className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
         />
       </label>
+      <button
+        type="button"
+        onClick={apply}
+        disabled={!dirty}
+        data-testid="filter-apply"
+        className="min-h-11 rounded-xl bg-indigo-600 px-3.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-40"
+      >
+        Apply
+      </button>
+      {(filter.templateKey !== "all" || filter.from || filter.to) && (
+        <span className="mb-2 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+          Filtered
+        </span>
+      )}
       {(filter.templateKey !== "all" || filter.from || filter.to) && (
         <Link
           href={`/admin/messages?section=people&person=${personId}`}

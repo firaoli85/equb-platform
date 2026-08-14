@@ -82,7 +82,7 @@ export type ConversationData = {
  * slower with every person added.
  */
 export async function listMessageThreads(
-  input?: { search?: string; page?: number },
+  input?: { search?: string; page?: number; pageSize?: number },
 ): Promise<{ ok: true; data: ThreadListData } | { ok: false; error: string }> {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
@@ -170,7 +170,7 @@ export async function listMessageThreads(
         return a.nameEnglish.localeCompare(b.nameEnglish);
       });
 
-    const info = pageInfo(all.length, input?.page ?? 1, PAGE_SIZES.messageThreads);
+    const info = pageInfo(all.length, input?.page ?? 1, input?.pageSize ?? PAGE_SIZES.messageThreads);
     return {
       ok: true as const,
       data: {
@@ -214,6 +214,7 @@ export type ConversationMessage = {
 export async function getConversation(input: {
   personId: string;
   page?: number;
+  pageSize?: number;
   type?: string;
   from?: string;
   to?: string;
@@ -259,7 +260,7 @@ export async function getConversation(input: {
       prisma.messageLog.count({ where: { personId: person.id } }),
     ]);
 
-    const size = PAGE_SIZES.memberConversation;
+    const size = input?.pageSize ?? PAGE_SIZES.memberConversation;
     // The LAST page by default — the recent end of the conversation.
     const lastPage = Math.max(1, Math.ceil(matching / size));
     const info = pageInfo(matching, input.page ?? lastPage, size);

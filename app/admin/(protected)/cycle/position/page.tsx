@@ -10,7 +10,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { parseIsoDay } from "@/lib/date-bounds";
 import { formatDateUTC, formatMoney } from "@/lib/format";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
-import { parsePage } from "@/lib/paging";
+import { PAGE_SIZES, parsePage, parsePageSize } from "@/lib/paging";
 import { parsePositionSection, positionSections } from "./sections";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 
@@ -36,12 +36,16 @@ export default async function CyclePositionPage({
 }: {
   searchParams: Promise<{
     readingsPage?: string | string[];
+    readingsPageSize?: string | string[];
     section?: string | string[];
   }>;
 }) {
-  const { readingsPage, section: rawSection } = await searchParams;
+  const { readingsPage, readingsPageSize, section: rawSection } = await searchParams;
   const section = parsePositionSection(rawSection);
-  const result = await getCyclePosition({ readingsPage: parsePage(readingsPage) });
+  const result = await getCyclePosition({
+    readingsPage: parsePage(readingsPage),
+    readingsPageSize: parsePageSize(readingsPageSize, PAGE_SIZES.cashReadings),
+  });
   if (!result.ok) {
     if (result.error === PRESENTATION_HIDDEN) {
       return <PresentationHidden what="The cycle position" />;

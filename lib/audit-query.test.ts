@@ -15,7 +15,17 @@ import {
 describe("reading the filter off a URL, trusting none of it", () => {
   it("an empty URL is the whole record, page 1", () => {
     const f = parseAuditFilter({});
-    expect(f).toEqual({ action: "all", entity: "all", personId: null, from: null, to: null, page: 1 });
+    // pageSize joined the filter with the per-page selector (14 Aug 2026) —
+    // absent means the log's own default, never an unbounded read.
+    expect(f).toEqual({
+      action: "all",
+      entity: "all",
+      personId: null,
+      from: null,
+      to: null,
+      page: 1,
+      pageSize: AUDIT_PAGE_SIZE,
+    });
     expect(auditFilterActive(f)).toBe(false);
   });
 

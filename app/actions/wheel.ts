@@ -31,6 +31,7 @@ import {
   type WheelParticipation,
   type WinnerPlanMode,
 } from "@/lib/wheel";
+import { personDisplayName } from "@/lib/person-name";
 
 const WARNING_WEEKS_AHEAD = 3;
 
@@ -93,7 +94,7 @@ async function loadWheel(db: Prisma.TransactionClient | typeof prisma = prisma) 
 
   const wheelParticipations: WheelParticipation[] = cycle.participations.map((p) => ({
     id: p.id,
-    name: `${p.person.nameAmharic} — ${p.person.nameEnglishFirst}`,
+    name: personDisplayName(p.person),
     startWeek: p.startWeek,
     weeksCommitted: p.weeksCommitted,
     status: p.status,

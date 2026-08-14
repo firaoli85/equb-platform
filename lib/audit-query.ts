@@ -37,6 +37,7 @@ export type AuditFilterInput = {
   /** Inclusive — the whole of that day, which is why it becomes a "< next day". */
   to?: string | null;
   page?: number | string | null;
+  pageSize?: number | null;
 };
 
 export type AuditFilter = {
@@ -46,6 +47,7 @@ export type AuditFilter = {
   from: string | null;
   to: string | null;
   page: number;
+  pageSize: number;
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -67,6 +69,10 @@ export function parseAuditFilter(input: AuditFilterInput): AuditFilter {
     from: from && to && from > to ? to : from,
     to: from && to && from > to ? from : to,
     page,
+    pageSize:
+      input.pageSize && Number.isSafeInteger(input.pageSize) && input.pageSize >= 1
+        ? input.pageSize
+        : AUDIT_PAGE_SIZE,
   };
 }
 

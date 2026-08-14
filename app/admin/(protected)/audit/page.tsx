@@ -4,6 +4,9 @@ import { PresentationHidden } from "@/components/presentation-hidden";
 import { auditEntityHint, auditEntityHref } from "@/lib/audit-links";
 import { getSetting } from "@/lib/settings";
 import { AuditFilters, AuditPager } from "./audit-filters";
+import { PageSizeSelect } from "@/components/ui/page-size";
+import { AUDIT_PAGE_SIZE } from "@/lib/audit-query";
+import { parsePageSize } from "@/lib/paging";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +38,7 @@ export default async function AuditPage({
       from: one("from"),
       to: one("to"),
       page: one("page"),
+      pageSize: parsePageSize(one("pageSize") ?? undefined, AUDIT_PAGE_SIZE),
     }),
     auditPeopleOptions(),
   ]);
@@ -133,7 +137,10 @@ export default async function AuditPage({
             </table>
           )}
 
-          <AuditPager info={result.data.info} />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <AuditPager info={result.data.info} />
+            <PageSizeSelect dflt={AUDIT_PAGE_SIZE} storageKey="admin-audit-page-size" />
+          </div>
         </>
       )}
     </main>

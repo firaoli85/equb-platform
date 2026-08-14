@@ -188,7 +188,7 @@ export async function forgiveBalance(input: {
  * in one place, beside "who is waiting" (money owed BY him). Balances live on
  * the PERSON, so this survives every cycle deletion (2.18).
  */
-export async function listCarriedBalances(input?: { page?: number }) {
+export async function listCarriedBalances(input?: { page?: number; pageSize?: number }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -238,7 +238,7 @@ export async function listCarriedBalances(input?: { page?: number }) {
     // largest debt is always on page one.
     balances.sort((a, b) => b.balance - a.balance || a.personId.localeCompare(b.personId));
 
-    const info = pageInfo(balances.length, input?.page ?? 1, PAGE_SIZES.balances);
+    const info = pageInfo(balances.length, input?.page ?? 1, input?.pageSize ?? PAGE_SIZES.balances);
     const pageIds = balances.slice(info.skip, info.skip + info.take).map((b) => b.personId);
 
     // Only this page's people, and only their entries.

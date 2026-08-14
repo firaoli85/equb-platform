@@ -12,6 +12,8 @@ import { buttonCls, Card, CardHeader, inputCls } from "@/components/ui/primitive
 import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import type { PositionVerdict } from "@/lib/cycle-position";
 import { Pager } from "@/components/ui/pager";
+import { PageSizeSelect } from "@/components/ui/page-size";
+import { PAGE_SIZES } from "@/lib/paging";
 import type { PageInfo } from "@/lib/paging";
 
 // WHAT HE ACTUALLY HOLDS — the only stored fact on this page.
@@ -433,13 +435,22 @@ export function CashReadingPanel({
                 </li>
               ))}
             </ul>
-            <Pager
-              className="mt-2"
-              info={readingInfo}
-              noun={{ one: "reading", many: "readings" }}
-              label="Cash reading pages"
-              hrefFor={(p) => `?readingsPage=${p}`}
-            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+              <Pager
+                info={readingInfo}
+                noun={{ one: "reading", many: "readings" }}
+                label="Cash reading pages"
+                hrefFor={(p) =>
+                  `?readingsPage=${p}${readingInfo.take !== PAGE_SIZES.cashReadings ? `&readingsPageSize=${readingInfo.take}` : ""}`
+                }
+              />
+              <PageSizeSelect
+                param="readingsPageSize"
+                pageParam="readingsPage"
+                dflt={PAGE_SIZES.cashReadings}
+                storageKey="admin-cash-readings-page-size"
+              />
+            </div>
             <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
               The comparison is against what is expected <strong>today</strong> — it shows drift,
               not what the books said on each of those days.

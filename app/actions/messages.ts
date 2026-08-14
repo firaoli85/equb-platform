@@ -96,7 +96,7 @@ async function winnerExtrasByParticipation(cycleId: string) {
 
 // ————————————————— Overview (templates + members + log) —————————————————
 
-export async function getMessagingOverview(input?: { logPage?: number }) {
+export async function getMessagingOverview(input?: { logPage?: number; logPageSize?: number }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -122,7 +122,7 @@ export async function getMessagingOverview(input?: { logPage?: number }) {
     // purpose is to answer that question. MessageLog is append-only and grows
     // forever, so the answer is paging, not a bigger number.
     const logTotal = await prisma.messageLog.count();
-    const logPage = pageInfo(logTotal, input?.logPage ?? 1, PAGE_SIZES.messageLog);
+    const logPage = pageInfo(logTotal, input?.logPage ?? 1, input?.logPageSize ?? PAGE_SIZES.messageLog);
     const log = await prisma.messageLog.findMany({
       orderBy: { createdAt: "desc" },
       skip: logPage.skip,

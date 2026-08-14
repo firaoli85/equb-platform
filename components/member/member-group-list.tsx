@@ -73,7 +73,9 @@ export function MemberGroupList({
   }
 
   const viewerName = viewer
-    ? `${viewer.nameEnglishFirst} / ${viewer.nameAmharic}`
+    ? viewer.nameAmharic
+      ? `${viewer.nameEnglishFirst} / ${viewer.nameAmharic}`
+      : viewer.nameEnglishFirst
     : "";
   const viewerInitial = ([...(viewer?.nameEnglishFirst ?? "?")][0] ?? "?").toUpperCase();
   const viewerOnTrack = (viewer?.weeksBehind ?? 0) === 0;

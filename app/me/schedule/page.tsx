@@ -27,7 +27,10 @@ export default async function SchedulePage() {
   }
 
   const weeks: CalendarWeek[] = p.weeks.map((w) => ({
-    weekNumber: w.weekNumber,
+    // THEIR OWN numbering, exactly as the home page converts it
+    // (UI_STANDARDS 8c) — a mid-cycle joiner read "week 14" of their ten in
+    // the calendar tooltips while home said week 1.
+    weekNumber: w.ownWeek ?? w.weekNumber,
     date: w.date.toISOString().slice(0, 10),
     status: w.status,
   }));

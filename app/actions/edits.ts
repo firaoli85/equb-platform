@@ -107,10 +107,11 @@ export async function updatePerson(input: {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
-    const nameAmharic = input.nameAmharic?.trim();
+    // Amharic is OPTIONAL (14 Aug 2026, Latin-primary ruling) — "" clears it
+    // honestly; nothing renders for an empty one.
+    const nameAmharic = input.nameAmharic?.trim() ?? "";
     const nameEnglishFirst = input.nameEnglishFirst?.trim();
-    if (!nameAmharic) return { ok: false as const, error: "Amharic name is required." };
-    if (!nameEnglishFirst) return { ok: false as const, error: "English first name is required." };
+    if (!nameEnglishFirst) return { ok: false as const, error: "First name is required." };
 
     const person = await serializableTransaction(async (tx) => {
       const before = await tx.person.findUniqueOrThrow({ where: { id: input.personId } });

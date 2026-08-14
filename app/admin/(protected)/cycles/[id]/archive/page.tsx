@@ -27,8 +27,11 @@ export default async function ArchivePage({ params }: { params: Promise<{ id: st
     <main className="space-y-6">
       <header className="animate-fade-in-up">
         <p className="mb-1 text-sm">
-          <Link href="/admin/cycle/close" className="text-gray-600 dark:text-gray-400 hover:underline">
-            ← Closing
+          {/* THE INDEX THIS CAME FROM. It pointed at /admin/cycle/close —
+              the closing screen of whatever cycle is ACTIVE now, which is a
+              different cycle than the one being read. */}
+          <Link href="/admin/cycles" className="text-gray-600 dark:text-gray-400 hover:underline">
+            ← Past cycles
           </Link>
         </p>
         <div className="flex flex-wrap items-center gap-3">
@@ -81,7 +84,10 @@ export default async function ArchivePage({ params }: { params: Promise<{ id: st
               {archive.members.map((m) => (
                 <tr key={m.participationId}>
                   <td className="whitespace-nowrap border-b border-gray-100 dark:border-gray-800/60 px-4 py-1.5 font-semibold text-gray-900 dark:text-white">
-                    {m.nameAmharic} <span className="font-normal text-gray-600 dark:text-gray-400">{m.name}</span>
+                    {m.name}
+                    {m.nameAmharic ? (
+                      <span className="font-normal text-gray-600 dark:text-gray-400"> {m.nameAmharic}</span>
+                    ) : null}
                   </td>
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-1.5 tabular-nums text-gray-700 dark:text-gray-300">
                     {formatMoney(m.weeklyAmount)}

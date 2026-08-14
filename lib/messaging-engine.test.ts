@@ -122,12 +122,13 @@ describe("ContentVariables are built in the approved ORDER", () => {
     name: "Tizita",
     week: "12",
     myWeeksCovered: "4–6 (Jun 7 – Jun 21)",
-    myCurrentWeek: "12 (Aug 2)",
-    myLastPaymentWeek: "6 (Jun 21)",
-    myLateWeeks: "7–11 (Jun 28 – Jul 26)",
-    lateWeeksCount: "5",
+    myCurrentWeek: "12 (Sunday, August 2)",
+    myPaidUpToWeek: "6 (Sunday, June 21)",
+    myLateWeeks: "7, 8 and 9 (Jun 28, Jul 5 and Jul 12)",
+    lateWeeksCount: "3",
     announcementText: "The draw moves to Saturday 7pm.",
     weeksLeft: "8",
+    paymentsLeft: "14",
     finishDate: "October 4",
     startDate: "May 17",
     weeklyAmount: "$1,000",
@@ -160,7 +161,7 @@ describe("ContentVariables are built in the approved ORDER", () => {
     }
   });
 
-  it("BEHIND_NOTICE v2 — six slots: my current week, my last payment, both counts, amount", () => {
+  it("BEHIND_NOTICE v3 — behind count, amount, paid-up-to, current week", () => {
     const r = buildContentVariables("BEHIND_NOTICE", VALUES);
     // Without this the block is skipped on a refusal and the test
     // passes with ZERO assertions — on the template that shipped the bug.
@@ -168,17 +169,16 @@ describe("ContentVariables are built in the approved ORDER", () => {
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
-        "2": "12 (Aug 2)",
-        "3": "6 (Jun 21)",
-        "4": "6",
-        "5": "20",
-        "6": "$6,000",
+        "2": "6",
+        "3": "$6,000",
+        "4": "6 (Sunday, June 21)",
+        "5": "12 (Sunday, August 2)",
       });
-      expect(Object.keys(r.variables)).toHaveLength(6);
+      expect(Object.keys(r.variables)).toHaveLength(5);
     }
   });
 
-  it("LATE_NOTICE v2 — my late weeks with dates, amount, the late count, the total", () => {
+  it("LATE_NOTICE v3 — late weeks list, amount, paid-up-to, current week", () => {
     const r = buildContentVariables("LATE_NOTICE", VALUES);
     // Without this the block is skipped on a refusal and the test
     // passes with ZERO assertions — on the template that shipped the bug.
@@ -186,16 +186,16 @@ describe("ContentVariables are built in the approved ORDER", () => {
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
-        "2": "7–11 (Jun 28 – Jul 26)",
+        "2": "7, 8 and 9 (Jun 28, Jul 5 and Jul 12)",
         "3": "$6,000",
-        "4": "5",
-        "5": "20",
+        "4": "6 (Sunday, June 21)",
+        "5": "12 (Sunday, August 2)",
       });
       expect(Object.keys(r.variables)).toHaveLength(5);
     }
   });
 
-  it("WINNER_ANNOUNCEMENT v2 — payout, finish DATE, weeks remaining; no drawn week", () => {
+  it("WINNER_ANNOUNCEMENT v3 — payout, paid of committed, payments left, finish date", () => {
     const r = buildContentVariables("WINNER_ANNOUNCEMENT", VALUES);
     // Without this the block is skipped on a refusal and the test
     // passes with ZERO assertions — on the template that shipped the bug.
@@ -204,8 +204,10 @@ describe("ContentVariables are built in the approved ORDER", () => {
       expect(r.variables).toEqual({
         "1": "Tizita",
         "2": "$9,800",
-        "3": "October 4",
-        "4": "8",
+        "3": "6",
+        "4": "20",
+        "5": "14",
+        "6": "October 4",
       });
     }
   });
@@ -258,11 +260,14 @@ describe("ContentVariables are built in the approved ORDER", () => {
     expect(APPROVED_TEMPLATES.PAYMENT_CONFIRMED.variableOrder).toEqual([
       "name", "amountReceived", "myWeeksCovered", "weeksPaid", "weeksTotal",
     ]);
+    expect(APPROVED_TEMPLATES.BEHIND_NOTICE.variableOrder).toEqual([
+      "name", "weeksBehind", "amountOwed", "myPaidUpToWeek", "myCurrentWeek",
+    ]);
     expect(APPROVED_TEMPLATES.LATE_NOTICE.variableOrder).toEqual([
-      "name", "myLateWeeks", "amountOwed", "lateWeeksCount", "weeksTotal",
+      "name", "myLateWeeks", "amountOwed", "myPaidUpToWeek", "myCurrentWeek",
     ]);
     expect(APPROVED_TEMPLATES.WINNER_ANNOUNCEMENT.variableOrder).toEqual([
-      "name", "payoutAmount", "finishDate", "weeksLeft",
+      "name", "payoutAmount", "weeksPaid", "weeksTotal", "paymentsLeft", "finishDate",
     ]);
     expect(APPROVED_TEMPLATES.GROUP_ANNOUNCEMENT.variableOrder).toEqual([
       "name", "announcementText",
@@ -296,14 +301,16 @@ describe("an incomplete variable set REFUSES", () => {
     if (!r.ok) expect(r.missing).toEqual(["name"]);
   });
 
-  it("accepts the em-dash sentinel — it is a VALUE, not a gap", () => {
-    // lastPaymentWeek is legitimately "—" for a member who has never paid,
-    // and "no payment recorded" is exactly what they should read.
+  it("the dash sentinel is REFUSED in every v3 slot — no dashable my* remains", () => {
+    // Through the v2 era {myLastPaymentWeek} could legitimately dash. The v3
+    // paid-up-to fact composes for everyone ("the start (…)"), so a sentinel
+    // arriving in ANY behind-notice slot is a gap again, and the guard says
+    // so instead of delivering it.
     const r = buildContentVariables("BEHIND_NOTICE", {
-      name: "Tizita", myCurrentWeek: "12 (Aug 2)", myLastPaymentWeek: "—", weeksBehind: "12", weeksTotal: "20", amountOwed: "$12,000",
+      name: "Tizita", weeksBehind: "12", amountOwed: "$12,000", myPaidUpToWeek: "—", myCurrentWeek: "12 (Sunday, August 2)",
     });
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.variables["3"]).toBe("—");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.missing).toContain("myPaidUpToWeek");
   });
 });
 

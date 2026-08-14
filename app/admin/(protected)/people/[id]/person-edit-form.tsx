@@ -224,8 +224,9 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
       body: (
         <>
           <p>
-            This deletes {person.nameAmharic} ({person.nameEnglishFirst}
-            {person.nameEnglishLast ? ` ${person.nameEnglishLast}` : ""})&apos;s name and phone.
+            This deletes {person.nameEnglishFirst}
+            {person.nameEnglishLast ? ` ${person.nameEnglishLast}` : ""}
+            {person.nameAmharic ? ` (${person.nameAmharic})` : ""}&apos;s name and phone.
             It is possible because they are in no cycle, carry no ledger record and have never
             been messaged.
           </p>
@@ -250,9 +251,9 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
     >
       {(
         [
-          ["nameAmharic", "Amharic name *"],
-          ["nameEnglishFirst", "English first name *"],
-          ["nameEnglishLast", "English last name"],
+          ["nameEnglishFirst", "First name *"],
+          ["nameEnglishLast", "Last name"],
+          ["nameAmharic", "Amharic name (optional)"],
           ["phone", "Phone"],
         ] as const
       ).map(([key, label]) => (

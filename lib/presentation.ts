@@ -372,9 +372,13 @@ export function redactCycleDetail(detail: CycleDetailInput) {
         startWeek: p.startWeek,
         weeksCommitted: p.weeksCommitted,
         weeklyAmount: 0,
+        // The label rides in nameEnglishFirst since the Latin-primary flip
+        // (14 Aug 2026): the roster leads with the Latin field, so this is
+        // the slot a screen share actually shows. nameAmharic is emptied —
+        // the secondary line renders nothing for "".
         person: {
-          nameAmharic: label,
-          nameEnglishFirst: "",
+          nameAmharic: "",
+          nameEnglishFirst: label,
           nameEnglishLast: null as string | null,
         },
         luckyNumbers: p.luckyNumbers.map((n) => ({ id: n.id, number: n.number, amount: 0 })),

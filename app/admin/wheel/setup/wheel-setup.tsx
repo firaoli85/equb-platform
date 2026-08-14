@@ -476,14 +476,22 @@ export function WheelSetup({ state }: { state: SetupState }) {
         </section>
       )}
 
+      {/* PRESENTATION MODE HIDES PLANNING, so it must not be offered: the
+          section body is gated on !presentation, the choice persists in
+          localStorage, and the page could therefore OPEN on a blank screen
+          during a screen share. */}
       <SegmentedToggle
         label="Wheel setup"
-        value={section}
+        value={state.presentation ? "arrange" : section}
         onChange={setSection}
-        options={[
-          { value: "arrange", label: "Arrange" },
-          { value: "plan", label: "Plan winners" },
-        ]}
+        options={
+          state.presentation
+            ? [{ value: "arrange", label: "Arrange" }]
+            : [
+                { value: "arrange", label: "Arrange" },
+                { value: "plan", label: "Plan winners" },
+              ]
+        }
       />
 
       {/* THE UNSAVED-WORK NOTICE FOLLOWS HIM. On Arrange it sits with the Save

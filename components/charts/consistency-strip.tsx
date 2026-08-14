@@ -152,7 +152,7 @@ export function ConsistencyStrip({
               {worst.run} week{worst.run === 1 ? "" : "s"}
             </span>
             <span className="text-xs text-gray-600 dark:text-gray-400">
-              longest run, {worst.name.split(" — ").pop()}
+              longest run, {worst.name}
             </span>
           </p>
         )}

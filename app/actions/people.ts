@@ -171,10 +171,12 @@ export async function createPerson(input: CreatePersonInput) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
-    const nameAmharic = input.nameAmharic?.trim();
+    // Amharic is OPTIONAL (14 Aug 2026, Latin-primary ruling) — stored as ""
+    // when absent, because the column is non-null and "" is what every
+    // renderer treats as "nothing to show".
+    const nameAmharic = input.nameAmharic?.trim() ?? "";
     const nameEnglishFirst = input.nameEnglishFirst?.trim();
-    if (!nameAmharic) return { ok: false as const, error: "Amharic name is required." };
-    if (!nameEnglishFirst) return { ok: false as const, error: "English first name is required." };
+    if (!nameEnglishFirst) return { ok: false as const, error: "First name is required." };
 
     // Same rule at creation: a number that already belongs to someone
     // else makes both of them unable to sign in reliably.

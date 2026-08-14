@@ -56,7 +56,6 @@ export function PaymentsGrid({
   // amounts — the grid is a pure map: statuses visible, nothing clickable.
   const presentation = data.presentation === true;
   const [open, setOpen] = useState<{ participationId: string; weekNumber: number } | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
 
   // The same filter predicate the Members view uses, so switching views keeps
   // the same people on screen.
@@ -82,7 +81,7 @@ export function PaymentsGrid({
     const column = grid.columns[colIdx];
     return {
       participationId: column.participationId,
-      memberName: column.name.split("—")[1]?.trim() || column.name,
+      memberName: column.name,
       weekNumber,
       amountDue: cell.amountDue,
       amountAlreadyPaid: cell.storedPaid,
@@ -92,7 +91,6 @@ export function PaymentsGrid({
 
   return (
     <div className="space-y-3">
-      {saved && <Alert kind="ok">{saved}</Alert>}
 
       {!presentation && (
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -172,7 +170,7 @@ export function PaymentsGrid({
                         href={`/admin/participations/${c.participationId}`}
                         className="block w-20 truncate text-[11px] font-bold text-gray-800 dark:text-gray-200 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
                       >
-                        {c.name.split("—")[1]?.trim() ?? c.name}
+                        {c.name}
                       </Link>
                     )}
                     <span className="block text-[10px] font-medium text-gray-500 dark:text-gray-400">
@@ -370,11 +368,13 @@ export function PaymentsGrid({
               key={`${open.participationId}-${open.weekNumber}`}
               target={target}
               onSaved={(message) => {
-                // THE PANEL STAYS OPEN. Closing it destroyed the confirmation
-                // it now renders inside itself, and the hoisted copy landed at
-                // the top of the grid — nowhere near the cell that was
-                // clicked (§2.10 beat 3). He closes it when he is done.
-                setSaved(message);
+                // THE PANEL STAYS OPEN and renders its own confirmation —
+                // so nothing is echoed at the top of the grid. The echo was a
+                // second copy of the same sentence, in an Alert that never
+                // faded while the inline one did (§2.10 beat 3, and the
+                // confirmation-lifetime rule): one save, two confirmations,
+                // one of them going stale.
+                void message;
                 router.refresh();
               }}
               onClose={() => setOpen(null)}

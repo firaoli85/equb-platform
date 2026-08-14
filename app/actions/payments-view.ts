@@ -15,6 +15,7 @@ import { numbersLabel, redactGrid, redactWeekBoard, PRESENTATION_HIDDEN } from "
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { computeStanding, pinnedMapFromEvents, type Standing } from "@/lib/standing";
+import { personDisplayName } from "@/lib/person-name";
 
 const MS_PER_DAY = 86_400_000;
 function utcDay(date: Date): number {
@@ -107,7 +108,7 @@ export async function getPaymentsGrid() {
       const { standing, finishWeek } = standingFor(cycle, participation, cycleWeek, today);
       return {
         participationId: participation.id,
-        name: `${participation.person.nameAmharic} — ${participation.person.nameEnglishFirst}`,
+        name: personDisplayName(participation.person),
         numbersLabel: participation.luckyNumbers.map((n) => `#${n.number}`).join(", "),
         startWeek: participation.startWeek,
         finishWeek,

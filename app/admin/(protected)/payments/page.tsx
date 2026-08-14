@@ -1,4 +1,5 @@
 import { getPaymentsGrid } from "@/app/actions/payments-view";
+import { Alert } from "@/components/ui/primitives";
 import { focusedWeek } from "@/lib/week-focus";
 import { PaymentsScreen } from "./payments-screen";
 
@@ -24,7 +25,8 @@ export default async function PaymentsPage({
   if (!result.ok) {
     return (
       <main>
-        <p className="text-sm text-gray-700 dark:text-gray-300">{result.error}</p>
+        {/* A failure reads as a failure — every other screen uses this. */}
+        <Alert kind="err">{result.error}</Alert>
       </main>
     );
   }

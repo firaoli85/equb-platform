@@ -10,7 +10,8 @@ import { MessageCentre } from "./message-centre";
 import { Card, CardHeader, Pill, Table, Td, Th, trHoverCls } from "@/components/ui/primitives";
 import { Pager } from "@/components/ui/pager";
 import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
-import { parsePage } from "@/lib/paging";
+import { PAGE_SIZES, parsePage, parsePageSize } from "@/lib/paging";
+import { PageSizeSelect } from "@/components/ui/page-size";
 import { ChannelStatus } from "./channel-status";
 import { ComposeSend } from "./compose-send";
 import { GroupAnnouncement } from "./group-announcement";
@@ -43,6 +44,7 @@ export default async function MessagesPage({
     person?: string | string[];
     q?: string | string[];
     cpage?: string | string[];
+    pageSize?: string | string[];
     type?: string | string[];
     from?: string | string[];
     to?: string | string[];
@@ -54,7 +56,10 @@ export default async function MessagesPage({
     ? (value as Section)
     : "people";
 
-  const result = await getMessagingOverview({ logPage: parsePage(query.page) });
+  const result = await getMessagingOverview({
+    logPage: parsePage(query.page),
+    logPageSize: parsePageSize(firstOf(query.pageSize) ?? undefined, PAGE_SIZES.messageLog),
+  });
 
   if (!result.ok) {
     return (
@@ -89,6 +94,7 @@ export default async function MessagesPage({
     const threadResult = await listMessageThreads({
       search: firstOf(query.q) ?? "",
       page: parsePage(query.page),
+      pageSize: parsePageSize(firstOf(query.pageSize) ?? undefined, PAGE_SIZES.messageThreads),
     });
     if (threadResult.ok) threads = threadResult.data;
     else threadError = threadResult.error;
@@ -208,7 +214,7 @@ export default async function MessagesPage({
           <Card>
             <CardHeader
               title="Message log"
-              sub="Every send, automatic or manual — the exact text, where it went, and what Twilio said. Latest 100."
+              sub="Every send, automatic or manual — the exact text, where it went, and what Twilio said. Paged, oldest kept forever."
             />
             {log.length === 0 ? (
               <p className="px-5 pb-5 text-sm text-gray-600 dark:text-gray-400">
@@ -272,12 +278,17 @@ export default async function MessagesPage({
               </div>
             )}
           </Card>
-          <Pager
-            info={logPage}
-            noun={{ one: "message", many: "messages" }}
-            label="Message log pages"
-            hrefFor={(n) => `/admin/messages?section=log&page=${n}`}
-          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Pager
+              info={logPage}
+              noun={{ one: "message", many: "messages" }}
+              label="Message log pages"
+              hrefFor={(n) =>
+                `/admin/messages?section=log&page=${n}${logPage.take !== PAGE_SIZES.messageLog ? `&pageSize=${logPage.take}` : ""}`
+              }
+            />
+            <PageSizeSelect dflt={PAGE_SIZES.messageLog} storageKey="admin-message-log-page-size" />
+          </div>
         </div>
       )}
     </main>

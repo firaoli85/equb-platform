@@ -325,10 +325,11 @@ export async function addNewPersonToCycle(input: AddNewPersonToCycleInput) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
-    const nameAmharic = input.nameAmharic?.trim();
+    // Amharic is OPTIONAL (14 Aug 2026, Latin-primary ruling) — stored ""
+    // when absent; the wizard's step gate no longer asks for it either.
+    const nameAmharic = input.nameAmharic?.trim() ?? "";
     const nameEnglishFirst = input.nameEnglishFirst?.trim();
-    if (!nameAmharic) return { ok: false as const, error: "Amharic name is required." };
-    if (!nameEnglishFirst) return { ok: false as const, error: "English first name is required." };
+    if (!nameEnglishFirst) return { ok: false as const, error: "First name is required." };
 
     const invalid = validateParticipationFields(input);
     if (invalid) return { ok: false as const, error: invalid };

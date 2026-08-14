@@ -242,10 +242,11 @@ export function ComposeSend() {
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                            {r.nameAmharic}
+                            {r.nameEnglish}
                           </span>
                           <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {r.nameEnglish} {r.phone ? `· ${r.phone}` : ""}
+                            {r.nameAmharic ? `${r.nameAmharic} ` : ""}
+                            {r.phone ? `· ${r.phone}` : ""}
                           </span>
                           {outcome &&
                             (outcome.status === "SENT" ? (

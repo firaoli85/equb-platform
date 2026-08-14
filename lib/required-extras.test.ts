@@ -83,10 +83,14 @@ describe("WINNER_ANNOUNCEMENT — the message that reached a real phone", () => 
     expect(r.stage).toBe("sent");
     expect(r.ok).toBe(true);
     if (!r.ok || r.stage !== "sent") return;
+    // v3 slots (14 Aug 2026): payout · paid · committed · payments left ·
+    // finish date.
     expect(r.variables["2"]).toBe("$19,600");
-    // The member's own finish DATE — D-38 resolved in 2.22's favour.
-    expect(r.variables["3"]).toBe("Sunday, September 27, 2026");
-    expect(r.variables["4"]).toBe("7"); // 20 committed − 13 paid
+    expect(r.variables["3"]).toBe("13");
+    expect(r.variables["4"]).toBe("20");
+    expect(r.variables["5"]).toBe("7"); // 20 committed − 13 paid: PAYMENTS left
+    // The member's own finish DATE — D-38's resolution retained in v3.
+    expect(r.variables["6"]).toBe("Sunday, September 27, 2026");
     expect(Object.values(r.variables)).not.toContain("12");
   });
 
@@ -188,8 +192,8 @@ describe("templates that need no extras still send", () => {
     // looked up a week the member does not have, composed to the sentinel,
     // and the notice became permanently unsendable for exactly the members
     // most behind (verifier finding, 14 Aug 2026). Their record stops
-    // changing at their final week, so "as of your week 20" IS the complete
-    // record — the clamp states it instead of refusing.
+    // changing at their final week, so "the current week is week 20" IS
+    // their frame's answer — the clamp states it instead of refusing.
     const pastWindow: StandingFacts = {
       ...FACTS,
       currentCycleWeek: 25,
@@ -200,24 +204,39 @@ describe("templates that need no extras still send", () => {
     expect(r.stage).toBe("sent");
     expect(r.ok).toBe(true);
     if (!r.ok || r.stage !== "sent") return;
-    expect(r.variables["2"]).toBe("20 (Sep 27)");
-    expect(r.variables["4"]).toBe("7");
+    // v3 slots: behind count · amount · paid-up-to · current week (full date).
+    expect(r.variables["2"]).toBe("7");
+    expect(r.variables["3"]).toBe("$7,000");
+    expect(r.variables["5"]).toBe("20 (Sunday, September 27)");
   });
 
-  it("BEHIND_NOTICE with NO extras sends, and a never-paid member's dash is kept", () => {
+  it("BEHIND_NOTICE for a NEVER-PAID member composes 'the start', not a dash (v3)", () => {
+    // The v2 body dashed {myLastPaymentWeek} here. The v3 rule supersedes the
+    // sentinel: the paid-up-to fact is ALWAYS composable — a member with no
+    // fully-paid week is paid up to "the start", with their own start date.
     const neverPaid: StandingFacts = {
       ...FACTS,
       lastPaymentWeek: null,
-      weeksBehind: 7,
-      amountOutstanding: 700_000,
+      weeksCredited: 0,
+      totalPaid: 0,
+      weeksBehind: 12,
+      amountOutstanding: 1_200_000,
+      weeks: Array.from({ length: 20 }, (_, i) => ({
+        weekNumber: i + 1,
+        status: i < 12 ? "LATE" : "UNPAID",
+        date: wd(i + 1),
+      })),
     };
     const r = runSendPath("BEHIND_NOTICE", undefined, neverPaid);
     expect(r.stage).toBe("sent");
     expect(r.ok).toBe(true);
     if (!r.ok || r.stage !== "sent") return;
-    // "—" is the honest answer here and must survive both guards.
-    expect(r.variables["3"]).toBe("—");
-    expect(r.variables["6"]).toBe("$7,000");
+    expect(r.variables["2"]).toBe("12");
+    expect(r.variables["3"]).toBe("$12,000");
+    // wd(1) is Sunday, May 17 2026 — the exact sample form the order pinned.
+    expect(r.variables["4"]).toBe("the start (Sunday, May 17)");
+    expect(r.variables["5"]).toBe("12 (Sunday, August 2)");
+    expect(Object.values(r.variables)).not.toContain("—");
   });
 
   it("CYCLE_CLOSING_STATEMENT with NO extras sends — it has no extras-fed variables", () => {
@@ -266,16 +285,22 @@ describe("LATE_NOTICE refuses an empty week list without help from sendDecision"
       ...FACTS,
       weeksBehind: 2,
       amountOutstanding: 200_000,
-      weeks: [
-        { weekNumber: 7, status: "LATE", date: wd(7) },
-        { weekNumber: 8, status: "LATE", date: wd(8) },
-      ],
+      weeks: Array.from({ length: 20 }, (_, i) => ({
+        weekNumber: i + 1,
+        status: i < 6 ? "PAID" : i < 8 ? "LATE" : "UNPAID",
+        date: wd(i + 1),
+      })),
     };
     const r = runSendPath("LATE_NOTICE", undefined, late);
     expect(r.stage).toBe("sent");
     expect(r.ok).toBe(true);
     if (!r.ok || r.stage !== "sent") return;
-    expect(r.variables["2"]).toBe("7–8 (Jun 28 – Jul 5)");
+    // v3 list form: no ranges, no dashes, dates grouped in one bracket —
+    // then the paid-up-to and current-week anchors repeat the story.
+    expect(r.variables["2"]).toBe("7 and 8 (Jun 28 and Jul 5)");
+    expect(r.variables["3"]).toBe("$2,000");
+    expect(r.variables["4"]).toBe("6 (Sunday, June 21)");
+    expect(r.variables["5"]).toBe("12 (Sunday, August 2)");
   });
 });
 

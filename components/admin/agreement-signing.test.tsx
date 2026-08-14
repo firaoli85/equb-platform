@@ -218,6 +218,11 @@ describe("the directory itself", () => {
     inActiveCycle: true,
     contributedThisCycle: 125_000,
     signing: "not-asked",
+    // The sort facts the directory now carries (14 Aug 2026) — this file
+    // asserts the signing column, so they only have to be present and real.
+    weeklyAmount: 25_000,
+    weeksCommitted: 20,
+    weeksPaid: 5,
     ...over,
   });
 

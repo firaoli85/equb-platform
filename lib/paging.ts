@@ -62,6 +62,29 @@ export function parsePage(raw: string | string[] | undefined): number {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
+// ————————————————— Page size, chosen by the organizer —————————————————
+
+/**
+ * The sizes every paginated admin list offers (14 Aug 2026 order). A list
+ * whose historical default is not one of these keeps it as an extra option
+ * — "defaulting to current behavior" means the default page size does not
+ * change under anyone's feet, only the choice appears.
+ */
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+
+/**
+ * A `?pageSize=` value from the URL: one of PAGE_SIZE_OPTIONS or the list's
+ * own default — anything else falls back to the default, so a crafted URL
+ * cannot request 10,000 rows.
+ */
+export function parsePageSize(raw: string | string[] | undefined, dflt: number): number {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return dflt;
+  const n = Number.parseInt(value, 10);
+  const allowed: readonly number[] = PAGE_SIZE_OPTIONS;
+  return allowed.includes(n) || n === dflt ? n : dflt;
+}
+
 /**
  * What this page is showing, as a sentence — always, including when it is
  * showing everything.

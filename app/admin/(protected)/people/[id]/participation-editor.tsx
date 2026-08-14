@@ -564,6 +564,8 @@ export function ParticipationEditor(props: {
   }
 
   // ————— Lucky numbers —————
+  /** The add form is closed until asked for (2.25 pass, 14 Aug 2026). */
+  const [addingNumber, setAddingNumber] = useState(false);
   const [newNumber, setNewNumber] = useState("");
   const [newAmountDollars, setNewAmountDollars] = useState("");
 
@@ -935,56 +937,117 @@ export function ParticipationEditor(props: {
       </section>
 
       <section className={`space-y-3 ${show.luckyNumbers ? "" : "hidden"}`}>
-        <h2 className="text-base font-bold text-gray-900 dark:text-white">Lucky numbers</h2>
-        <table className="w-full border-collapse text-sm">
-          <tbody>
+        {/* THE CARD READS BEFORE IT EDITS (2.25 design pass, 14 Aug 2026).
+            It was a table of always-open inputs: a number field and an amount
+            field per row, plus an amount field on the add row — three copies
+            of a figure the Weekly amount input and the fee calculator's split
+            sentence both already state above. Now each number is a chip that
+            READS, and editing is one deliberate action per number.
+
+            THE AMOUNTS ARE SLICES, NOT COPIES (lib/money.ts
+            splitIntoLuckyNumbers): they sum to the weekly amount, so a member
+            with ONE number carries the whole weekly in it — repeating it here
+            would be the duplication the reader complained about — and a
+            member with several carries a different figure in each, which is
+            exactly when they are worth showing. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Lucky numbers</h2>
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            {props.luckyNumbers.length === 0
+              ? "None yet."
+              : props.luckyNumbers.length === 1
+                ? "One number carries their whole weekly amount."
+                : `${props.luckyNumbers.length} numbers, together ${formatMoney(
+                    props.luckyNumbers.reduce((s, n) => s + n.amount, 0),
+                  )} a week.`}
+          </p>
+        </div>
+
+        {props.luckyNumbers.length === 0 ? (
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            They hold no numbers, so nothing of theirs can be drawn.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
             {props.luckyNumbers.map((n) => (
               <LuckyRow
-                  key={n.id}
-                  n={n}
-                  busy={busy}
-                  saveNumber={saveNumber}
-                  ask={askVia(`number:${n.id}`)}
-                  feedback={feedbackFor(`number:${n.id}`)}
-                />
+                key={n.id}
+                n={n}
+                showAmount={props.luckyNumbers.length > 1}
+                busy={busy}
+                saveNumber={saveNumber}
+                ask={askVia(`number:${n.id}`)}
+                feedback={feedbackFor(`number:${n.id}`)}
+              />
             ))}
-          </tbody>
-        </table>
-        <div className="flex items-end gap-2 text-sm">
-          <Field label="New #">
-            <NumberInput value={newNumber} onChange={setNewNumber} min={1} ariaLabel="New lucky number" className="w-20" />
-          </Field>
-          <Field label="Amount">
-            <AmountInput value={newAmountDollars} onChange={setNewAmountDollars} ariaLabel="New number amount in dollars" className="w-28" />
-          </Field>
+          </ul>
+        )}
+
+        {/* ONE SMALL CONTROL, expanded only when used. */}
+        {!addingNumber ? (
           <button
             type="button"
             disabled={busy}
-            onClick={() => {
-              const cents = parseDollarsToCents(newAmountDollars);
-              if (cents === null || cents < 1)
-                return setAction({
-                  slot: "number:new",
-                  state: { kind: "err", message: "New number amount is invalid." },
-                });
-              const wanted = Number.parseInt(newNumber, 10);
-              void saveNumber({
-                label: `Added #${wanted}.`,
-                save: (onConflict) =>
-                  addLuckyNumber({
-                    participationId: participation.id,
-                    number: wanted,
-                    amount: cents,
-                    onConflict,
-                  }),
-                keep: (suggested) => setNewNumber(String(suggested)),
-              });
-            }}
-            className={buttonCls.secondary}
+            onClick={() => setAddingNumber(true)}
+            className={buttonCls.ghost + " !px-2.5 !py-1 !text-xs"}
           >
-            Add number
+            + Add a number
           </button>
-        </div>
+        ) : (
+          <div className="rounded-xl border border-gray-200 px-3 py-2.5 dark:border-gray-800">
+            <div className="flex flex-wrap items-end gap-2 text-sm">
+              <Field label="Number">
+                <NumberInput value={newNumber} onChange={setNewNumber} min={1} ariaLabel="New lucky number" className="w-20" />
+              </Field>
+              <Field label="Amount a week">
+                <AmountInput value={newAmountDollars} onChange={setNewAmountDollars} ariaLabel="New number amount in dollars" className="w-28" />
+              </Field>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const cents = parseDollarsToCents(newAmountDollars);
+                  if (cents === null || cents < 1)
+                    return setAction({
+                      slot: "number:new",
+                      state: { kind: "err", message: "New number amount is invalid." },
+                    });
+                  const wanted = Number.parseInt(newNumber, 10);
+                  void saveNumber({
+                    label: `Added #${wanted}.`,
+                    save: (onConflict) =>
+                      addLuckyNumber({
+                        participationId: participation.id,
+                        number: wanted,
+                        amount: cents,
+                        onConflict,
+                      }),
+                    keep: (suggested) => setNewNumber(String(suggested)),
+                  });
+                }}
+                className={buttonCls.secondary}
+              >
+                Add number
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setAddingNumber(false)}
+                className={buttonCls.ghost + " !px-2.5 !py-1 !text-xs"}
+              >
+                Cancel
+              </button>
+            </div>
+            {/* WHAT ADDING ONE ACTUALLY DOES. The server reconciles the weekly
+                amount to the sum of the numbers and replays every receipt
+                (lib/lucky-numbers.ts reconcileWeeklyAmount) — a consequence
+                that was recorded only in the audit log. */}
+            <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300 text-pretty">
+              Their weekly amount follows the numbers: adding one raises it by this amount and
+              re-allocates their receipts. It is refused outright once they have been drawn.
+            </p>
+          </div>
+        )}
 
         {/* Adding a number, and the conflict resolution that can follow it,
             report here — under the control that started it. */}
@@ -1115,85 +1178,160 @@ type PendingConflict = {
 // The conflict panel moved to components/admin/number-conflict-panel.tsx —
 // the add-member wizard shows the identical choice from the identical reply.
 
+/**
+ * ONE NUMBER: a chip that READS, and edits only when asked (2.25 pass,
+ * 14 Aug 2026).
+ *
+ * The always-open number and amount fields were the clutter — two inputs per
+ * number, on a card whose whole job is usually to be looked at, in a section
+ * where the amount is already stated twice above. A row now shows the number
+ * and (when there is more than one) its slice of the weekly amount as text;
+ * Edit opens exactly the two fields, and Save is dead until something has
+ * actually changed.
+ */
 function LuckyRow({
   n,
+  showAmount,
   busy,
   saveNumber,
   ask,
   feedback,
 }: {
   n: { id: string; number: number; amount: number };
+  /** Only meaningful beside SIBLINGS — one number is the whole weekly amount. */
+  showAmount: boolean;
   busy: boolean;
   saveNumber: SaveNumber;
   ask: Ask;
   /** THIS number's message, rendered in THIS row (rule 6 beats 3 and 4). */
   feedback: SaveState;
 }) {
+  const [editing, setEditing] = useState(false);
   const [number, setNumber] = useState(String(n.number));
   const [dollars, setDollars] = useState(String(n.amount / 100));
+  const dirty = number !== String(n.number) || dollars !== String(n.amount / 100);
+
   return (
-    <tr className="border-b border-gray-200 dark:border-gray-800">
-      <td className="py-1.5 pr-3">
-        <span className="mr-1 text-gray-600 dark:text-gray-400">#</span>
-        <NumberInput value={number} onChange={setNumber} min={1} ariaLabel={`Lucky number ${n.number}`} className="w-20" />
-      </td>
-      <td className="py-1.5 pr-3">
-        <AmountInput value={dollars} onChange={setDollars} ariaLabel={`Amount for number ${n.number}`} className="w-28" />
-      </td>
-      <td className="py-1.5">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            const cents = parseDollarsToCents(dollars);
-            if (cents === null) return;
-            const wanted = Number.parseInt(number, 10);
-            void saveNumber({
-              label: `#${wanted} saved.`,
-              save: (onConflict) =>
-                updateLuckyNumber({
-                  luckyNumberId: n.id,
-                  number: wanted,
-                  amount: cents,
-                  onConflict,
-                }),
-              keep: (suggested) => setNumber(String(suggested)),
-            });
+    <li className="rounded-xl border border-gray-200 px-3 py-2 dark:border-gray-800">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span
+          className="inline-flex select-none items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-black tabular-nums"
+          style={{
+            background: "var(--gold-badge-bg)",
+            borderColor: "var(--gold-badge-border)",
+            color: "var(--gold-badge-text)",
           }}
-          className={buttonCls.ghost + " mr-1 !px-2.5 !py-1 !text-xs"}
         >
-          Save
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            ask(
-              {
-                title: `Delete lucky number #${n.number}?`,
-                body: (
-                  <p>
-                    #{n.number} ({formatMoney(n.amount)}/week) disappears from the wheel and any
-                    slot it sits in. Blocked with a clear reason if it has payout records. An
-                    audit entry records the deletion.
-                  </p>
-                ),
-                confirmLabel: `Delete #${n.number}`,
-              },
-              `#${n.number} deleted.`,
-              () => deleteLuckyNumber({ luckyNumberId: n.id }),
-            )
-          }
-          className={buttonCls.danger + " !px-2.5 !py-1 !text-xs"}
-        >
-          Delete
-        </button>
-        {/* THIS row's message, in THIS row. Save and Delete for #7 both report
-            here — beside the buttons that were pressed, not at the top of a
-            page that may be a screen and a half away (rule 6, 6b). */}
-        <SaveFeedback state={feedback} className="mt-1 block" />
-      </td>
-    </tr>
+          #{n.number}
+          {showAmount && (
+            <span className="font-semibold opacity-75">{formatMoney(n.amount)}/wk</span>
+          )}
+        </span>
+
+        <span className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              // Reopening after a cancel must not carry the abandoned edit.
+              setNumber(String(n.number));
+              setDollars(String(n.amount / 100));
+              setEditing((v) => !v);
+            }}
+            aria-expanded={editing}
+            className={buttonCls.ghost + " !px-2.5 !py-1 !text-xs"}
+          >
+            {editing ? "Close" : "Edit"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              ask(
+                {
+                  title: `Delete lucky number #${n.number}?`,
+                  body: (
+                    <p>
+                      #{n.number} ({formatMoney(n.amount)}/week) disappears from the wheel and any
+                      slot it sits in. Their weekly amount drops by that much and their receipts
+                      are re-allocated to match. Blocked with a clear reason if it has payout
+                      records. An audit entry records the deletion.
+                    </p>
+                  ),
+                  confirmLabel: `Delete #${n.number}`,
+                  destructive: true,
+                },
+                `#${n.number} deleted.`,
+                () => deleteLuckyNumber({ luckyNumberId: n.id }),
+              )
+            }
+            // The QUIET danger variant: an always-on-screen per-row Delete in
+            // the outlined red turns a read-first card into a wall of boxes.
+            className={buttonCls.dangerQuiet + " !px-2.5 !py-1 !text-xs"}
+          >
+            Delete
+          </button>
+        </span>
+      </div>
+
+      {editing && (
+        <div className="mt-2 border-t border-gray-100 pt-2 dark:border-gray-800/60">
+          <div className="flex flex-wrap items-end gap-2 text-sm">
+            <Field label="Number">
+              <NumberInput
+                value={number}
+                onChange={setNumber}
+                min={1}
+                ariaLabel={`Lucky number ${n.number}`}
+                className="w-20"
+              />
+            </Field>
+            <Field label="Amount a week">
+              <AmountInput
+                value={dollars}
+                onChange={setDollars}
+                ariaLabel={`Amount for number ${n.number}`}
+                className="w-28"
+              />
+            </Field>
+            <button
+              type="button"
+              disabled={busy || !dirty}
+              onClick={() => {
+                const cents = parseDollarsToCents(dollars);
+                if (cents === null) return;
+                const wanted = Number.parseInt(number, 10);
+                void saveNumber({
+                  label: `#${wanted} saved.`,
+                  save: (onConflict) =>
+                    updateLuckyNumber({
+                      luckyNumberId: n.id,
+                      number: wanted,
+                      amount: cents,
+                      onConflict,
+                    }),
+                  keep: (suggested) => setNumber(String(suggested)),
+                });
+              }}
+              className={buttonCls.secondary + " !px-2.5 !py-1 !text-xs disabled:opacity-40"}
+            >
+              Save
+            </button>
+          </div>
+          {/* The consequence, before the press rather than in the audit log
+              afterwards: the weekly amount FOLLOWS the numbers. */}
+          <p className="mt-2 text-[11px] text-amber-800 dark:text-amber-300 text-pretty">
+            Changing this amount moves their weekly contribution to the new total of their numbers
+            and re-allocates every receipt. It is refused once they have been drawn.
+          </p>
+        </div>
+      )}
+
+      {/* THIS row's message, in THIS row. Save and Delete for #7 both report
+          here — beside the buttons that were pressed, not at the top of a
+          page that may be a screen and a half away (rule 6, 6b). */}
+      <SaveFeedback state={feedback} className="mt-1 block" />
+    </li>
   );
 }
 

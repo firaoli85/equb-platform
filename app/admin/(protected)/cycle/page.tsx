@@ -3,6 +3,7 @@ import { getActiveCycleDetail } from "@/app/actions/cycles";
 import { formatDateUTC, formatMoney } from "@/lib/format";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { getSetting } from "@/lib/settings";
+import { personDisplayName, personSecondaryName } from "@/lib/person-name";
 
 // The current week is derived from the calendar on every request (2.14) —
 // this page must never be served from a build-time snapshot.
@@ -152,12 +153,18 @@ export default async function CyclePage() {
                 >
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-2.5">
                     <Link href={`/admin/participations/${p.id}`} className="block hover:underline">
+                      {/* LATIN PRIMARY (14 Aug 2026). Presentation mode's
+                          redaction puts its neutral label in nameEnglishFirst
+                          (lib/presentation.ts), so the primary line carries it
+                          on a screen share too. */}
                       <div className="font-semibold text-gray-900 dark:text-white">
-                        {p.person.nameAmharic}
+                        {personDisplayName(p.person)}
                       </div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">
-                        {p.person.nameEnglishFirst} {p.person.nameEnglishLast ?? ""}
-                      </div>
+                      {personSecondaryName(p.person) && (
+                        <div className="text-xs text-gray-600 dark:text-gray-400">
+                          {personSecondaryName(p.person)}
+                        </div>
+                      )}
                     </Link>
                   </td>
                   {!presentation && (

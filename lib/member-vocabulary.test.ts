@@ -74,6 +74,38 @@ describe("GUARD — members read dates and their own counts, never cycle weeks",
     expect(offenders).toEqual([]);
   });
 
+  // THE GAP THE 14 AUG AUDIT FOUND. Every scan above needs the WORD "week"
+  // beside the slot, so a bare `{d.weekNumber}` in a badge was invisible to
+  // all of them — which is exactly how the draw history came to lead each row
+  // with the organizer's coordinate in a circle, on a card whose own comment
+  // says "dates, not cycle weeks". A cycle week number is wrong on a member
+  // surface whether or not a label sits next to it.
+  it("no member surface renders a raw weekNumber field at all", () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const text = renderedText(readFileSync(f, "utf8"));
+      for (const [i, line] of text.split("\n").entries()) {
+        // `{x.weekNumber}` as JSX CONTENT. Excluded: `${…}` template values
+        // (DOM ids and the like) and React `key=` — neither reaches the
+        // screen. `ownWeek` is the member's own count and is always fine.
+        const rendersIt =
+          /(^|[^$\w])\{\s*[\w.?]*\bweekNumber\b\s*\}/.test(line) && !/\bkey=\{/.test(line);
+        if (rendersIt && !/ownWeek/.test(line)) {
+          offenders.push(`${rel(f)}:${i + 1} → ${line.trim().slice(0, 90)}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("that scan is not vacuous — it catches the badge that shipped", () => {
+    const planted = `                  {d.weekNumber}`;
+    expect(/\{\s*[\w.?]*\bweekNumber\b\s*\}/.test(planted)).toBe(true);
+    // …and spares the member's own numbering, and non-rendering uses.
+    expect(/ownWeek/.test(`{w.ownWeek ?? w.weekNumber}`)).toBe(true);
+    expect(/\{\s*[\w.?]*\bweekNumber\b\s*\}/.test(`key={d.id}`)).toBe(false);
+  });
+
   it("nothing interpolates a week number into a member sentence", () => {
     const offenders: string[] = [];
     for (const f of files) {
@@ -175,15 +207,20 @@ describe("GUARD — message templates speak the member's frame too", () => {
 
   /**
    * A week slot is member-framed when the fixed text OWNS it: "your week(s)
-   * {{2}}" is the member's own numbering (the v2 rule); a bare "week {{2}}"
-   * is the cycle's coordinate wearing a slot. Checked without lookbehind —
-   * the TS target predates it.
+   * {{2}}" is the member's own numbering (the v2 rule), and "the current
+   * week is week {{5}}" (the v3 shape, 14 Aug 2026) is too — the slot
+   * carries the member's OWN current week with its date, and the approved
+   * sentence names it theirs by context. A bare "week {{2}}" outside both
+   * shapes is the cycle's coordinate wearing a slot. Checked without
+   * lookbehind — the TS target predates it.
    */
   function cycleFramedSlots(body: string): string[] {
     const offenders: string[] = [];
     for (const match of body.matchAll(/week(?:\(s\))?\s+\{\{\d+\}\}/gi)) {
-      const before = body.slice(Math.max(0, match.index - 6), match.index).toLowerCase();
-      if (!before.endsWith("your ")) offenders.push(match[0]);
+      const before = body.slice(Math.max(0, match.index - 25), match.index).toLowerCase();
+      if (!before.endsWith("your ") && !before.endsWith("the current week is ")) {
+        offenders.push(match[0]);
+      }
     }
     return offenders;
   }
@@ -249,5 +286,14 @@ describe("GUARD — message templates speak the member's frame too", () => {
     expect("You are saving {{2}} a week for {{3}}").not.toMatch(CYCLE_WEEK_SLOT);
     expect("you are {{4}} weekly payments behind").not.toMatch(CYCLE_WEEK_SLOT);
     expect("your last payment was for the week of {{3}}").not.toMatch(CYCLE_WEEK_SLOT);
+  });
+
+  // The frame check itself: both allowed shapes pass, a bare slot still
+  // fails — so extending the allowance for v3 did not hollow the guard out.
+  it("cycleFramedSlots allows 'your' and the v3 current-week shape, nothing else", () => {
+    expect(cycleFramedSlots("paid up to your week {{4}}")).toEqual([]);
+    expect(cycleFramedSlots("and the current week is week {{5}}.")).toEqual([]);
+    expect(cycleFramedSlots("record as of week {{2}}")).toEqual(["week {{2}}"]);
+    expect(cycleFramedSlots("the week is week {{5}}")).toEqual(["week {{5}}"]);
   });
 });

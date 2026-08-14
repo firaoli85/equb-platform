@@ -54,7 +54,7 @@ import { computeStanding, pinnedMapFromEvents } from "@/lib/standing";
  * money, the organizer's own fee, and his actual bank balance on one page. It
  * is withheld entirely in presentation mode rather than redacted.
  */
-export async function getCyclePosition(input?: { readingsPage?: number }) {
+export async function getCyclePosition(input?: { readingsPage?: number; readingsPageSize?: number }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
@@ -325,7 +325,7 @@ export async function getCyclePosition(input?: { readingsPage?: number }) {
     // held in week 8 concludes he never recorded it. Paged, with the count
     // always stated (lib/paging.ts).
     const readingTotal = await prisma.cashReading.count();
-    const readingInfo = pageInfo(readingTotal, input?.readingsPage ?? 1, PAGE_SIZES.cashReadings);
+    const readingInfo = pageInfo(readingTotal, input?.readingsPage ?? 1, input?.readingsPageSize ?? PAGE_SIZES.cashReadings);
     const readings = await prisma.cashReading.findMany({
       orderBy: { readAt: "desc" },
       skip: readingInfo.skip,

@@ -5,7 +5,9 @@ import { SigningChip } from "@/components/admin/agreement-signing";
 import { Pill, type PillTone } from "@/components/ui/primitives";
 import type { SigningState } from "@/lib/agreement-view";
 import { formatMoney } from "@/lib/format";
-import { useViewMode, ViewToggle } from "@/components/ui/view-toggle";
+import { usePersistedChoice, useViewMode, ViewToggle } from "@/components/ui/view-toggle";
+import { DIRECTORY_SORTS, sortDirectory, type DirectorySortKey } from "@/lib/people-sort";
+import { Select } from "@/components/ui/controls";
 
 // Display-only rows, computed server-side — no raw person records cross to
 // the client, just what the directory renders.
@@ -23,6 +25,11 @@ export type DirectoryRow = {
   signing: SigningState;
   /** Cents contributed to the active cycle (2.1) — 0 when not a member. */
   contributedThisCycle: number;
+  /** Sort facts (14 Aug 2026): the ACTIVE participation's figures, 0 outside one. */
+  weeklyAmount: number;
+  weeksCommitted: number;
+  /** Weeks their money covers — the same quotient weeksCredited derives from. */
+  weeksPaid: number;
 };
 
 const PIN_LABEL: Record<DirectoryRow["pinState"], { tone: PillTone; text: string }> = {
@@ -31,12 +38,30 @@ const PIN_LABEL: Record<DirectoryRow["pinState"], { tone: PillTone; text: string
   none: { tone: "neutral", text: "OTP only" },
 };
 
-export function PeopleDirectory({ rows }: { rows: DirectoryRow[] }) {
+export function PeopleDirectory({ rows: unsorted }: { rows: DirectoryRow[] }) {
   const [view, setView] = useViewMode("admin-people-view", "list");
+  // Persisted like the view choice (the localStorage pattern this screen
+  // already uses) — alphabetical until the organizer picks otherwise.
+  const [sort, setSort] = usePersistedChoice<DirectorySortKey>(
+    "admin-people-sort",
+    DIRECTORY_SORTS.map((s) => s.key),
+    "name",
+  );
+  const rows = sortDirectory(unsorted, sort);
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-3">
+        <span className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Sort</span>
+          <Select
+            value={sort}
+            onChange={(v) => setSort(v as DirectorySortKey)}
+            ariaLabel="Sort the directory"
+            className="w-44"
+            options={DIRECTORY_SORTS.map((s) => ({ value: s.key, label: s.label }))}
+          />
+        </span>
         <ViewToggle mode={view} onChange={setView} labels={{ list: "List", grid: "Cards" }} />
       </div>
 
@@ -63,12 +88,16 @@ export function PeopleDirectory({ rows }: { rows: DirectoryRow[] }) {
                 >
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-2.5">
                     <Link href={`/admin/people/${p.id}`} className="block hover:underline">
+                      {/* LATIN PRIMARY (14 Aug 2026): the Amharic renders
+                          after, smaller — and not at all where absent. */}
                       <span className="block font-semibold text-gray-900 dark:text-white">
-                        {p.nameAmharic}
-                      </span>
-                      <span className="block text-xs text-gray-600 dark:text-gray-400">
                         {p.nameEnglish}
                       </span>
+                      {p.nameAmharic && (
+                        <span className="block text-xs text-gray-600 dark:text-gray-400">
+                          {p.nameAmharic}
+                        </span>
+                      )}
                     </Link>
                   </td>
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-2.5 tabular-nums text-gray-700 dark:text-gray-300">
@@ -114,11 +143,13 @@ export function PeopleDirectory({ rows }: { rows: DirectoryRow[] }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
-                    {p.nameAmharic}
-                  </span>
-                  <span className="block truncate text-xs text-gray-600 dark:text-gray-400">
                     {p.nameEnglish}
                   </span>
+                  {p.nameAmharic && (
+                    <span className="block truncate text-xs text-gray-600 dark:text-gray-400">
+                      {p.nameAmharic}
+                    </span>
+                  )}
                 </span>
                 {/* Stacked, not side by side: two chips on one line squeeze
                     the name they sit beside. The cards must carry the same

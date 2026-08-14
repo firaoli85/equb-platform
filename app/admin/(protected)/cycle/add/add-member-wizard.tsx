@@ -269,7 +269,9 @@ export function AddMemberWizard({
         !selectedPerson.inActiveCycle &&
         // 2.18: a carried balance must be DECIDED, not stepped past.
         (carried === 0 || carryChoice !== null)
-      : newPerson.nameAmharic.trim() !== "" && newPerson.nameEnglishFirst.trim() !== "";
+      : // Amharic never blocks (14 Aug 2026) — the Latin first name is the
+        // one identity every surface now leads with.
+        newPerson.nameEnglishFirst.trim() !== "";
   const step2Valid = luckyAmounts !== null && (!manualNumbers || manualError === null);
   const step3Valid = startWeekValid && weeksValid;
 
@@ -520,7 +522,9 @@ export function AddMemberWizard({
                         } ${p.inActiveCycle ? "cursor-not-allowed text-gray-600 dark:text-gray-400" : "hover:bg-gray-100 dark:bg-white/10"}`}
                       >
                         <span>
-                          {p.nameAmharic} — {p.nameEnglishFirst} {p.nameEnglishLast ?? ""}
+                          {p.nameEnglishFirst}
+                          {p.nameEnglishLast ? ` ${p.nameEnglishLast}` : ""}
+                          {p.nameAmharic ? ` — ${p.nameAmharic}` : ""}
                         </span>
                         {p.inActiveCycle && <span className="text-xs">already in this cycle</span>}
                       </button>
@@ -533,9 +537,9 @@ export function AddMemberWizard({
             <div className="space-y-3">
               {(
                 [
-                  ["nameAmharic", "Amharic name *"],
-                  ["nameEnglishFirst", "English first name *"],
-                  ["nameEnglishLast", "English last name"],
+                  ["nameEnglishFirst", "First name *"],
+                  ["nameEnglishLast", "Last name"],
+                  ["nameAmharic", "Amharic name (optional)"],
                   ["phone", "Phone"],
                 ] as const
               ).map(([key, label]) => (

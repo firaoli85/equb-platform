@@ -90,8 +90,17 @@ export function MemberCollectionsList({
                 className={`flex items-center gap-3 px-4 py-3${idx < 9 ? " animate-fade-in-up" : ""}`}
                 style={idx < 9 ? { minHeight: "52px", animationDelay: `${idx * 0.07}s` } : { minHeight: "52px" }}
               >
-                <span className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-[11px] font-bold text-gray-600 dark:text-gray-300 tabular-nums shrink-0">
-                  {d.weekNumber}
+                {/* THE DAY, NOT THE CYCLE WEEK (UI_STANDARDS 8c, and this
+                    file's own rule two cards up). A draw belongs to the whole
+                    group, so there is no member-relative week to convert to —
+                    the date is the coordinate every member already shares. */}
+                <span className="flex h-9 w-11 shrink-0 flex-col items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  <span className="text-[9px] font-bold uppercase leading-none tracking-wide">
+                    {d.date.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}
+                  </span>
+                  <span className="text-[12px] font-black leading-tight tabular-nums">
+                    {d.date.toLocaleDateString("en-US", { day: "numeric", timeZone: "UTC" })}
+                  </span>
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">

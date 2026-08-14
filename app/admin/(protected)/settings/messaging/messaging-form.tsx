@@ -258,7 +258,10 @@ export function MessagingForm({
               {reason}
             </span>
           ))}
-          {!initial.defaultPinFromPhone && (
+          {/* BOTH Access-settings reasons get the way there: the default-PIN
+              switch and the PIN-login switch are set on the same screen, and
+              only one of them used to carry the link. */}
+          {(!initial.defaultPinFromPhone || !initial.pinLoginEnabled) && (
             <span className="mt-1 block">
               <Link
                 href="/admin/settings/access"

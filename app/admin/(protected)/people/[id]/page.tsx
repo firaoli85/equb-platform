@@ -17,7 +17,8 @@ import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { finalPosition, finalPositionAdminLine } from "@/lib/final-position";
 import { ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { calculateFinishWeek } from "@/lib/money";
-import { CAPS, PAGE_SIZES, pageInfo, parsePage, truncationNotice } from "@/lib/paging";
+import { CAPS, PAGE_SIZES, pageInfo, parsePage, parsePageSize, truncationNotice } from "@/lib/paging";
+import { PageSizeSelect } from "@/components/ui/page-size";
 import type { PinState } from "@/lib/person-record";
 import { defaultPinForPhone } from "@/lib/pin";
 import { prisma } from "@/lib/prisma";
@@ -38,6 +39,7 @@ import { MessagesOptOut } from "./messages-opt-out";
 import { ParticipationEditor } from "./participation-editor";
 import { PersonEditForm } from "./person-edit-form";
 import { PinControls } from "./pin-controls";
+import { personDisplayName, personSecondaryName } from "@/lib/person-name";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +64,7 @@ export default async function PersonPage({
     tab?: string | string[];
     section?: string | string[];
     receiptsPage?: string | string[];
+    receiptsPageSize?: string | string[];
   }>;
 }) {
   // A member's identity and money (2.4).
@@ -192,11 +195,12 @@ export default async function PersonPage({
   // fetches its own figures through `participationRemovalPreview`, which
   // counts and sums in SQL. Nothing on Settings reads these rows.
   const receiptsPage = parsePage(query.receiptsPage);
+  const receiptsPageSize = parsePageSize(query.receiptsPageSize, PAGE_SIZES.receipts);
   const receiptTotal =
     active && tab === "receipts"
       ? await prisma.paymentEvent.count({ where: { participationId: active.id } })
       : 0;
-  const receiptInfo = pageInfo(receiptTotal, receiptsPage, PAGE_SIZES.receipts);
+  const receiptInfo = pageInfo(receiptTotal, receiptsPage, receiptsPageSize);
   // Only for the tab that shows it.
   const messaging =
     tab === "messages" ? await getMemberMessaging({ personId: person.id }) : null;
@@ -403,11 +407,13 @@ export default async function PersonPage({
           </span>
 
           <div className="min-w-0 flex-1">
+            {/* LATIN PRIMARY (14 Aug 2026) — the Amharic name renders under
+                it where present, and nothing renders where it is absent. */}
             <h1 className="text-2xl font-black leading-tight tracking-tight text-gray-900 dark:text-white text-balance">
-              {person.nameAmharic}
+              {personDisplayName(person)}
             </h1>
             <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400">
-              {person.nameEnglishFirst} {person.nameEnglishLast ?? ""}
+              {personSecondaryName(person)}
               {person.phone && (
                 <>
                   <span aria-hidden="true" className="mx-1.5 opacity-50">
@@ -801,13 +807,20 @@ export default async function PersonPage({
                 what stops someone concluding a receipt was never recorded
                 because they could not scroll to it. */}
             {active !== null && (
-              <Pager
-                className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
-                info={receiptInfo}
-                noun={{ one: "receipt", many: "receipts" }}
-                label="Receipt pages"
-                hrefFor={(p) => `?tab=receipts&receiptsPage=${p}`}
-              />
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-800/60">
+                <Pager
+                  info={receiptInfo}
+                  noun={{ one: "receipt", many: "receipts" }}
+                  label="Receipt pages"
+                  hrefFor={(p) => `?tab=receipts&receiptsPage=${p}${receiptsPageSize !== PAGE_SIZES.receipts ? `&receiptsPageSize=${receiptsPageSize}` : ""}`}
+                />
+                <PageSizeSelect
+                  param="receiptsPageSize"
+                  pageParam="receiptsPage"
+                  dflt={PAGE_SIZES.receipts}
+                  storageKey="admin-receipts-page-size"
+                />
+              </div>
             )}
           </div>
         </Card>

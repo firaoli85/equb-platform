@@ -9,7 +9,8 @@ import { formatMoney } from "@/lib/format";
 
 export type StampWeek = {
   id: string;
-  weekNumber: number;
+  /** THEIR ordinal — 1 is their first week, never the cycle's coordinate. */
+  ownWeek: number;
   date: string;
   status: "PAID" | "LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
   isPayoutWeek: boolean;
@@ -229,7 +230,7 @@ export function WeekStampList({
 
             <div className="relative z-10 flex items-center gap-2 px-2.5 py-2 text-xs">
               <span className="w-5 text-[11px] text-center font-mono font-bold text-gray-500 dark:text-gray-400 shrink-0 tabular-nums">
-                {w.weekNumber}
+                {w.ownWeek}
               </span>
 
               <span className="flex-1 text-gray-600 dark:text-gray-400 tabular-nums">{w.date}</span>

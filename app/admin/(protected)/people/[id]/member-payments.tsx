@@ -14,7 +14,6 @@ import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import { oldestN, parseWeekRange, selectableWeekNumbers, weeksInRange } from "@/lib/week-selection";
 import { statusLabel } from "@/lib/status-labels";
 
-type Method = "ZELLE" | "CASH" | "OTHER";
 
 type WeekRow = CatchUpWeek & {
   date: string;
@@ -55,7 +54,6 @@ export function MemberPayments({
   /** Weeks handed to the shared entry when the strip selection is recorded. */
   const [preselect, setPreselect] = useState<number[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [method, setMethod] = useState<Method>("ZELLE");
   const [rangeText, setRangeText] = useState("");
   const [expandedWeek, setExpandedWeek] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
@@ -483,18 +481,12 @@ export function MemberPayments({
           <strong>{formatMoney(amount)}</strong>
         </p>
 
+        {/* NO METHOD PICKER HERE. One lived here and NOTHING read it —
+            this button only opens PaymentEntry, which asks for the method
+            itself and defaults to Zelle. Picking "Cash" recorded Zelle, in
+            silence, which is worse than not offering the choice. The single
+            method control is PaymentEntry's (2.19: one payment route). */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Select<Method>
-            value={method}
-            onChange={setMethod}
-            ariaLabel="Payment method"
-            className="w-32"
-            options={[
-              { value: "ZELLE", label: "Zelle" },
-              { value: "CASH", label: "Cash" },
-              { value: "OTHER", label: "Other" },
-            ]}
-          />
           {/* ONE PAYMENT ROUTE (2.19). This was a second preview and a
               second commit — its own `handlePreview`/`handleCommit` calling
               `recordPayment` directly, beside PaymentEntry above and

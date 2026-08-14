@@ -54,14 +54,17 @@ describe("the delivered bug, reproduced", () => {
     expect(result.error).toContain("Nothing was sent");
   });
 
-  it("with the payout supplied it sends, and {{3}} carries the figure", () => {
+  it("with the payout supplied it sends, and {{2}} carries the figure", () => {
     const values = placeholderValues(facts, { payoutNet: 1_960_000 });
     const result = buildContentVariables("WINNER_ANNOUNCEMENT", values);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // v2: position 2 is the payout, position 3 the member's finish DATE.
+    // v3: payout, then paid/committed, payments left, and the finish DATE
+    // as the run-until anchor.
     expect(result.variables["2"]).toBe("$19,600");
-    expect(result.variables["3"]).toBe("Sunday, September 27, 2026");
+    expect(result.variables["3"]).toBe("13");
+    expect(result.variables["5"]).toBe("7");
+    expect(result.variables["6"]).toBe("Sunday, September 27, 2026");
   });
 
   // THE SECOND, QUIETER BUG. {week} is not in MONEY_PLACEHOLDERS, so the guard
@@ -88,17 +91,27 @@ describe("the guard refuses money holes, and only money holes", () => {
     expect(result.missing).toContain("amountReceived");
   });
 
-  // "—" IS LEGITIMATE ELSEWHERE, and treating it as missing would refuse a
-  // perfectly honest message.
-  it("BEHIND_NOTICE sends for a member who has NEVER paid, where lastPaymentWeek is a dash", () => {
-    const neverPaid = { ...facts, lastPaymentWeek: null, weeksBehind: 7, amountOutstanding: 700_000 };
+  // A NEVER-PAID MEMBER IS STILL REACHABLE — v3 composes "the start", so no
+  // dash appears anywhere in the sentence (the sentinel era for this fact
+  // ended 14 Aug 2026).
+  it("BEHIND_NOTICE sends for a member who has NEVER paid — 'the start', not a dash", () => {
+    const neverPaid = {
+      ...facts,
+      lastPaymentWeek: null,
+      weeksCredited: 0,
+      weeksBehind: 7,
+      amountOutstanding: 700_000,
+      weeks: facts.weeks.map((w) => ({ ...w, status: "UNPAID" })),
+    };
     const values = placeholderValues(neverPaid, {});
     expect(values.lastPaymentWeek).toBe(NO_VALUE);
+    expect(values.myPaidUpToWeek).toBe("the start (Sunday, May 17)");
     const result = buildContentVariables("BEHIND_NOTICE", values);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.variables["3"]).toBe(NO_VALUE);
-    expect(result.variables["6"]).toBe("$7,000");
+    expect(result.variables["3"]).toBe("$7,000");
+    expect(result.variables["4"]).toBe("the start (Sunday, May 17)");
+    expect(Object.values(result.variables)).not.toContain(NO_VALUE);
   });
 
   it("a money placeholder of $0 is a real figure and sends", () => {
@@ -242,15 +255,19 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     if (!r.ok) expect(r.missing).toContain("myLateWeeks");
   });
 
-  it("BEHIND_NOTICE: lastPaymentWeek MAY dash — it is the honest answer", () => {
-    // The exception, and the reason an allowlist is the right shape: a member
-    // who has never paid genuinely has no last payment week.
-    const values = placeholderValues({ ...STANDING, lastPaymentWeek: null }, {});
-    expect(values.myLastPaymentWeek).toBe(NO_VALUE);
+  it("BEHIND_NOTICE: the never-paid member reads 'the start', never a dash (v3)", () => {
+    // The v2-era exception is GONE: {myPaidUpToWeek} composes for everyone —
+    // a member with no fully-paid week is paid up to "the start", their own
+    // start date — so no my* placeholder is on the dash allowlist any more.
+    const values = placeholderValues(
+      { ...STANDING, lastPaymentWeek: null, weeksCredited: 0, weeks: datedWeeks(() => "UNPAID") },
+      {},
+    );
+    expect(values.myPaidUpToWeek).toBe("the start (Sunday, May 17)");
 
     const r = buildContentVariables("BEHIND_NOTICE", values);
     expect(r.ok, "a never-paid member must still be reachable").toBe(true);
-    if (r.ok) expect(r.variables["3"]).toBe(NO_VALUE);
+    if (r.ok) expect(r.variables["4"]).toBe("the start (Sunday, May 17)");
   });
 
   it("CYCLE_CLOSING_STATEMENT is safe — every figure comes from standing", () => {

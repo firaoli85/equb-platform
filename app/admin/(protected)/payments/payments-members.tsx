@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { WeekActionPanel, type WeekTarget } from "@/components/admin/week-action-panel";
 import { Select } from "@/components/ui/controls";
 import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
+import { usePersistedChoice } from "@/components/ui/view-toggle";
 import { formatMoney } from "@/lib/format";
 import {
   buildMemberRows,
@@ -61,12 +62,22 @@ export function PaymentsMembers({
 }) {
   const router = useRouter();
   const presentation = data.presentation === true;
+  // TYPED vs APPLIED (14 Aug 2026 ruling: filters do not fire on change
+  // alone) — the search narrows the list on Enter or the button, never
+  // mid-keystroke.
+  const [typed, setTyped] = useState("");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<{ participationId: string; weekNumber: number } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
   const rows = useMemo(() => buildMemberRows(data.grid), [data.grid]);
-  const [sort, setSort] = useState<MemberSort>("worst-first");
+  // Persisted (14 Aug 2026): the choice survives reloads and view switches,
+  // same localStorage pattern as the view toggle.
+  const [sort, setSort] = usePersistedChoice<MemberSort>(
+    "admin-payments-sort",
+    ["worst-first", "most-saved", "name"],
+    "worst-first",
+  );
   const shown = useMemo(
     () => visibleMembers({ rows, filter, search, currentWeek: data.currentCycleWeek, sort }),
     [rows, filter, search, data.currentCycleWeek, sort],
@@ -77,7 +88,7 @@ export function PaymentsMembers({
     if (!entry || entry.cell.kind !== "week") return null;
     return {
       participationId: row.participationId,
-      memberName: row.name.split("—")[1]?.trim() || row.name,
+      memberName: row.name,
       weekNumber,
       amountDue: entry.cell.amountDue,
       amountAlreadyPaid: entry.cell.storedPaid,
@@ -97,14 +108,34 @@ export function PaymentsMembers({
       {saved && <Alert kind="ok">{saved}</Alert>}
 
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or #number"
-          aria-label="Search members by name or lucky number"
-          className="w-56 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3.5 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-        />
+        <form
+          className="flex gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSearch(typed);
+          }}
+        >
+          <input
+            type="search"
+            value={typed}
+            onChange={(e) => {
+              setTyped(e.target.value);
+              // Clearing the box applies immediately — an empty search is
+              // "show everyone", not a filter waiting to fire.
+              if (e.target.value === "") setSearch("");
+            }}
+            placeholder="Search name or #number"
+            aria-label="Search members by name or lucky number"
+            className="w-56 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3.5 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+          />
+          <button
+            type="submit"
+            disabled={typed === search}
+            className="rounded-xl border border-gray-300 px-3 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/5"
+          >
+            Search
+          </button>
+        </form>
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -155,10 +186,27 @@ export function PaymentsMembers({
 
       {shown.length === 0 ? (
         <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] px-6 py-10 text-center">
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">Nobody matches.</p>
-          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-            Clear the search or choose “Everyone”.
-          </p>
+          {/* TWO DIFFERENT ZEROES. "Nobody matches — clear the search" is
+              wrong advice when the cycle simply has no members: there is no
+              search to clear, and the sentence sends the reader looking for
+              a filter that is not on. */}
+          {rows.length === 0 ? (
+            <>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                Nobody is in this cycle yet.
+              </p>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                Add a member and their weeks appear here.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Nobody matches.</p>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                Clear the search or choose “Everyone”.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -169,7 +217,7 @@ export function PaymentsMembers({
               ? Math.max(0, thisWeekCell.amountDue - thisWeekCell.storedPaid)
               : 0;
             const isOpenHere = open?.participationId === row.participationId;
-            const shortName = row.name.split("—")[1]?.trim() || row.name;
+            const shortName = row.name;
 
             return (
               <li

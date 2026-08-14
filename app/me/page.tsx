@@ -34,7 +34,9 @@ export default async function MePage() {
   }
   const { person, participation } = result.data;
 
-  const displayName = `${person.nameEnglishFirst} / ${person.nameAmharic}`;
+  const displayName = person.nameAmharic
+    ? `${person.nameEnglishFirst} / ${person.nameAmharic}`
+    : person.nameEnglishFirst;
 
   // ————— NOT IN THE RUNNING CYCLE — one calm page —————
   //
@@ -209,7 +211,7 @@ export default async function MePage() {
     id: `w${w.weekNumber}`,
     // THEIR ordinal, never the cycle's. A ten-week member reading "14" down
     // the side of their own list is reading the organizer's coordinates.
-    weekNumber: w.ownWeek ?? w.weekNumber,
+    ownWeek: w.ownWeek ?? w.weekNumber,
     date: formatDateUTC(w.date),
     status: w.status,
     isPayoutWeek: drawnWeeks.has(w.weekNumber),

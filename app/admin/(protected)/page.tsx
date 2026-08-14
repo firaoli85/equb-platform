@@ -108,7 +108,11 @@ export default async function CommandCenterPage() {
     d.pendingPayouts.length === 0 &&
     d.closedShortfalls.length === 0 &&
     d.stopped.length === 0 &&
-    d.lockedMembers.length === 0;
+    d.lockedMembers.length === 0 &&
+    // 2.27 warnings render INSIDE this card — omitted from the test, a red
+    // "windows ending undrawn" box stacked straight on top of "Nothing —
+    // every member is current".
+    d.undrawnWarnings.length === 0;
 
   return (
     <main className="space-y-6">
