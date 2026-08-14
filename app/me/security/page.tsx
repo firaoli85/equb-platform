@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listMySessions } from "@/app/actions/sessions";
 import { getCurrentUser } from "@/lib/auth";
+import { ChangePin } from "@/components/member/change-pin";
 import { SessionList } from "@/components/session-list";
 import { TruncationNotice } from "@/components/ui/pager";
 
@@ -47,6 +48,11 @@ export default async function MemberSecurityPage() {
           </>
         )}
       </section>
+
+      {/* CHANGE MY PIN — Door 1 of PIN self-service. The page's own copy
+          above already tells a member who spots a strange device to "set a
+          new PIN"; this is where that sentence stops being homework. */}
+      <ChangePin />
 
       {/* PAST CYCLES — one quiet entry, deliberately.
           Not a tab and not on the home screen: a finished cycle's figures must

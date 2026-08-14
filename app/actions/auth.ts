@@ -343,6 +343,89 @@ export async function setMyPin(input: { pin: string }) {
 }
 
 /**
+ * MEMBER: change their own PIN, proving the current one first (Door 1 of
+ * PIN self-service). The signed-in analogue of the forced setup above —
+ * SAME validator (isValidPinFormat), SAME hasher (hashPin), SAME comparator
+ * (verifyPin), never copies of them.
+ *
+ * NO LOCKOUT COUNTING HAPPENS HERE (organizer's rule: nothing beyond what
+ * the sign-in policy already does). The counters exist to price GUESSING AT
+ * THE DOOR; this form sits behind a live session, where the current-PIN ask
+ * is confirmation, not the credential wall. An ACTIVE lock is still
+ * honoured — a locked PIN cannot be exercised anywhere — but a wrong guess
+ * here neither increments nor resets anything.
+ *
+ * The phone-digit default is deliberately NOT accepted as the current PIN:
+ * a member still on the default has no PIN of their own to change, and the
+ * honest door for them is the sign-in prompt that forced setup owns.
+ */
+export async function changeMyPin(input: { currentPin: string; newPin: string }) {
+  try {
+    const claims = await getCurrentUser();
+    if (!claims) return { ok: false as const, error: "Not signed in." };
+    if (!isValidPinFormat(input.newPin)) {
+      return { ok: false as const, error: "PIN must be 4 to 8 digits." };
+    }
+    const person = await prisma.person.findUnique({ where: { authUserId: claims.sub } });
+    if (!person) return { ok: false as const, error: "No member record is linked to this sign-in." };
+    if (person.pinHash === null) {
+      return {
+        ok: false as const,
+        error:
+          "You don't have a PIN of your own yet, so there is nothing to change — you'll be " +
+          "asked to set one the next time you sign in.",
+      };
+    }
+    if (isPinLocked(person.pinLockedUntil, new Date())) {
+      return {
+        ok: false as const,
+        error: "Your PIN is locked right now — wait for the lock to end, then try again.",
+      };
+    }
+    const verdict = await verifyPin(
+      { pinHash: person.pinHash, phone: person.phone },
+      input.currentPin,
+      { allowDefaultFromPhone: false },
+    );
+    if (verdict.result !== "match") {
+      return { ok: false as const, error: "That isn't your current PIN — nothing was changed." };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.person.update({
+        where: { id: person.id },
+        data: {
+          pinHash: await hashPin(input.newPin),
+          pinFailedAttempts: 0,
+          pinLockedUntil: null,
+        },
+      });
+      // WHO AND WHEN, NEVER THE VALUE — the same shape the admin PIN actions
+      // write. `hadPin` booleans are the whole payload; a PIN has no business
+      // existing anywhere outside its bcrypt hash.
+      await logAudit(tx, {
+        entity: "Person",
+        entityId: person.id,
+        action: "update",
+        summary: `${person.nameEnglishFirst} changed their own PIN, proving the current one first`,
+        before: { hadPin: true },
+        after: { hadPin: true, changedByMember: true },
+      });
+    });
+
+    // THE MEMBER STAYS SIGNED IN. Existing policy note: a member's own PIN
+    // write (setMyPin above) does not end their other sessions — only the
+    // organizer's RESET does. Whether a self-service CHANGE should end other
+    // sessions is an OPEN question for the organizer, deliberately not
+    // decided here.
+    return { ok: true as const, data: { changed: true } };
+  } catch (e) {
+    console.error("changeMyPin failed:", e);
+    return { ok: false as const, error: `Could not change your PIN. ${errorMessage(e)}` };
+  }
+}
+
+/**
  * ORGANIZER sign-in, performed SERVER-side (audit H2).
  *
  * This used to run in the browser via createBrowserClient, which stores the

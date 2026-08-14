@@ -191,6 +191,8 @@ export function LoginFlow() {
   // that disagreement.
   const [pinSave, setPinSave] = useState<SaveState>({ kind: "idle" });
   const savingPin = pinSave.kind === "saving";
+  /** The first of the two entries, held while the pad collects the second. */
+  const [firstPin, setFirstPin] = useState<string | null>(null);
 
   // OTP state
   const [otpStep, setOtpStep] = useState<"idle" | "sending" | "sent" | "verifying">("idle");
@@ -355,6 +357,26 @@ export function LoginFlow() {
    */
   async function saveOwnPin() {
     if (newPin.length < MIN_PIN || savingPin) return;
+    // TWICE, ON ONE PAD (organizer, Aug 2026). The first press stashes the
+    // entry and clears the pad for the confirmation; only a matching second
+    // entry reaches the server. A mismatch is a typing problem, said at the
+    // control, and starts the pair over — masked digits cannot be proofread,
+    // so re-entry IS the proofreading.
+    if (firstPin === null) {
+      setFirstPin(newPin);
+      setNewPin("");
+      setPinSave({ kind: "idle" });
+      return;
+    }
+    if (newPin !== firstPin) {
+      setFirstPin(null);
+      setNewPin("");
+      setPinSave({
+        kind: "err",
+        message: "The two PINs don't match — start again and enter the same PIN twice.",
+      });
+      return;
+    }
     setPinSave({ kind: "saving" });
     try {
       const result = await setMyPin({ pin: newPin });
@@ -878,9 +900,11 @@ export function LoginFlow() {
                   answer. The reason is stated plainly so the ask makes sense
                   to someone who has never thought about passwords. */}
               <p className="text-xs text-gray-500 dark:text-gray-400 text-pretty">
-                {recovering && !usedDefault
-                  ? "You signed in with the code. Choose a PIN for next time — or skip and use a code again."
-                  : "This PIN is your phone's last 4 digits — anyone who knows your number could use it. Set your own PIN so only you can get in."}
+                {firstPin !== null
+                  ? "Enter the same PIN once more, to make sure it is what you meant."
+                  : recovering && !usedDefault
+                    ? "You signed in with the code. Choose a PIN for next time — or skip and use a code again."
+                    : "This PIN is your phone's last 4 digits — anyone who knows your number could use it. Set your own PIN so only you can get in."}
               </p>
               <div className="pt-2">
                 <PinDots length={newPin.length} />
@@ -907,7 +931,7 @@ export function LoginFlow() {
             <SaveButton
               state={pinSave}
               onSave={() => void saveOwnPin()}
-              label="Save my PIN"
+              label={firstPin === null ? "Next — enter it again" : "Save my PIN"}
               savingLabel="Saving…"
               dirty={newPin.length >= MIN_PIN}
               notDirtyHint={`Enter at least ${MIN_PIN} digits first.`}
