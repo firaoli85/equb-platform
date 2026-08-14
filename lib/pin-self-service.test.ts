@@ -23,13 +23,22 @@ vi.mock("@/lib/auth", () => ({
   requireAdmin: vi.fn(async () => ({ ok: true as const, userId: "admin-1" })),
   isAdminClaims: vi.fn(() => false),
 }));
-// auth.ts's import graph reaches server-only modules the two actions under
-// test never call — stubbed so the module loads, never exercised.
+// auth.ts's import graph reaches server-only modules — stubbed so the module
+// loads. The REVOCATION pair is a real spy pair: the decision under test is
+// that every PIN write ends the member's OTHER sessions through this one
+// mechanism, sparing the session that made the change.
+const revokeCalls = vi.fn(
+  (_tx: unknown, _personId: string, _reason: string, options?: { exceptSessionId?: string | null }) =>
+    options?.exceptSessionId ? 2 : 3,
+);
 vi.mock("@/lib/session-record", () => ({
   clearSessionCookie: vi.fn(),
   recordSignIn: vi.fn(),
   revokeCurrentSession: vi.fn(),
-  revokeSessionsForPerson: vi.fn(),
+  currentSessionId: vi.fn(async () => "session-this-device"),
+  revokeSessionsForPerson: vi.fn(async (...args: unknown[]) =>
+    revokeCalls(...(args as Parameters<typeof revokeCalls>)),
+  ),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
@@ -70,6 +79,7 @@ async function actions() {
 beforeEach(async () => {
   personUpdate.mockClear();
   auditCalls.mockClear();
+  revokeCalls.mockClear();
   sessionSub = "auth-tsion";
   storedHash = await hashPin("240519");
   lockedUntil = null;
@@ -220,5 +230,107 @@ describe("GUARD — no PIN value can reach a log", () => {
         /input\.(pin|currentPin|newPin)\b/,
       );
     }
+  });
+});
+
+// EVERY PIN WRITE ENDS THE MEMBER'S OTHER SESSIONS (decision, Aug 2026,
+// closing the open question the first build recorded). The device that made
+// the change survives — the change is what proves who is holding it — and
+// all three member paths go through the ONE revocation mechanism the admin
+// reset already used, narrowed by one id. No parallel mechanism exists.
+describe("a PIN write signs out every OTHER session, through the one mechanism", () => {
+  it("Door 1 (changeMyPin): other sessions revoked, THIS one spared, count audited", async () => {
+    const { changeMyPin } = await actions();
+    const result = await changeMyPin({ currentPin: "240519", newPin: "873105" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(revokeCalls).toHaveBeenCalledTimes(1);
+    const [, personId, reason, options] = revokeCalls.mock.calls[0];
+    expect(personId).toBe("person-tsion");
+    expect(reason).toBe("PIN changed by the member");
+    // The current session is the exception — the where-clause the real
+    // implementation builds from this id is what keeps this device in.
+    expect(options).toEqual({ exceptSessionId: "session-this-device" });
+    expect(result.data.otherSessionsRevoked).toBe(2);
+    // The audit row carries the COUNT, never a token or a session id.
+    const audit = JSON.stringify(auditCalls.mock.calls[0][0]);
+    expect(audit).toContain("2 other sessions signed out");
+    expect(audit).not.toContain("session-this-device");
+  });
+
+  it("Doors 2 and 3 (setMyPin — forgot-PIN reset AND forced first-login setup): same rule, same mechanism", async () => {
+    const { setMyPin } = await actions();
+    const result = await setMyPin({ pin: "873105" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(revokeCalls).toHaveBeenCalledTimes(1);
+    const [, personId, reason, options] = revokeCalls.mock.calls[0];
+    expect(personId).toBe("person-tsion");
+    expect(reason).toBe("PIN set by the member");
+    // The WhatsApp-code session doing a recovery or first setup is the
+    // current session, and it survives.
+    expect(options).toEqual({ exceptSessionId: "session-this-device" });
+    expect(result.data.otherSessionsRevoked).toBe(2);
+  });
+
+  it("a refusal revokes NOTHING — wrong current PIN leaves every session alone", async () => {
+    const { changeMyPin } = await actions();
+    const result = await changeMyPin({ currentPin: "999999", newPin: "873105" });
+    expect(result.ok).toBe(false);
+    expect(revokeCalls).not.toHaveBeenCalled();
+  });
+
+  it("all three paths share the mechanism, and the admin reset still uses it un-narrowed", () => {
+    const src = readFileSync(join(import.meta.dirname, "..", "app", "actions", "auth.ts"), "utf8");
+    // Exactly three narrowed calls (the member's own paths — changeMyPin and
+    // the shared setMyPin — plus none elsewhere), each through the ONE
+    // function the admin reset uses.
+    const narrowed = src.match(/revokeSessionsForPerson\(tx, person\.id, "PIN (changed|set) by the member", \{\s*exceptSessionId: currentSession,?\s*\}/g);
+    expect(narrowed, "a member PIN path stopped revoking, or grew a second mechanism").toHaveLength(2);
+    // The organizer's reset is untouched: all sessions, no exception.
+    const reset = src.slice(src.indexOf("export async function resetMemberPin"));
+    expect(reset).toContain('revokeSessionsForPerson(\n        tx,\n        person.id,\n        "PIN reset by the organizer",\n      )');
+    // No session write exists outside the one mechanism.
+    expect(src).not.toMatch(/signInSession\.updateMany/);
+  });
+
+  it("both confirmations tell the member, in the same sentence", () => {
+    const card = readFileSync(
+      join(import.meta.dirname, "..", "components", "member", "change-pin.tsx"),
+      "utf8",
+    );
+    const flow = readFileSync(
+      join(import.meta.dirname, "..", "components", "member", "login-flow.tsx"),
+      "utf8",
+    );
+    expect(card).toContain("Anywhere else you were signed in has been signed out.");
+    expect(flow).toContain("Anywhere else you were signed in has been signed out.");
+  });
+});
+
+// A REVOKED SESSION'S NEXT REQUEST ROUTES TO SIGN-IN, never an error page —
+// the pure gate rule, tested directly, plus the where-clause that spares the
+// current device, tested against the real implementation.
+describe("what revocation actually does to a session", () => {
+  it("evaluateSession reads a revoked row as expired — the gate's redirect state", async () => {
+    const { evaluateSession } = await import("./session-policy");
+    const now = new Date("2026-08-14T10:00:00Z");
+    const verdict = evaluateSession({
+      createdAt: new Date("2026-08-14T09:00:00Z"),
+      lastSeenAt: new Date("2026-08-14T09:59:00Z"),
+      revokedAt: new Date("2026-08-14T09:59:30Z"),
+      now,
+      limits: { idleMs: 7 * 24 * 3600_000, absoluteMs: 30 * 24 * 3600_000 },
+    });
+    expect(verdict.state).toBe("expired");
+  });
+
+  it("the real revoker's where-clause spares exactly the excepted id", () => {
+    const src = readFileSync(join(import.meta.dirname, "..", "lib", "session-record.ts"), "utf8");
+    const fn = src.slice(src.indexOf("export async function revokeSessionsForPerson"));
+    expect(fn).toContain("id: { not: options.exceptSessionId }");
+    // …and only when one was given: null/undefined mean revoke everything,
+    // the safe direction when the current session cannot be identified.
+    expect(fn).toMatch(/options\?\.exceptSessionId \? \{ id: \{ not: options\.exceptSessionId \} \} : \{\}/);
   });
 });

@@ -21,7 +21,7 @@ import {
 import { findPeopleByPhone } from "@/lib/people-lookup";
 import { samePhone, toE164 } from "@/lib/phone";
 import { prisma, serializableTransaction } from "@/lib/prisma";
-import { clearSessionCookie, recordSignIn, revokeCurrentSession, revokeSessionsForPerson } from "@/lib/session-record";
+import { clearSessionCookie, currentSessionId, recordSignIn, revokeCurrentSession, revokeSessionsForPerson } from "@/lib/session-record";
 import { getSetting } from "@/lib/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -327,15 +327,27 @@ export async function setMyPin(input: { pin: string }) {
     }
     const person = await prisma.person.findUnique({ where: { authUserId: claims.sub } });
     if (!person) return { ok: false as const, error: "No member record is linked to this sign-in." };
-    await prisma.person.update({
-      where: { id: person.id },
-      data: {
-        pinHash: await hashPin(input.pin),
-        pinFailedAttempts: 0,
-        pinLockedUntil: null,
-      },
+    // SETTING A PIN ENDS EVERY OTHER SESSION (decision, Aug 2026) — the same
+    // rule for all three member paths, through the same mechanism. This one
+    // function is two of them: the forced first-login setup AND the forgot-PIN
+    // recovery both land here, and in both the session doing the setting —
+    // the WhatsApp-code session included — survives, because setting the PIN
+    // is what proves who is holding this device.
+    const currentSession = await currentSessionId();
+    const otherSessionsRevoked = await prisma.$transaction(async (tx) => {
+      await tx.person.update({
+        where: { id: person.id },
+        data: {
+          pinHash: await hashPin(input.pin),
+          pinFailedAttempts: 0,
+          pinLockedUntil: null,
+        },
+      });
+      return revokeSessionsForPerson(tx, person.id, "PIN set by the member", {
+        exceptSessionId: currentSession,
+      });
     });
-    return { ok: true as const, data: { set: true } };
+    return { ok: true as const, data: { set: true, otherSessionsRevoked } };
   } catch (e) {
     console.error("setMyPin failed:", e);
     return { ok: false as const, error: `Could not save your PIN. ${errorMessage(e)}` };
@@ -391,7 +403,14 @@ export async function changeMyPin(input: { currentPin: string; newPin: string })
       return { ok: false as const, error: "That isn't your current PIN — nothing was changed." };
     }
 
-    await prisma.$transaction(async (tx) => {
+    // CHANGING A PIN ENDS EVERY OTHER SESSION (decision, Aug 2026, closing
+    // the open question this comment used to hold). The main reason a member
+    // changes a PIN is worry that someone else knows it — leaving other
+    // devices signed in defeats the change. THIS device survives: the change
+    // proves who is holding it. Same mechanism as the organizer's reset,
+    // narrowed by one id — never a parallel one.
+    const currentSession = await currentSessionId();
+    const endedSessions = await prisma.$transaction(async (tx) => {
       await tx.person.update({
         where: { id: person.id },
         data: {
@@ -400,25 +419,29 @@ export async function changeMyPin(input: { currentPin: string; newPin: string })
           pinLockedUntil: null,
         },
       });
+      const ended = await revokeSessionsForPerson(tx, person.id, "PIN changed by the member", {
+        exceptSessionId: currentSession,
+      });
       // WHO AND WHEN, NEVER THE VALUE — the same shape the admin PIN actions
-      // write. `hadPin` booleans are the whole payload; a PIN has no business
-      // existing anywhere outside its bcrypt hash.
+      // write. `hadPin` booleans and a session COUNT are the whole payload; a
+      // PIN has no business existing anywhere outside its bcrypt hash, and a
+      // token has none outside its own row.
       await logAudit(tx, {
         entity: "Person",
         entityId: person.id,
         action: "update",
-        summary: `${person.nameEnglishFirst} changed their own PIN, proving the current one first`,
+        summary:
+          `${person.nameEnglishFirst} changed their own PIN, proving the current one first` +
+          (ended > 0
+            ? ` — ${ended} other session${ended === 1 ? "" : "s"} signed out`
+            : ""),
         before: { hadPin: true },
-        after: { hadPin: true, changedByMember: true },
+        after: { hadPin: true, changedByMember: true, otherSessionsRevoked: ended },
       });
+      return ended;
     });
 
-    // THE MEMBER STAYS SIGNED IN. Existing policy note: a member's own PIN
-    // write (setMyPin above) does not end their other sessions — only the
-    // organizer's RESET does. Whether a self-service CHANGE should end other
-    // sessions is an OPEN question for the organizer, deliberately not
-    // decided here.
-    return { ok: true as const, data: { changed: true } };
+    return { ok: true as const, data: { changed: true, otherSessionsRevoked: endedSessions } };
   } catch (e) {
     console.error("changeMyPin failed:", e);
     return { ok: false as const, error: `Could not change your PIN. ${errorMessage(e)}` };

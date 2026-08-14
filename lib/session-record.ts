@@ -250,9 +250,27 @@ export async function revokeSessionsForPerson(
   tx: Prisma.TransactionClient,
   personId: string,
   reason: string,
+  options?: {
+    /**
+     * A session to SPARE — the member's own, when they are the one changing
+     * the credential (decision, Aug 2026): the device that made the change
+     * stays signed in, everywhere else goes. The organizer's reset passes
+     * nothing and keeps ending everything, which is right for HIS case —
+     * he is not on any of her devices.
+     *
+     * Null and undefined both mean "spare nothing": when the current session
+     * cannot be identified, revoking everything is the safe direction for a
+     * change whose whole motive is worry.
+     */
+    exceptSessionId?: string | null;
+  },
 ): Promise<number> {
   const result = await tx.signInSession.updateMany({
-    where: { personId, revokedAt: null },
+    where: {
+      personId,
+      revokedAt: null,
+      ...(options?.exceptSessionId ? { id: { not: options.exceptSessionId } } : {}),
+    },
     data: { revokedAt: new Date(), revokedReason: reason },
   });
   return result.count;

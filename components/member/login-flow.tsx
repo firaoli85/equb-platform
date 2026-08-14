@@ -387,9 +387,11 @@ export function LoginFlow() {
       // any cycle week number (8c).
       setPinSave({
         kind: "ok",
-        message: usedDefault
-          ? `Saved — your new ${newPin.length}-digit PIN is set. Your phone's last 4 digits will not sign you in any more.`
-          : `Saved — your new ${newPin.length}-digit PIN is set. Use it the next time you sign in.`,
+        message:
+          (usedDefault
+            ? `Saved — your new ${newPin.length}-digit PIN is set. Your phone's last 4 digits will not sign you in any more.`
+            : `Saved — your new ${newPin.length}-digit PIN is set. Use it the next time you sign in.`) +
+          " Anywhere else you were signed in has been signed out.",
       });
       // The confirmation is set BEFORE the handoff on purpose: the portal is a
       // full document load, so the message stands at the button for as long as

@@ -51,7 +51,9 @@ export function ChangePin() {
       }
       setSave({
         kind: "ok",
-        message: `Your new ${newPin.length}-digit PIN is set. Use it the next time you sign in — you are still signed in here.`,
+        message:
+          `Your new ${newPin.length}-digit PIN is set. Use it the next time you sign in — ` +
+          `you are still signed in here. Anywhere else you were signed in has been signed out.`,
       });
       setCurrentPin("");
       setNewPin("");
