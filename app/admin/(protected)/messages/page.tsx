@@ -211,13 +211,11 @@ export default async function MessagesPage({
             Every send, automatic or manual — the exact text, where it went, and what Twilio
             said back. Append-only: nothing here can be edited or removed.
           </SectionHeading>
+          {/* No CardHeader: the SectionHeading above says the same thing,
+              and the Pager below states the log's true extent. */}
           <Card>
-            <CardHeader
-              title="Message log"
-              sub="Every send, automatic or manual — the exact text, where it went, and what Twilio said. Paged, oldest kept forever."
-            />
             {log.length === 0 ? (
-              <p className="px-5 pb-5 text-sm text-gray-600 dark:text-gray-400">
+              <p className="px-5 py-5 text-sm text-gray-600 dark:text-gray-400">
                 Nothing has been sent yet.
               </p>
             ) : (

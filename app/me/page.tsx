@@ -12,6 +12,7 @@ import { WeekStampList, type StampWeek } from "@/components/member/week-stamp-li
 import { memberWindowSentence } from "@/lib/member-window";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
 import { notInCurrentCycleLine } from "@/lib/member-history";
+import { NotInCycle } from "@/components/member/not-in-cycle";
 
 export const dynamic = "force-dynamic";
 
@@ -157,14 +158,7 @@ export default async function MePage() {
           <NewDeviceNotice sessionId={newDevice.sessionId} message={newDevice.message} />
         )}
 
-        <section className="animate-fade-in-up rounded-2xl border border-gray-200 bg-white px-5 py-6 text-center dark:border-gray-800 dark:bg-[#141414]">
-          <h1 className="text-xl font-black text-gray-900 dark:text-white text-balance">
-            You&rsquo;re not in the current cycle
-          </h1>
-          <p className="mx-auto mt-1.5 max-w-sm text-sm text-gray-600 dark:text-gray-400 text-pretty">
-            {notInCurrentCycleLine(mostRecent !== null)}
-          </p>
-        </section>
+        <NotInCycle line={notInCurrentCycleLine(mostRecent !== null)} />
 
         {carried > 0 && (
           <Link

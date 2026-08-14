@@ -25,6 +25,7 @@ export function Select<V extends string = string>({
   ariaLabel = "Select",
   disabled = false,
   className = "",
+  testId,
 }: {
   value: V;
   onChange: (v: V) => void;
@@ -32,6 +33,8 @@ export function Select<V extends string = string>({
   ariaLabel?: string;
   disabled?: boolean;
   className?: string;
+  /** Forwarded to the trigger — the stock <select> this replaces had one. */
+  testId?: string;
 }) {
   const reduce = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -95,6 +98,7 @@ export function Select<V extends string = string>({
         aria-expanded={open}
         aria-controls={listboxId}
         aria-label={ariaLabel}
+        data-testid={testId}
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onKey}

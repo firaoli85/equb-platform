@@ -97,17 +97,15 @@ export default async function CyclesIndexPage() {
           Running now
         </h2>
         {live.length === 0 ? (
-          <Card className="px-5 py-4">
-            <EmptyState
-              title="No cycle is running."
-              hint="Start one from “Start a new cycle” in the sidebar."
-            />
-          </Card>
+          <EmptyState
+            title="No cycle is running."
+            hint="Start one from “Start a new cycle” in the sidebar."
+          />
         ) : (
           <ul className="space-y-3">
             {live.map((c) => (
               <li key={c.id}>
-                <Card className="px-5 py-4">
+                <Card className="px-5 py-4 transition-colors hover:border-gray-300 dark:hover:border-gray-700">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <Link
                       href="/admin/cycle"
@@ -142,12 +140,10 @@ export default async function CyclesIndexPage() {
           Closed — the record
         </h2>
         {archives.length === 0 ? (
-          <Card className="px-5 py-4">
-            <EmptyState
-              title="No cycle has been closed yet."
-              hint="Closing a cycle writes a permanent record of who paid what and who was paid out. It appears here."
-            />
-          </Card>
+          <EmptyState
+            title="No cycle has been closed yet."
+            hint="Closing a cycle writes a permanent record of who paid what and who was paid out. It appears here."
+          />
         ) : (
           <ul className="space-y-3">
             {archives.map((a) => {

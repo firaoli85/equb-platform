@@ -173,11 +173,9 @@ export function ComposeSend() {
 
   return (
     <Card>
-      <CardHeader
-        title="Send a statement"
-        sub="The system prepares and shows exactly who receives what. Nothing leaves until you press send (2.20)."
-      />
-      <div className="space-y-4 px-5 pb-5">
+      {/* No CardHeader: the page's SectionHeading directly above already
+          names this section and says the same sentence. */}
+      <div className="space-y-4 px-5 pt-5 pb-5">
         <div className="flex flex-wrap items-end gap-2">
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold text-gray-600 dark:text-gray-400">

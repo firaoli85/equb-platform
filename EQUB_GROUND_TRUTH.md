@@ -218,8 +218,12 @@ The system stores **what actually happened**, and calculates everything else. No
 that can be computed is ever stored, because stored values drift and computed values
 cannot.
 
-**Stored:** the money received (amount, date, method), and `deferred` (a real decision
-the organizer made to excuse a week).
+**Stored:** the money received (amount, date, method), and the organizer's own two
+decisions about a week — `deferred` (excuse the chase; the money is still owed) and the
+**manual late mark** (`markedLateAt` with an optional note, added 12 Aug 2026 — §2.29).
+A decision is not computable, so storing one breaks no rule here; everything that CAN be
+computed still is. One further stored figure is named in §2.30: once a payout exists, the
+fee it actually charged is kept on that payout as historical fact.
 
 **Derived — never stored:**
 
@@ -228,11 +232,12 @@ the organizer made to excuse a week).
 | Weeks credited | total money paid ÷ current weekly amount |
 | Weeks behind | weeks elapsed in their window − weeks credited |
 | Status (paid / partial / not paid) | from the amount against the weekly amount |
-| Late | unpaid **and** the payment window has closed — from the calendar, not a flag |
+| Late | unpaid **and** either the window has closed **or** the organizer marked it late himself (§2.29). Deferral outranks both. |
 | Current week | cycle start date + today — never hardcoded, never stored |
 | Finish week | their start week + weeks committed |
-| Fee | 2% of gross ($100 per $5,000) |
-| Payout | (weekly amount × their weeks) − fee |
+| Fee (projected) | the cycle's fee percent × gross, where gross is **weekly amount × weeks COMMITTED** — never weeks paid (§2.30). 2% today, but read from the cycle, never a constant. |
+| Fee (once drawn) | **stored**, not derived — `Payout.feeAmount` records what was actually charged, and is read in preference to the projection (§2.30) |
+| Payout | gross − fee, **per lucky number** |
 
 **Why this matters — it removes every special case:**
 
@@ -242,6 +247,11 @@ the organizer made to excuse a week).
   on the third. Pure arithmetic.
 - **No "mark late" job:** a week becomes late when its window passes. Nothing to run,
   nothing to forget.
+  **Amended 12 Aug 2026 (D-40).** Still true of the calendar route, and there is still no
+  job to run — but the calendar is no longer the *only* thing that can say "late". The
+  organizer may mark a week himself before the window closes; §2.29 is the rule. The
+  sentence above stays because the principle it defends is intact: nothing becomes late
+  because a nightly task said so.
 
 ### 2.15 PAYMENT ALLOCATION — OLDEST DEBT FIRST, THEN FORWARD
 
@@ -531,6 +541,109 @@ type maps to an approved template.
 **Login page rule:** the sign-in screen must only offer channels that actually work. Do
 not present an option that dead-ends.
 
+### 2.29 THE MANUAL LATE MARK — HIS OWN, AND DEFERRAL OUTRANKS IT
+
+**Ruling, 12 August 2026. Amends §2.14 and D-16 — recorded as D-40.**
+
+LATE has two routes. The calendar closes a payment window and the week reads late by
+itself; that is the original rule and it still stands. The second route is the organizer:
+he may mark a week late **by hand, before the window closes**, because he knows things
+the calendar does not (2.2). A member says on Monday that this week is not coming, and
+the calendar makes him wait until Thursday to record a fact he already has.
+
+**It is a STORED decision, deliberately.** §2.14 says nothing computable is ever stored,
+and this does not breach it: a decision is not computable. What is stored is a
+**timestamp, not a flag** — `markedLateAt`, with an optional `markedLateNote` — so the
+record says *when* he decided. This is a financial record.
+
+**Money still wins.** A week that gets paid reads PAID whatever the mark says, and the
+payment path clears the mark on any week the money fully covers. Marking a week that is
+already paid in full is refused outright: *"Money is the truth — there is nothing to mark
+late."*
+
+**DEFERRAL OUTRANKS THE MARK.** This is the ruling, not an accident of ordering.
+Deferral exists to stop a chase reaching someone he has decided not to pursue; a mark on
+a deferred week would have the platform asserting *chase them* and *do not chase them*
+about one week, and whichever won, one of his own decisions would be discarded in
+silence. So the mark does not apply to a deferred week at all — **across all five
+effects**, the same five `docs/DOMAIN_RULES.md` §5 lists:
+
+| # | Effect | What deferral does to the mark |
+|---|---|---|
+| 1 | **Status** | The week reads `DEFERRED`, never `LATE`. |
+| 2 | **Arithmetic** | A mark cannot pull a not-yet-due deferred week forward, and the attention list applies the same test — so the list and the standing derivation cannot disagree. An *elapsed* deferred week still counts as owed: deferral has never excused the money. |
+| 3 | **Messages** | The week never enters the late-week list, so no chasing statement can name it. The chasing gate reads only the derived status; it never looks at the mark. |
+| 4 | **The control** | Disabled, with the reason on screen: *"This week is deferred — remove the deferral first if you want to chase it."* Disabled rather than hidden, because a control that vanishes leaves him hunting for something he used yesterday. Refused **server-side** too — a stale page is exactly the caller that would send it. |
+| 5 | **Clearing** | **Deferring a week clears an existing mark**, so removing the deferral months later cannot spring a forgotten mark back. |
+
+Deferral is tested **before** "this week is already late", because a deferred week whose
+window has closed is not late at all; saying otherwise would be false as well as
+unhelpful.
+
+**Reversible.** Unmarking is the same action inverted, and it is allowed even on a
+deferred week, so a mark that got stranded can always be lifted by hand. Every set and
+every clear is audited, with the note, before and after.
+
+**Two implementation gaps are open against this rule** — §6.4. The rule above is the law;
+the code does not yet meet it in two places, and neither is a reason to soften it.
+
+### 2.30 THE FEE IS FIXED BY THE COMMITMENT, NOT BY ATTENDANCE
+
+**Ruling, August 2026 — a correction to what was built first. Recorded as D-41.**
+
+The fee is the organizer's charge for **running the member's place in the cycle**. The
+place was held for them whether or not the wheel ever reached them, so the fee follows
+what they COMMITTED to, not how much of it they attended:
+
+> gross = weekly amount × weeks **committed**  ·  fee = the cycle's fee percent × gross
+
+- Join for 20 weeks at $500 → payout $10,000, fee **$200**.
+- **Stop at week 12 → the fee is still $200.** Stopping never shrinks it.
+- Change the **terms** and the fee moves with them: 20 weeks at $250 is a $5,000 gross
+  and a $100 fee. **Either** term moves it — the rate or the number of weeks.
+
+**Per lucky number, never once on the pot.** Each number is its own payout of its own
+amount over its owner's committed weeks, and each pays its own fee — two numbers, two
+payouts, two fees. The arithmetic happens to agree with one combined payout; the *record*
+does not, and the record is what the archive keeps.
+
+**Derived until it is real, then stored.** No fee is stored on a participation: every
+projected fee is computed at read time from the current commitment, so a terms change
+moves it everywhere at once — and when money has already gone out under the old terms the
+organizer is stopped and made to settle the difference rather than allowed to save past
+it. **Once a payout exists, the fee it charged is stored on that payout and is read in
+preference to the projection.** That is the design, not a lapse: a later change to the
+cycle's fee percent must never silently rewrite a payout that already happened. It can be
+corrected by hand, and the correction is audited.
+
+**What is recoverable is floored at what they paid in.** For a member who stopped
+undrawn, the money returned is `paid in − fee`, never below zero. Someone who paid $50
+against a commitment carrying a $400 fee is reported as **settled**, not as owing $350:
+the fee is not reduced, it is simply not pursued into a debt. Whether to chase the
+remainder is the organizer's call, and the platform does not make it for him. In the
+other direction — a member who took the pot and stopped short — no fee is charged again,
+because it was already withheld from the payout they received.
+
+**THE SIGNED AGREEMENT SAYS THE SAME THING.** Section 4 of the member agreement, which
+every member signs, reads verbatim:
+
+> **4. The management fee**
+> The fee is {feeAmount}, which is {feePercent} of what I am entitled to. It is fixed by
+> what I committed to, not by how many weeks I end up paying. If I stop early the fee
+> does not shrink. It changes only if my weekly amount changes.
+
+The member's copy is filled from the same arithmetic the organizer's screens use, so the
+document cannot quote a fee that differs from his by a cent, and three of those four
+sentences are pinned by test.
+
+**The one divergence, recorded rather than hidden:** §4's last sentence says the fee
+changes *only* if the weekly amount changes. The platform also moves it when the **weeks
+committed** change, because both are factors of the same gross. Members who stop early
+are unaffected — stopping is not a terms change, and that is the sentence's real subject —
+but the wording is narrower than the behaviour. Closing it means either constraining the
+code or re-wording §4, and re-wording is a **re-signing event** for everyone who has
+already signed, so it is the organizer's decision (§6.4).
+
 ### 2.12 BUILD PROPERLY, AND TEACH
 
 No shortcuts. Real research before technology decisions, tradeoffs explained so the
@@ -577,7 +690,7 @@ then Claude Code implements it. Connect at the design phase, not before.
 | D-13 | **Database: relational Postgres via hosted supabase.com (free tier), separate project from Nexo. Auth + RLS included. Idle-gap handled by a keep-alive scheduler + automated gap backups.** Reasoning: data is deeply relational; money needs ACID; queries must stay ad-hoc; scale irrelevant at 45 people; Supabase auth/RLS is the learning that transfers to Nexo; hosted (not self-hosted) because Equb must never share the PHI/BAA server and there is no value in operating a second server. | **SETTLED** |
 | D-14 | Hosting and infrastructure (Vercel+Neon vs AWS) | **OPEN — own discussion** |
 | D-15 | Financial command center design | **DESIGNED — approved** |
-| D-16 | Money is truth; weeks credited, behind-count, status and late are all derived | **SETTLED** |
+| D-16 | Money is truth; weeks credited, behind-count, status and late are all derived | **SETTLED — one carve-out added 12 Aug 2026, see D-40.** Money is still truth and everything computable is still derived. LATE gained a second route that is a stored DECISION rather than a derivation (§2.29); weeks credited, behind-count and status are untouched. |
 | D-17 | Payment allocation: oldest debt first, then current, then forward; partial = leftover; allocation previewed before commit | **SETTLED** |
 | D-18 | Grid kept as the overview map; payment entry is a separate action with unmistakable save feedback | **SETTLED** |
 | D-19 | Remove Request Review (unused). Collapse unpaid/late into one derived status. | **SETTLED** |
@@ -601,6 +714,8 @@ then Claude Code implements it. Connect at the design phase, not before.
 | D-32 | Full organizer control: every entity addable, editable, removable from the UI, with confirmation, audit trail, and immediate recalculation. Nothing requires a developer. | **SETTLED** |
 | D-31 | Late joiners' commitment is capped to the cycle end by default; organizer may override deliberately, which generates extra weeks. Every member sees their own finish date. | **SETTLED** |
 | D-30 | Add-member flow: system knows the active cycle; existing person = set cycle fields only; new person = created in directory AND added to cycle in one step; guided step-by-step with live computed consequences | **SETTLED** |
+| D-40 | **The organizer may mark a week LATE by hand before its window closes** — a stored decision (`markedLateAt`, a timestamp, plus an optional note), because he learns on Monday what the calendar cannot say until Thursday (2.2). Amends §2.14's "everything else is derived" and D-16 with one named carve-out. Money still beats the mark, and **deferral outranks it across all five effects** — status, arithmetic, messages, the control, and clearing an existing mark. Full rule in §2.29. | **SETTLED 12 Aug 2026** — two implementation gaps open against it, listed in §6.4. |
+| D-41 | **The fee is fixed by what a member COMMITTED to, not by how much of it they attended.** gross = weekly × weeks committed; fee = the cycle's percent of that, per lucky number. Stopping early never shrinks it — the place was held either way — though what is recoverable is floored at what they paid in, and a shortfall is reported as settled rather than chased. Either term (rate or weeks) moves the fee, and when money has already gone out the organizer must settle rather than save past it. Projected fees derive at read time; a drawn payout's fee is stored as historical fact. The member's signed agreement §4 says the same. Full rule in §2.30. | **SETTLED Aug 2026** — a correction to what was built first. One narrow divergence from the agreement's §4 wording is recorded in §6.4. |
 
 **Flexibility rule (Oli, Aug 2026):** rules are judged by their *reasons*, not applied blindly.
 Nexo's "open source first" doctrine exists for PHI, BAA, MCO review, and scale — none of
@@ -902,6 +1017,27 @@ written against defects that actually occurred. **The organizer runs it.**
 - **Selling a turn** (a member offers their week to another) — designed in conversation,
   not built. Simpler than first assumed: money changes hands privately, the system only
   swaps who won. The hard part is preserving anonymity in the offer.
+- **Deferral does not clear the mark on the second deferral path** (D-40 gap 1, found
+  14 Aug 2026). The deferral control clears the mark as §2.29 requires; the participation
+  editor's week-row editor flips the same `isDeferred` field and leaves the mark stored
+  underneath, and the money-driven clear only fires on weeks the money fully covers. Every
+  READ still shows DEFERRED correctly, so nothing is mis-stated today — but the
+  contradiction sits in the record and springs back the day the deferral is lifted, which
+  is exactly what the clearing rule exists to prevent. One field on one write.
+- **One site lets the mark outrank deferral** (D-40 gap 2, found 14 Aug 2026). The
+  "who is affected by changing this week's date" count treats a marked-late member as
+  settled and skips them without asking whether a deferral superseded the mark, so a
+  member in the state gap 1 allows is under-counted. Reachable only through gap 1; worth
+  fixing with it, and worth a test that puts BOTH conditions on ONE member — no current
+  fixture does.
+- **Agreement §4 is narrower than D-41** — it says the fee changes only with the weekly
+  amount, while the platform also moves it with the weeks committed. Members who stop
+  early are unaffected. Fixing it by re-wording is a **re-signing event** for everyone who
+  has already signed, so it is a decision, not a cleanup.
+- **A stale comment on the settled branch** of the final-position derivation describes it
+  as "never drawn and paid nothing in", which is only one of the two ways to reach it —
+  the other is a fee larger than what they paid. Comment only; the arithmetic and its
+  tests are correct.
 
 ---
 

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createPerson } from "@/app/actions/people";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
+import { inputCls } from "@/components/ui/primitives";
 
 const INITIAL = { nameAmharic: "", nameEnglishFirst: "", nameEnglishLast: "", phone: "" };
 
@@ -70,7 +71,7 @@ export function AddPersonForm() {
               setFields((f) => ({ ...f, [key]: e.target.value }));
               setSave({ kind: "idle" });
             }}
-            className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
+            className={inputCls}
           />
         </label>
       ))}

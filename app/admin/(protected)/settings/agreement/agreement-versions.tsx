@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { publishAgreementVersion } from "@/app/actions/agreement";
 import { agreementClauses, AGREEMENT_PLACEHOLDERS } from "@/lib/agreement";
-import { Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { Card, CardHeader, Pill, inputCls } from "@/components/ui/primitives";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 
 // THE AGREEMENT'S WORDING, ON SCREEN (Cycle-2 build, feature C).
@@ -77,6 +77,15 @@ export function AgreementVersionsScreen({
 
   return (
     <div className="space-y-6">
+      {/* The five settings pages open the same way — this one began at a
+          card, so the rail read as two different shapes. */}
+      <div>
+        <h2 className="text-lg font-black text-gray-900 dark:text-white">Member agreement</h2>
+        <p className="mt-1 max-w-prose text-sm text-gray-600 dark:text-gray-400 text-pretty">
+          The text every member signs before their account opens. Publishing a change writes a new
+          version — it never edits the one people have already signed.
+        </p>
+      </div>
       <Card>
         <CardHeader
           title="The wording members sign"
@@ -97,7 +106,7 @@ export function AgreementVersionsScreen({
               setSave({ kind: "idle" });
             }}
             rows={16}
-            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 font-mono text-xs leading-relaxed text-gray-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 dark:border-gray-800 dark:bg-black/20 dark:text-gray-100 dark:focus:ring-indigo-950"
+            className={`mt-2 ${inputCls} font-mono text-xs leading-relaxed`}
           />
           <p className="mt-2 text-xs text-gray-600 dark:text-gray-400 text-pretty">
             Values in braces fill per member:{" "}
@@ -120,7 +129,7 @@ export function AgreementVersionsScreen({
             onChange={(e) => setNote(e.target.value)}
             maxLength={200}
             placeholder="e.g. Clause 4 reworded after the fee ruling"
-            className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 dark:border-gray-800 dark:bg-black/20 dark:text-gray-100 dark:focus:ring-indigo-950"
+            className={`mt-2 ${inputCls}`}
           />
 
           {/* THE FINALITY, INLINE, BEFORE THE BUTTON — not in a dialog after

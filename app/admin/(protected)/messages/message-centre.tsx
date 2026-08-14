@@ -9,6 +9,7 @@ import type { MemberMessagingView } from "@/app/actions/member-messaging";
 import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { Pill } from "@/components/ui/primitives";
 import type { ConversationFilter } from "@/lib/message-centre";
+import { Select } from "@/components/ui/controls";
 
 // THE MESSAGE CENTRE (2.20).
 //
@@ -420,26 +421,22 @@ function ConversationFilters({
         <span className="mb-1 block text-[11px] font-semibold text-gray-600 dark:text-gray-400">
           Type
         </span>
-        <select
+        <Select<ConversationFilter["templateKey"]>
           value={picked.templateKey}
-          onChange={(e) =>
-            setPicked((p) => ({
-              ...p,
-              templateKey: e.target.value as ConversationFilter["templateKey"],
-            }))
-          }
-          aria-label="Filter by message type"
-          data-testid="filter-type"
-          className="min-h-11 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
-        >
-          <option value="all">Every type</option>
-          <option value="PAYMENT_CONFIRMED">Payment confirmation</option>
-          <option value="BEHIND_NOTICE">Behind notice</option>
-          <option value="LATE_NOTICE">Late notice</option>
-          <option value="WINNER_ANNOUNCEMENT">Winner announcement</option>
-          <option value="CYCLE_CLOSING_STATEMENT">Cycle closing statement</option>
-          <option value="LOCKOUT_NOTICE">Lockout notice</option>
-        </select>
+          onChange={(v) => setPicked((p) => ({ ...p, templateKey: v }))}
+          ariaLabel="Filter by message type"
+          testId="filter-type"
+          className="w-52"
+          options={[
+            { value: "all", label: "Every type" },
+            { value: "PAYMENT_CONFIRMED", label: "Payment confirmation" },
+            { value: "BEHIND_NOTICE", label: "Behind notice" },
+            { value: "LATE_NOTICE", label: "Late notice" },
+            { value: "WINNER_ANNOUNCEMENT", label: "Winner announcement" },
+            { value: "CYCLE_CLOSING_STATEMENT", label: "Cycle closing statement" },
+            { value: "LOCKOUT_NOTICE", label: "Lockout notice" },
+          ]}
+        />
       </label>
       <label className="block">
         <span className="mb-1 block text-[11px] font-semibold text-gray-600 dark:text-gray-400">

@@ -24,10 +24,10 @@ export default async function MemberSecurityPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-black text-gray-900 dark:text-white">Where you are signed in</h1>
+        <h1 className="text-xl font-black text-gray-900 dark:text-white">Account</h1>
         <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 text-pretty">
-          Every device currently signed in to your account. If you see one you do not recognise,
-          sign it out and set a new PIN.
+          Where you are signed in, your PIN, and your past cycles. If you see a device you do not
+          recognise, sign it out and set a new PIN.
         </p>
       </div>
 

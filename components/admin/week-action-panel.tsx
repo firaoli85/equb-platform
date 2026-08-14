@@ -6,7 +6,7 @@ import type { ManualLateAdvice } from "@/lib/derived";
 import { getCatchUpWeeks, getCellDetail } from "@/app/actions/payments-view";
 import { PaymentEntry } from "@/components/admin/payment-entry";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
-import { Alert, buttonCls, Pill } from "@/components/ui/primitives";
+import { Alert, Pill, buttonCls, inputCls } from "@/components/ui/primitives";
 import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-button";
 import { formatDateUTC, formatMoney } from "@/lib/format";
 import type { PickableWeek } from "@/lib/week-picking";
@@ -602,7 +602,7 @@ export function WeekActionPanel({
               // that no longer matches it.
               setNoteSave(IDLE);
             }}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-2.5 py-1.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            className={`${inputCls} text-xs`}
           />
         </label>
         {/* The note's own button, so the note's own confirmation renders here

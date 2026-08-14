@@ -168,6 +168,13 @@ export function WeekStampList({
 
   return (
     <div className="space-y-0.5" role="list">
+      {/* The card's title renders whatever this returns, so an empty list
+          left a headed card with nothing under it. */}
+      {weeks.length === 0 && (
+        <p className="px-2.5 py-3 text-xs text-gray-600 dark:text-gray-400">
+          Your weeks appear here once the schedule is set.
+        </p>
+      )}
       {weeks.map((w, idx) => {
         const isActive = idx === activeIdx;
         const isDone = filled.has(idx);

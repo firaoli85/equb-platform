@@ -19,7 +19,7 @@
 // A member who has stopped is exactly the person who cannot compute this, and
 // the organizer should not be doing it on paper either.
 
-// ————————————————— THE FEE FOLLOWS THE COMMITMENT —————————————————
+// ————————————————— THE FEE FOLLOWS THE COMMITMENT (§2.30) —————————————————
 //
 // THE ORGANIZER'S RULING, and a correction to what was built first.
 //
@@ -221,6 +221,38 @@ export function finalPositionAdminLine(
       );
     case "settled":
       return `${memberName} is square — nothing is outstanding either way.`;
+  }
+}
+
+/**
+ * THE HEADLINE — the organizer's ruling, 14 Aug 2026 (audit item #8).
+ *
+ * `finalStanding` was computed on every closed member's profile and rendered
+ * nowhere: the promised 2.18 answer — what he owes them, or they owe him —
+ * was dead work on every page load. This is the line that shows it.
+ *
+ * DELIBERATELY BLUNT, and the wording is the ruling's: two directions and a
+ * settled state, each one sentence, each naming the figure outright. The
+ * fuller explanation (why, and when to settle) is `finalPositionAdminLine`,
+ * which renders under it — this is the sentence that must survive being read
+ * in a hurry.
+ *
+ * NO DASHES. Admin-side today, but this is the sentence most likely to be
+ * lifted into a member surface later, and the 14 Aug standing rule bans them
+ * from member-facing text.
+ */
+export function finalPositionHeadline(
+  position: FinalPosition,
+  money: (cents: number) => string,
+): string {
+  switch (position.direction) {
+    // Owed TO them: he is holding money that is not his.
+    case "owed-to-them":
+      return `Final position: you owe them ${money(position.amount)}.`;
+    case "they-owe":
+      return `Final position: they owe you ${money(position.amount)}.`;
+    case "settled":
+      return "Final position: settled, nothing owed either way.";
   }
 }
 

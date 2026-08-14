@@ -90,12 +90,11 @@ export function MemberGroupList({
       {/* ── Summary header ────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3">
         <div>
+          {/* The count is the denominator of the figure to the right — saying
+              it twice, inches apart, is not emphasis. */}
           <h1 className="text-xl font-black text-gray-900 dark:text-white text-balance">
             The group
           </h1>
-          <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-0.5 tabular-nums">
-            {totalMembers} members
-          </p>
         </div>
         <div className="text-right shrink-0 pt-0.5">
           <p className="text-2xl font-black tabular-nums leading-none text-emerald-600 dark:text-emerald-400">

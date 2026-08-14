@@ -3,6 +3,7 @@ import {
   feeOnReturn,
   finalPosition,
   finalPositionAdminLine,
+  finalPositionHeadline,
   finalPositionSentence,
   owedToStoppedMember,
 } from "./final-position";
@@ -279,6 +280,81 @@ describe("the sentence is fit to be read by the person it is about", () => {
         expect(finalPositionSentence(p, "F", money, "Sunday, September 27, 2026")).toContain(money(-owed));
         expect(finalPositionAdminLine(p, "T", money)).toContain(money(-owed));
       }
+    }
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// THE HEADLINE ON THE STOPPED-MEMBER CARD (organizer ruling, 14 Aug 2026 —
+// audit item #8: the figure was computed on every closed profile and shown
+// nowhere).
+//
+// All three branches against the SAME fixtures the derivation tests use
+// above, so the sentence and the arithmetic can never drift apart (2.24).
+// ————————————————————————————————————————————————————————————————
+
+describe("finalPositionHeadline — the one line the organizer reads in a hurry", () => {
+  /** Tsion: $4,700 in, never drawn, $200 fee on a $10,000 commitment. */
+  const owedToThem = {
+    paidIn: 470_000,
+    received: 0,
+    weeklyAmount: 50_000,
+    weeksCommitted: 20,
+    unitAmount: 100_000,
+    feePercent: 2,
+  };
+  /** Meheret: drawn $19,600 net, paid $12,000 of a $20,000 commitment. */
+  const theyOwe = {
+    paidIn: 1_200_000,
+    received: 1_960_000,
+    weeklyAmount: 100_000,
+    weeksCommitted: 20,
+    unitAmount: 100_000,
+    feePercent: 2,
+  };
+
+  it("HE OWES THEM: names the direction and the figure", () => {
+    const p = finalPosition(owedToThem);
+    expect(p.direction).toBe("owed-to-them");
+    // $4,700 paid in − $200 fee. The figure is the one the derivation test
+    // above pins, written out here rather than derived (lesson 5.6).
+    expect(finalPositionHeadline(p, money)).toBe("Final position: you owe them $4,500.");
+  });
+
+  it("THEY OWE HIM: names the direction and the figure", () => {
+    const p = finalPosition(theyOwe);
+    expect(p.direction).toBe("they-owe");
+    expect(finalPositionHeadline(p, money)).toBe("Final position: they owe you $8,000.");
+  });
+
+  it("SETTLED after a draw: says so plainly, with no figure to misread", () => {
+    const p = finalPosition({ ...theyOwe, paidIn: 2_000_000 });
+    expect(p.direction).toBe("settled");
+    expect(finalPositionHeadline(p, money)).toBe(
+      "Final position: settled, nothing owed either way.",
+    );
+  });
+
+  it("SETTLED never drawn and never paid: the same sentence, not “$0 owed”", () => {
+    const p = finalPosition({ ...owedToThem, paidIn: 0 });
+    expect(p.direction).toBe("settled");
+    expect(finalPositionHeadline(p, money)).toBe(
+      "Final position: settled, nothing owed either way.",
+    );
+  });
+
+  it("agrees with the signed figure, so the line and the ledger cannot disagree", () => {
+    expect(owedToStoppedMember(finalPosition(owedToThem))).toBe(450_000);
+    expect(finalPositionHeadline(finalPosition(owedToThem), money)).toContain("$4,500");
+    expect(owedToStoppedMember(finalPosition(theyOwe))).toBe(-800_000);
+    expect(finalPositionHeadline(finalPosition(theyOwe), money)).toContain("$8,000");
+  });
+
+  it("carries NO DASH — the standing rule for anything that may reach a member", () => {
+    for (const input of [owedToThem, theyOwe, { ...theyOwe, paidIn: 2_000_000 }]) {
+      const line = finalPositionHeadline(finalPosition(input), money);
+      expect(line).not.toContain("—");
+      expect(line).not.toContain("–");
     }
   });
 });

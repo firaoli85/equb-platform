@@ -144,9 +144,24 @@ export function PaymentsGrid({
         </span>
       </div>
 
+      {/* A MATRIX WITH NO MEMBERS IS NOT A MATRIX. Filtered down to nobody,
+          this rendered week rows, dates and totals against zero columns. */}
+      {visibleIdx.length === 0 && (
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] px-6 py-10 text-center">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+            {grid.columns.length === 0 ? "Nobody is in this cycle yet." : "Nobody matches."}
+          </p>
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            {grid.columns.length === 0
+              ? "Add a member and their weeks appear here."
+              : "Choose “Everyone” to bring the grid back."}
+          </p>
+        </div>
+      )}
+
       {/* The matrix. Both the week column and the header row are frozen, so
           scrolling in either direction stays oriented at 27 x 20. */}
-      <div className="max-h-[70vh] overflow-auto rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] shadow-sm">
+      <div className={`max-h-[70vh] overflow-auto rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] shadow-sm${visibleIdx.length === 0 ? " hidden" : ""}`}>
         <table className="border-collapse text-xs">
           <thead>
             <tr>
@@ -245,7 +260,7 @@ export function PaymentsGrid({
                       return (
                         <td
                           key={column.participationId}
-                          className={`border border-gray-100 dark:border-gray-800/60 text-center text-gray-300 dark:text-gray-700 ${nowBg}`}
+                          className={`border border-gray-100 dark:border-gray-800/60 text-center text-gray-400 dark:text-gray-600 ${nowBg}`}
                           title={`${column.name} had not joined yet — they joined in week ${column.startWeek}`}
                         >
                           ○

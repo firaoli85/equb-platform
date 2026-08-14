@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { activateCycle, deleteDraftCycle } from "@/app/actions/cycles";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
-import { Card, Pill } from "@/components/ui/primitives";
+import { Card, Pill, buttonCls } from "@/components/ui/primitives";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { formatMoney } from "@/lib/format";
 
@@ -162,11 +162,12 @@ export function DraftCycles({ drafts }: { drafts: DraftCycleRow[] }) {
                 />
                 <button
                   type="button"
+                  disabled={busyId !== null}
                   onClick={() => {
                     setDeleteError(null);
                     setDeleting(draft);
                   }}
-                  className="min-h-11 rounded-xl border border-red-200 px-4 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
+                  className={buttonCls.danger + " disabled:opacity-40"}
                 >
                   Delete draft…
                 </button>

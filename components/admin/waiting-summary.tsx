@@ -102,7 +102,14 @@ export function WaitingSummary({ data }: { data: WaitingData }) {
               : `will eventually receive ${formatMoney(t.eventualTotal)}`}
             {t.atRiskCount > 0 ? ` · ${t.atRiskCount} at risk` : ""}
           </p>
-          {urgent.awaitingTurn.length > 0 && (
+          {urgent.awaitingTurn.length === 0 ? (
+            // The matching half of the pair above — an empty side must read as
+            // deliberate, not as a panel that failed to load.
+            <p className="mt-3 rounded-xl border border-dashed border-gray-200 dark:border-gray-800 px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+              Everyone has been drawn. Members appear here while they are still waiting for their
+              number to come up.
+            </p>
+          ) : (
             <ul className="mt-3 space-y-1.5">
               {urgent.awaitingTurn.map((r) => (
                 <li

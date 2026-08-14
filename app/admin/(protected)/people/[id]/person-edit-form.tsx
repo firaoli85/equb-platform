@@ -5,7 +5,7 @@ import { useState } from "react";
 import { deletePerson, updatePerson } from "@/app/actions/edits";
 import { ConfirmDialog, type ConfirmSpec } from "@/components/ui/confirm-dialog";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
-import { buttonCls } from "@/components/ui/primitives";
+import { buttonCls, inputCls } from "@/components/ui/primitives";
 import {
   canRemovePerson,
   personRemovalBlockers,
@@ -266,7 +266,7 @@ export function PersonEditForm({ person }: { person: PersonFields }) {
               setFields((f) => ({ ...f, [key]: e.target.value }));
               setSave({ kind: "idle" });
             }}
-            className="w-full rounded border border-gray-400 px-3 py-2 text-sm"
+            className={inputCls}
           />
           {/* The warning belongs BESIDE the field being changed, not only in
               the dialog that appears after they have decided. */}

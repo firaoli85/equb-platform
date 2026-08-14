@@ -100,7 +100,7 @@ export const SETTINGS_LINKS: NavLink[] = [
   {
     label: "Cycle rules",
     href: "/admin/settings/cycle",
-    hint: "Closing wait, fee, numbering",
+    hint: "How long to wait before closing",
   },
   {
     label: "Member agreement",

@@ -6,6 +6,7 @@ import { formatDateUTC } from "@/lib/format";
 import { getSetting } from "@/lib/settings";
 import { undoDrawConsequences } from "@/lib/undo-draw";
 import { DrawEditor } from "./draw-editor";
+import { EmptyState } from "@/components/ui/primitives";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +29,12 @@ export default async function DrawsPage() {
   });
   if (!cycle) {
     return (
-      <main>
-        <p className="text-sm">No active cycle.</p>
+      <main className="space-y-4">
+        <h1 className="text-xl font-black text-gray-900 dark:text-white">Draws</h1>
+        <EmptyState
+          title="No cycle is running."
+          hint="Draws belong to a cycle. Start one, and the weeks you draw appear here."
+        />
       </main>
     );
   }
@@ -86,7 +91,10 @@ export default async function DrawsPage() {
         applied silently.
       </p>
       {draws.length === 0 ? (
-        <p className="text-sm text-gray-700 dark:text-gray-300">No draws recorded.</p>
+        <EmptyState
+          title="No draws recorded yet."
+          hint="A draw is recorded from the wheel. Once a week is drawn it appears here, editable and undoable."
+        />
       ) : (
         <div className="max-w-2xl space-y-3">
           {draws.map((d) => (

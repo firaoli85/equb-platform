@@ -5,7 +5,7 @@ import { useState } from "react";
 import { createCycle } from "@/app/actions/cycles";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AmountInput, NumberInput, Radio } from "@/components/ui/controls";
-import { Card, Field } from "@/components/ui/primitives";
+import { Card, Field, inputCls } from "@/components/ui/primitives";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { cycleFinishPreview, finishLine, parseWeekField } from "@/lib/commitment";
 import { defaultWithinBounds, isWithinBounds, type DateBounds } from "@/lib/date-bounds";
@@ -200,7 +200,7 @@ export function NewCycleForm({ startBounds }: { startBounds: DateBounds }) {
             value={fields.name}
             onChange={(e) => set("name")(e.target.value)}
             placeholder="Cycle 2"
-            className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3.5 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600"
+            className={inputCls}
           />
         </Field>
 

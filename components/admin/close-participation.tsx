@@ -57,7 +57,15 @@ export function CloseParticipation({
   participationId: string;
   personName: string;
   cycleName: string;
-  closed: { atWeek: number | null; reason: string | null; note: string | null } | null;
+  closed: {
+    atWeek: number | null;
+    reason: string | null;
+    note: string | null;
+    /** "Final position: you owe them $4,500." — the 14 Aug ruling. */
+    finalHeadline: string | null;
+    /** The fuller admin explanation that renders under it. */
+    finalDetail: string | null;
+  } | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -248,6 +256,26 @@ export function CloseParticipation({
             recorded. They keep their portal, read-only, showing where they stopped.
           </p>
         </div>
+
+        {/* WHAT IT COMES TO (organizer ruling, 14 Aug 2026). This figure was
+            derived on every closed profile and shown nowhere — the one thing
+            on this panel neither he nor the member can work out unaided
+            (2.18). The blunt sentence leads; the reasoning sits under it. */}
+        {closed.finalHeadline && (
+          <div className="rounded-xl border border-amber-300 bg-white/70 px-3 py-2.5 dark:border-amber-800 dark:bg-black/20">
+            <p
+              data-testid="final-position"
+              className="text-sm font-black text-gray-900 dark:text-white"
+            >
+              {closed.finalHeadline}
+            </p>
+            {closed.finalDetail && (
+              <p className="mt-1 text-xs text-gray-700 dark:text-gray-300 text-pretty">
+                {closed.finalDetail}
+              </p>
+            )}
+          </div>
+        )}
         {/* The confirmation for the close that led here lands on this panel
             too: the same `save` state survives the switch from the close flow
             to this branch, so the message is never dropped by the re-render.

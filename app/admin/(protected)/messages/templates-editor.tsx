@@ -248,7 +248,6 @@ export function TemplatesEditor({
     <Card>
       <CardHeader
         title="Templates"
-        sub="Your wording, filled from each member's derived state at send time — the numbers are never typed (2.21)."
         right={
           <label className="block text-right">
             <span className="mb-1 block text-[11px] font-semibold text-gray-600 dark:text-gray-400">

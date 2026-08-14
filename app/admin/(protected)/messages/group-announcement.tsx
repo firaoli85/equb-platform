@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { broadcastAnnouncement, sendGroupAnnouncement } from "@/app/actions/messages";
-import { Card, CardHeader } from "@/components/ui/primitives";
+import { Card, CardHeader, inputCls } from "@/components/ui/primitives";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { TELEGRAM_MESSAGE_LIMIT } from "@/lib/telegram";
 
@@ -129,7 +129,7 @@ export function GroupAnnouncement({
           }}
           rows={4}
           placeholder="e.g. Week 14 draw is this Sunday at 8pm on the usual Zoom link."
-          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 dark:border-gray-800 dark:bg-black/20 dark:text-gray-100 dark:focus:ring-indigo-950"
+          className={`mt-2 ${inputCls}`}
         />
         <p
           className={`mt-1 text-xs tabular-nums ${over || overWhatsApp || multiline ? "font-semibold text-red-700 dark:text-red-400" : "text-gray-500 dark:text-gray-400"}`}

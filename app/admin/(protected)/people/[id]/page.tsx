@@ -6,7 +6,7 @@ import { getMemberStanding } from "@/app/actions/payments";
 import { getMemberMessaging } from "@/app/actions/member-messaging";
 import { listMemberSignIns } from "@/app/actions/sessions";
 import { PresentationHidden } from "@/components/presentation-hidden";
-import { Card, CardHeader, Pill } from "@/components/ui/primitives";
+import { Card, CardHeader, EmptyState, Pill } from "@/components/ui/primitives";
 import { AgreementSigningCard } from "@/components/admin/agreement-signing";
 import { PayoutEquation } from "@/components/admin/payout-equation";
 import { Pager, TruncationNotice } from "@/components/ui/pager";
@@ -535,7 +535,15 @@ export default async function PersonPage({
           has ended is not what the organizer is there to do.
           Messages works without a live participation on purpose (2.18), so it
           is the one tab this card must not cover. */}
-      {active === null && tab !== "settings" && tab !== "history" && tab !== "messages" && (
+      {active === null &&
+        tab !== "settings" &&
+        tab !== "history" &&
+        tab !== "messages" &&
+        // Payout and Receipts each say it themselves, in their own words and
+        // in the place the answer was being looked for — this card on top of
+        // them was the same fact twice on one screen.
+        tab !== "payout" &&
+        tab !== "receipts" && (
         <Card className="px-5 py-4">
           <h2 className="text-sm font-bold text-gray-900 dark:text-white">Not in the current cycle</h2>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
@@ -598,8 +606,17 @@ export default async function PersonPage({
       {/* ————— TAB 2: PAYOUT ————— */}
       {tab === "payout" && (
         <div className="space-y-4">
+          {/* NO NUMBERS IS A REAL STATE, not a zeroed equation. They are
+              deletable under Settings while undrawn, so this is reachable —
+              and "$0 − $0 = $0 · 0 lucky numbers" reads as a broken page. */}
+          {active && active.luckyNumbers.length === 0 && (
+            <EmptyState
+              title="They hold no lucky numbers."
+              hint="Nothing of theirs can be drawn until one is added, under Settings → Participation and money."
+            />
+          )}
           {/* The fee, findable. It was one column of a five-column table. */}
-          {active && payoutTotals && (
+          {active && active.luckyNumbers.length > 0 && payoutTotals && (
             <PayoutEquation
               gross={payoutTotals.gross}
               fee={payoutTotals.fee}

@@ -31,6 +31,7 @@ import {
   winnerPlanModeLabel,
   type WinnerPlanMode,
 } from "@/lib/wheel";
+import { buttonCls } from "@/components/ui/primitives";
 
 type NumberInfo = {
   id: string;
@@ -633,6 +634,12 @@ export function WheelSetup({ state }: { state: SetupState }) {
           </p>
         )}
 
+        {draft.slots.length === 0 && (
+          <p className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            No slots yet. Add one and drag numbers into it, or use auto-arrange to fill the wheel
+            from the unassigned numbers above.
+          </p>
+        )}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {draft.slots.map((s, index) => {
             const total = s.luckyNumberIds.reduce((sum, id) => sum + (numberById.get(id)?.amount ?? 0), 0);
@@ -718,7 +725,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
                             },
                           );
                         }}
-                        className="rounded border border-gray-300 px-1.5 text-xs disabled:opacity-40"
+                        className={buttonCls.ghost + " !px-2 !py-0.5 !text-xs disabled:opacity-40"}
                       >
                         ✕
                       </button>
@@ -998,7 +1005,7 @@ export function WheelSetup({ state }: { state: SetupState }) {
                         ),
                     )
                   }
-                  className="rounded border border-red-400 px-2 py-0.5 text-xs text-red-800 disabled:opacity-40"
+                  className={buttonCls.dangerQuiet + " !px-2.5 !py-1 !text-xs disabled:opacity-40"}
                 >
                   Cancel
                 </button>

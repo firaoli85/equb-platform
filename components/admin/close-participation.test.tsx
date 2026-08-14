@@ -31,9 +31,55 @@ const stopped = () =>
       participationId="p1"
       personName="Getahun"
       cycleName="Cycle 12"
-      closed={{ atWeek: 6, reason: "LEFT_THE_GROUP", note: null }}
+      closed={{
+        atWeek: 6,
+        reason: "LEFT_THE_GROUP",
+        note: null,
+        finalHeadline: "Final position: you owe them $4,500.",
+        finalDetail: "You owe Getahun $4,500 — they paid in $4,700 and were never drawn.",
+      }}
     />,
   );
+
+// THE FINAL POSITION IS ON THE PANEL (organizer ruling, 14 Aug 2026 — audit
+// item #8). It was derived on every closed profile and rendered nowhere, so
+// 2.18's promise was work the page threw away. The wording itself is pinned
+// per branch in lib/final-position.test.ts; this pins that it REACHES the
+// screen, and that the panel still works without it.
+describe("the stopped panel states what it comes to", () => {
+  it("renders the headline and the explanation under it", () => {
+    const out = stopped();
+    expect(out).toContain("Final position: you owe them $4,500.");
+    expect(out).toContain("they paid in $4,700 and were never drawn");
+    expect(out).toContain('data-testid="final-position"');
+  });
+
+  it("the headline comes BEFORE the detail — it is the line read in a hurry", () => {
+    const out = stopped();
+    expect(out.indexOf("Final position:")).toBeLessThan(out.indexOf("were never drawn"));
+  });
+
+  it("renders nothing extra when there is no figure to state", () => {
+    const out = renderToStaticMarkup(
+      <CloseParticipation
+        participationId="p1"
+        personName="Getahun"
+        cycleName="Cycle 12"
+        closed={{
+          atWeek: 6,
+          reason: "LEFT_THE_GROUP",
+          note: null,
+          finalHeadline: null,
+          finalDetail: null,
+        }}
+      />,
+    );
+    expect(out).not.toContain("Final position");
+    expect(out).not.toContain('data-testid="final-position"');
+    // The way back is still offered — the panel's own job is unaffected.
+    expect(out).toContain("They are contributing again");
+  });
+});
 
 describe("the stopped panel — feedback belongs to the control", () => {
   it("offers the way back, live", () => {

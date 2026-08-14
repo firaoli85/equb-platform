@@ -224,7 +224,8 @@ describe("the centre is built the way a messaging tool is", () => {
 
   it("searches, filters by type and by date, and pages both lists", () => {
     expect(centre).toMatch(/data-testid="thread-search"/);
-    expect(centre).toMatch(/data-testid="filter-type"/);
+    // The crafted Select carries it as a prop and forwards it to the DOM.
+    expect(centre).toMatch(/testId="filter-type"/);
     expect(centre).toMatch(/data-testid="filter-from"/);
     expect(centre).toMatch(/data-testid="filter-to"/);
     expect(centre).toContain("ThreadPager");

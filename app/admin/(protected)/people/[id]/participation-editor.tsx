@@ -1084,12 +1084,10 @@ export function ParticipationEditor(props: {
         )}
       </section>
 
+      {/* NO HEADING HERE. This section is always embedded under a CardHeader
+          that already says "Receipts" and the same D-32 sentence, so the two
+          rendered back to back. The page owns the framing; this owns the rows. */}
       <section className={`space-y-3 ${show.receipts ? "" : "hidden"}`}>
-        <h2 className="text-base font-bold text-gray-900 dark:text-white">Receipts (payment events)</h2>
-        <p className="text-xs text-gray-600 dark:text-gray-400">
-          Week amounts are derived from receipts — edit or delete a receipt and every week
-          recalculates immediately (D-32).
-        </p>
         {props.events.length === 0 ? (
           <p className="text-sm text-gray-700 dark:text-gray-300">No receipts recorded.</p>
         ) : (

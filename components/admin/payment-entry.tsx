@@ -18,6 +18,7 @@ import {
   weeksTouchedBy,
   type PickableWeek,
 } from "@/lib/week-picking";
+import { inputCls } from "@/components/ui/primitives";
 
 // THE ONE PAYMENT INTERACTION (2.19: one engine, one way to do each thing).
 //
@@ -284,7 +285,11 @@ export function PaymentEntry({
           covers it; half = the leftover part-pays it; ring = ticked. */}
       <div>
         <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400">
-          {memberName}&apos;s weeks — tick one, or sweep across a run
+          {/* Nothing owed is a real state, and telling him to tick a week
+              when none can be ticked reads as a broken screen. */}
+          {pickable.length === 0
+            ? `All of ${memberName}'s weeks are settled — nothing to record.`
+            : `${memberName}'s weeks — tick one, or sweep across a run`}
         </p>
         <div
           ref={gridRef}
@@ -382,12 +387,14 @@ export function PaymentEntry({
         {/* Said once, quietly, and permanently: this is a screen he uses every
             week, and a hint that only appears on hover is one a keyboard never
             finds. It is also the group's description, so it is read aloud. */}
-        <p
-          id="week-grid-help"
-          className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-500"
-        >
-          Drag across a run, or use the arrow keys and hold Shift to take the run with you.
-        </p>
+        {pickable.length > 0 && (
+          <p
+            id="week-grid-help"
+            className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-500"
+          >
+            Drag across a run, or use the arrow keys and hold Shift to take the run with you.
+          </p>
+        )}
       </div>
 
       {/* THE AMOUNT — the other view of the same number. */}
@@ -472,7 +479,7 @@ export function PaymentEntry({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Anything worth remembering about this payment"
-          className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-indigo-500/30 focus:outline-none dark:border-gray-700 dark:bg-[#1a1a1a] dark:text-white"
+          className={inputCls}
         />
       </label>
 

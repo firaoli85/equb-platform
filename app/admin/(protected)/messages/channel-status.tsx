@@ -77,7 +77,18 @@ export function ChannelStatus({
             }`}
           >
             {off
-              ? `${disabledReason} Turn it back on under Settings → Messaging and everything here sends again.`
+              ? (
+                  <>
+                    {disabledReason} Turn it back on under{" "}
+                    <Link
+                      href="/admin/settings/messaging"
+                      className="font-semibold underline underline-offset-2"
+                    >
+                      Settings → Messaging
+                    </Link>{" "}
+                    and everything here sends again.
+                  </>
+                )
               : unconfigured
                 ? "Twilio is not configured on this machine — the details are under the disclosure below. Preparing and previewing still work."
                 : `${APPROVED_TEMPLATE_KEYS.length} Meta-approved templates carry them. Nothing leaves until you press send (2.20).`}

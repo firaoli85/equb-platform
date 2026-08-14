@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ConsistencyStrip, type MemberStrip } from "@/components/charts/consistency-strip";
 import { PaymentEntry } from "@/components/admin/payment-entry";
-import { Alert } from "@/components/ui/primitives";
+import { Alert, buttonCls } from "@/components/ui/primitives";
 import type { PaymentGrid } from "@/lib/payments-view";
 import type { PickableWeek } from "@/lib/week-picking";
 
@@ -72,7 +72,7 @@ export function PatternsView({
             <button
               type="button"
               onClick={() => setPicked(null)}
-              className="text-xs font-semibold text-gray-600 hover:underline dark:text-gray-400"
+              className={buttonCls.ghost + " !px-2.5 !py-1 !text-xs"}
             >
               Close
             </button>

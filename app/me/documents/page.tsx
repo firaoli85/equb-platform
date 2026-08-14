@@ -24,11 +24,19 @@ export default async function DocumentsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
+      {/* The back link sits ABOVE the title with a real hit area — the same
+          control History uses, rather than a 20px text link floated into the
+          heading row. */}
+      <div>
+        <p className="mb-1 text-sm">
+          <Link
+            href="/me"
+            className="inline-flex min-h-11 items-center text-gray-600 hover:underline dark:text-gray-400"
+          >
+            ← Home
+          </Link>
+        </p>
         <h1 className="text-xl font-black text-gray-900 dark:text-white">Documents</h1>
-        <Link href="/me" className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
-          ← Home
-        </Link>
       </div>
 
       <SignedAgreements agreements={result.data} />

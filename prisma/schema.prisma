@@ -300,8 +300,8 @@ model Payment {
   participationId String
   amountPaid      Int      @default(0)
   isDeferred      Boolean  @default(false)
-  // THE ORGANIZER'S OWN LATE MARK (2.2 — his discretion; 2.14 — a STORED
-  // decision, not a derived value).
+  // THE ORGANIZER'S OWN LATE MARK (§2.29 — the rule; 2.2 — his discretion;
+  // 2.14 — a STORED decision, not a derived value).
   //
   // LATE is otherwise pure calendar: unpaid AND the window has closed. That
   // makes the organizer wait until Thursday to record something he was told on

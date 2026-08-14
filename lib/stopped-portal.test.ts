@@ -57,7 +57,9 @@ describe("GUARD — the portal distinguishes stopped from never-joined", () => {
   // blank state is the fallthrough, so a later check never runs.
   it("the page renders the stopped record, and does so FIRST", () => {
     const stoppedBranch = PAGE.indexOf("result.data.stopped");
-    const blankBranch = PAGE.indexOf("You&rsquo;re not in the current cycle");
+    // The blank state moved into <NotInCycle> (one presentation for the
+    // three pages that show it); the branch order is what this pins.
+    const blankBranch = PAGE.indexOf("<NotInCycle");
     expect(stoppedBranch, "the page never checks for a stopped record").toBeGreaterThan(-1);
     expect(blankBranch).toBeGreaterThan(-1);
     expect(

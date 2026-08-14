@@ -4,6 +4,8 @@ import { getMyPortal } from "@/app/actions/member";
 import { EqubCalendar, type CalendarWeek } from "@/components/member/equb-calendar";
 import { formatDateLongUTC } from "@/lib/format";
 import { memberWindowSentence } from "@/lib/member-window";
+import { NotInCycle } from "@/components/member/not-in-cycle";
+import { notInCurrentCycleLine } from "@/lib/member-history";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +21,9 @@ export default async function SchedulePage() {
   const p = result.data.participation;
 
   if (!p) {
-    return (
-      <p className="text-center py-10 text-sm text-gray-600 dark:text-gray-300">
-        You are not in the current cycle.
-      </p>
-    );
+    // The same card home shows for the same state (14 Aug 2026) — this was a
+    // bare centred paragraph, one of three voices for one fact.
+    return <NotInCycle line={notInCurrentCycleLine(false)} />;
   }
 
   const weeks: CalendarWeek[] = p.weeks.map((w) => ({
@@ -41,11 +41,19 @@ export default async function SchedulePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
+      {/* The back link sits ABOVE the title with a real hit area — the same
+          control History uses, rather than a 20px text link floated into the
+          heading row. */}
+      <div>
+        <p className="mb-1 text-sm">
+          <Link
+            href="/me"
+            className="inline-flex min-h-11 items-center text-gray-600 hover:underline dark:text-gray-400"
+          >
+            ← Home
+          </Link>
+        </p>
         <h1 className="text-xl font-black text-gray-900 dark:text-white">Schedule</h1>
-        <Link href="/me" className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
-          ← Home
-        </Link>
       </div>
       <p className="text-[11px] text-gray-600 dark:text-gray-400 tabular-nums -mt-2">
         {memberWindowSentence({

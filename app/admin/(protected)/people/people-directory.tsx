@@ -157,10 +157,11 @@ export function PeopleDirectory({ rows: unsorted }: { rows: DirectoryRow[] }) {
                     which facts exist is how one view starts being trusted
                     over the other. */}
                 <span className="flex shrink-0 flex-col items-end gap-1">
-                  {p.lockedMinutesLeft !== null ? (
+                  {/* BOTH, as the list shows them: a lock is a state ON TOP
+                      of a PIN, not a replacement for it. */}
+                  <Pill tone={PIN_LABEL[p.pinState].tone}>{PIN_LABEL[p.pinState].text}</Pill>
+                  {p.lockedMinutesLeft !== null && (
                     <Pill tone="problem">Locked · {p.lockedMinutesLeft} min</Pill>
-                  ) : (
-                    <Pill tone={PIN_LABEL[p.pinState].tone}>{PIN_LABEL[p.pinState].text}</Pill>
                   )}
                   <SigningChip state={p.signing} />
                 </span>
