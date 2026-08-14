@@ -106,7 +106,15 @@ export function ParticipationEditor(props: {
     unitAmount: number;
     feePercent: number;
     /** Set when they have STOPPED (2.18). Null while they are contributing. */
-    closed: { atWeek: number | null; reason: string | null; note: string | null } | null;
+    closed: {
+      atWeek: number | null;
+      reason: string | null;
+      note: string | null;
+      /** "Final position: you owe them $4,500." — the 14 Aug ruling. */
+      finalHeadline: string | null;
+      /** The fuller admin explanation that renders under it. */
+      finalDetail: string | null;
+    } | null;
   };
   luckyNumbers: { id: string; number: number; amount: number }[];
   events: EventRowData[];

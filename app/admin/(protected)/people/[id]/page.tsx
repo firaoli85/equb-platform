@@ -14,7 +14,11 @@ import { SectionHeading, SectionNav } from "@/components/ui/section-nav";
 import { finishLine, finishPreview, resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { paymentStatus } from "@/lib/derived";
 import { formatDateLongUTC, formatDateUTC, formatMoney } from "@/lib/format";
-import { finalPosition, finalPositionAdminLine } from "@/lib/final-position";
+import {
+  finalPosition,
+  finalPositionAdminLine,
+  finalPositionHeadline,
+} from "@/lib/final-position";
 import { ledgerBalance, ledgerStory } from "@/lib/ledger";
 import { calculateFinishWeek } from "@/lib/money";
 import { CAPS, PAGE_SIZES, pageInfo, parsePage, parsePageSize, truncationNotice } from "@/lib/paging";
@@ -134,16 +138,6 @@ export default async function PersonPage({
   // "dignity, and a useful record for them" — and a close that cannot be seen
   // also cannot be reversed.
   const active = person.participations.find((p) => p.cycle.status === "ACTIVE") ?? null;
-  /** Where they stopped, for the panel that offers the way back. */
-  const closedState =
-    active && active.status === "CLOSED"
-      ? {
-          atWeek: active.closedAtWeek,
-          reason: active.closeReason,
-          note: active.closeNote,
-        }
-      : null;
-
   /**
    * WHAT HE OWES THEM, OR THEY OWE HIM (2.18).
    *
@@ -176,6 +170,29 @@ export default async function PersonPage({
           unitAmount: active.cycle.unitAmount,
           feePercent: active.cycle.feePercent,
         })
+      : null;
+
+  /**
+   * Where they stopped, for the panel that offers the way back — and, since
+   * the organizer's ruling of 14 Aug 2026, WHAT IT COMES TO.
+   *
+   * `finalStanding` was derived on every closed profile and displayed
+   * nowhere, so 2.18's promise — what he owes them, or they owe him — was
+   * work this page threw away on every load. Both sentences are built HERE,
+   * from that one derivation, so the headline and the explanation under it
+   * cannot disagree.
+   */
+  const closedState =
+    active && active.status === "CLOSED"
+      ? {
+          atWeek: active.closedAtWeek,
+          reason: active.closeReason,
+          note: active.closeNote,
+          finalHeadline: finalStanding ? finalPositionHeadline(finalStanding, formatMoney) : null,
+          finalDetail: finalStanding
+            ? finalPositionAdminLine(finalStanding, person.nameEnglishFirst, formatMoney)
+            : null,
+        }
       : null;
 
   const [standing, catchUp] = active
