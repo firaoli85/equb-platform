@@ -78,9 +78,10 @@ export function isMoneyPlaceholder(name: string): boolean {
  */
 export const DASHABLE_PLACEHOLDERS = [
   "lastPaymentWeek",
-  // The v2 form of the same fact — "1 (Aug 16)", or honestly "—" for a
-  // member who has never paid. Same sentence, same legitimacy.
-  "myLastPaymentWeek",
+  // `myLastPaymentWeek` was listed here through the v2 era — the v3 rework
+  // (14 Aug 2026) replaced the fact itself with {myPaidUpToWeek}, which is
+  // ALWAYS composable ("the start (Sunday, May 17)" for a never-paid
+  // member), so no my* token is dashable any more.
 ] as const satisfies readonly PlaceholderName[];
 
 /** True when this placeholder is allowed to be the sentinel in a real send. */

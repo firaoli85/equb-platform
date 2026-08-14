@@ -153,11 +153,19 @@ function approved(
   return { ...entry, namedBody: toNamedBody(entry.approvedBody, entry.variableOrder) };
 }
 
-// THE v2 SET (Meta, 13 Aug 2026, all UTILITY) — the member-relative rework
-// landed: statements speak the member's OWN weeks paired with dates, never
-// the group calendar. The four superseded v1 entries (SIDs HX87cb…, HX8bb8…,
-// HXc25b…, HX2774…) live in docs/WHATSAPP_TEMPLATES.md's history section and
-// remain registered in Twilio until post-deploy retirement.
+// THE LIVE SET (all UTILITY): payment confirmation, welcome and group
+// announcement from the 13 Aug 2026 v2 approval; behind, late and winner
+// from the 14 Aug 2026 v3 rework; the closing statement unchanged since
+// 7 Aug 2026. Superseded bodies live in docs/WHATSAPP_TEMPLATES.md's history
+// section — the v1 AND v2 predecessors are already deleted from Twilio.
+//
+// v3 STANDING RULES (organizer, 14 Aug 2026), for ALL member-facing text:
+//   - NO DASHES, em or en, in fixed template text (guarded in
+//     lib/whatsapp-templates.test.ts; the two pre-v3 bodies that carry one
+//     are Meta-frozen exemptions until resubmitted)
+//   - maximally simple — "stupid-proof" — sentences
+//   - weeks are the MEMBER'S counting language, dates in brackets as
+//     reference; repetition of facts is good, not clutter
 export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> = {
   PAYMENT_CONFIRMED: approved({
     key: "PAYMENT_CONFIRMED",
@@ -172,36 +180,40 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
 
   BEHIND_NOTICE: approved({
     key: "BEHIND_NOTICE",
-    contentSid: "HX5ccceab671caae1a5a496f8a58f5695e",
-    // SIX variables — one more than v1. {{3}} keeps lastPaymentWeek's
-    // sentinel rule: "—" is the honest value for a member who has never paid
-    // (lib/placeholder-kinds.ts DASHABLE).
+    // v3 (14 Aug 2026). {{4}} is the paid-up-to week — ALWAYS composable: a
+    // member who has never paid gets "the start (Sunday, May 17)", their own
+    // start date, which SUPERSEDES the v2 "—" sentinel for last-payment.
+    // Non-dashable on purpose.
+    contentSid: "HXf6fd58391615502d88ea81a812460bc7",
     approvedBody:
-      "Hi {{1}}, your Equb record as of your week {{2}}: last payment on your week {{3}}, and {{4}} of your {{5}} weeks are behind, {{6}} outstanding. Please contact Firaoli with any questions.",
-    variableOrder: ["name", "myCurrentWeek", "myLastPaymentWeek", "weeksBehind", "weeksTotal", "amountOwed"],
+      "Hi {{1}}, you are {{2}} payments behind on your Equb. That is {{3}} to catch up. You are paid up to your week {{4}}, and the current week is week {{5}}. Please contact Firaoli with any questions.",
+    variableOrder: ["name", "weeksBehind", "amountOwed", "myPaidUpToWeek", "myCurrentWeek"],
     requiredExtras: [],
   }),
 
   LATE_NOTICE: approved({
     key: "LATE_NOTICE",
-    contentSid: "HX52a4f9c1490d5a34ef65e599fa4ace23",
+    // v3 (14 Aug 2026). {{2}} stays non-dashable: no late weeks, no send.
+    contentSid: "HX5888a36a63291feccee719a37dcaff64",
     approvedBody:
-      "Hi {{1}}, your week(s) {{2}} closed without a payment recorded. Your balance is {{3}} outstanding across {{4}} of your {{5}} weeks. Please contact Firaoli if this does not match your records.",
-    variableOrder: ["name", "myLateWeeks", "amountOwed", "lateWeeksCount", "weeksTotal"],
+      "Hi {{1}}, we did not receive your payment for your week(s) {{2}}. That is {{3}} to catch up. You are paid up to your week {{4}}, and the current week is week {{5}}. Please contact Firaoli if this does not match your records.",
+    variableOrder: ["name", "myLateWeeks", "amountOwed", "myPaidUpToWeek", "myCurrentWeek"],
     requiredExtras: [],
   }),
 
   WINNER_ANNOUNCEMENT: approved({
     key: "WINNER_ANNOUNCEMENT",
-    // NO DRAWN-WEEK REFERENCE, BY DESIGN (13 Aug wording): the payout is
-    // handed over in person; the message's job is what continues and until
-    // when. This supersedes D-38 — the finish DATE is carried, resolving that
-    // divergence in 2.22's favour. `drawnWeek` is therefore NOT required any
-    // more; `payoutNet` still is (caller-supplied, defect-producing).
-    contentSid: "HX02e0db4ce467224186802b64adb007a7",
+    // v3 (14 Aug 2026). {{5}} is PAYMENTS LEFT — committed minus paid, the
+    // count still owed — NOT calendar weeks remaining: the two differ the
+    // moment a member is behind or ahead (the 13-Aug finding), and this
+    // sentence states the debt count with {{6}}, their finish date, as the
+    // run-until anchor. D-38's resolution stands: the finish DATE is carried.
+    // `payoutNet` remains required (caller-supplied, defect-producing);
+    // everything else derives.
+    contentSid: "HX4775224d54e9799a67c9b9ad5ccf6f63",
     approvedBody:
-      "Hi {{1}}, congratulations — your Equb payout is {{2}}. Your weekly contributions continue until {{3}}, with {{4}} of your weeks remaining. Firaoli will arrange the handover.",
-    variableOrder: ["name", "payoutAmount", "finishDate", "weeksLeft"],
+      "Hi {{1}}, congratulations! Your Equb payout is {{2}}. So far you have paid {{3}} of your {{4}} weeks. You have {{5}} payments left, and your weeks run until {{6}}. Firaoli will arrange the handover.",
+    variableOrder: ["name", "payoutAmount", "weeksPaid", "weeksTotal", "paymentsLeft", "finishDate"],
     requiredExtras: ["payoutNet"],
   }),
 

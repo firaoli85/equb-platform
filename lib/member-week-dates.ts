@@ -43,9 +43,55 @@ function shortDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+/**
+ * "Sunday, July 26" — the FULL form the v3 bodies carry: weekday and month
+ * written out, no year (the samples Meta approved carry none). UTC, rule 11.
+ */
+export function memberFullDate(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 /** One week with its date: "2 (Aug 23)". */
 export function memberWeekLabel(week: MemberWeekDate): string {
   return `${week.ownWeek} (${shortDate(week.date)})`;
+}
+
+/** One week with its FULL date: "11 (Sunday, July 26)" — the v3 form. */
+export function memberWeekLabelFull(week: MemberWeekDate): string {
+  return `${week.ownWeek} (${memberFullDate(week.date)})`;
+}
+
+/**
+ * The v3 LIST form — plain enumeration, dates grouped in ONE bracket:
+ *
+ *   single      "12 (Aug 2)"
+ *   two         "12 and 13 (Aug 2 and Aug 9)"
+ *   three plus  "12, 13 and 14 (Aug 2, Aug 9 and Aug 16)"
+ *
+ * NO RANGES AND NO DASHES — the organizer's v3 standing rules (14 Aug 2026):
+ * maximally simple, and dashes are banned from member-facing text. The v2
+ * range form ("2–3 (Aug 23 – Aug 30)") survives only inside the frozen
+ * payment_confirmed_v2 body via memberWeeksPhrase below.
+ */
+export function memberWeeksListPhrase(weeks: readonly MemberWeekDate[]): string {
+  if (weeks.length === 0) return "";
+
+  const byWeek = new Map<number, MemberWeekDate>();
+  for (const week of weeks) byWeek.set(week.ownWeek, week);
+  const sorted = [...byWeek.values()].sort((a, b) => a.ownWeek - b.ownWeek);
+
+  if (sorted.length === 1) return memberWeekLabel(sorted[0]);
+
+  const joinAnd = (parts: readonly string[]) =>
+    `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  const numbers = joinAnd(sorted.map((w) => String(w.ownWeek)));
+  const dates = joinAnd(sorted.map((w) => shortDate(w.date)));
+  return `${numbers} (${dates})`;
 }
 
 /**
@@ -102,7 +148,24 @@ export function memberWeeksPhraseFromCycleWeeks(input: {
   /** cycle week number → its stored date. */
   weekDates: ReadonlyMap<number, Date>;
 }): string {
-  const weeks = input.cycleWeeks.map((cycleWeek) => {
+  return memberWeeksPhrase(resolveOwnWeeks(input));
+}
+
+/** The v3 list form, from cycle week numbers — same strict date resolution. */
+export function memberWeeksListPhraseFromCycleWeeks(input: {
+  cycleWeeks: readonly number[];
+  startWeek: number;
+  weekDates: ReadonlyMap<number, Date>;
+}): string {
+  return memberWeeksListPhrase(resolveOwnWeeks(input));
+}
+
+function resolveOwnWeeks(input: {
+  cycleWeeks: readonly number[];
+  startWeek: number;
+  weekDates: ReadonlyMap<number, Date>;
+}): MemberWeekDate[] {
+  return input.cycleWeeks.map((cycleWeek) => {
     const date = input.weekDates.get(cycleWeek);
     if (!date) {
       throw new RangeError(
@@ -111,5 +174,4 @@ export function memberWeeksPhraseFromCycleWeeks(input: {
     }
     return { ownWeek: ownWeekNumber(cycleWeek, input.startWeek), date };
   });
-  return memberWeeksPhrase(weeks);
 }

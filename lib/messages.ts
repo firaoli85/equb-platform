@@ -8,7 +8,13 @@
 // not UI behavior.
 
 import { formatDateLongUTC, formatMoney } from "./format";
-import { memberWeeksPhraseFromCycleWeeks } from "./member-week-dates";
+import {
+  memberFullDate,
+  memberWeekLabelFull,
+  memberWeeksListPhraseFromCycleWeeks,
+  memberWeeksPhraseFromCycleWeeks,
+  ownWeekNumber,
+} from "./member-week-dates";
 // The sentinel and the money classification live in a leaf module so the
 // registry can import them as values without closing an import cycle.
 import { NO_VALUE } from "./placeholder-kinds";
@@ -243,6 +249,50 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
       return NO_VALUE;
     }
   };
+  // The v3 forms (14 Aug 2026): plain enumeration, no ranges, no dashes.
+  const myListPhrase = (cycleWeeks: readonly number[]): string => {
+    if (cycleWeeks.length === 0) return NO_VALUE;
+    try {
+      return memberWeeksListPhraseFromCycleWeeks({ cycleWeeks, startWeek, weekDates });
+    } catch {
+      return NO_VALUE;
+    }
+  };
+  // "13 (Sunday, August 9)" — one own week with its FULL date.
+  const myFullLabel = (cycleWeek: number): string => {
+    const date = weekDates.get(cycleWeek);
+    if (!date) return NO_VALUE;
+    try {
+      return memberWeekLabelFull({ ownWeek: ownWeekNumber(cycleWeek, startWeek), date });
+    } catch {
+      return NO_VALUE;
+    }
+  };
+
+  // PAID UP TO — the contiguous fully-PAID prefix of their own weeks. A gap
+  // (an unpaid, late, deferred or part-paid week, or a missing row) ends the
+  // prefix: "paid up to your week 11" promises every week through 11 is
+  // settled, and nothing less. A member with no such prefix is paid up to
+  // "the start (Sunday, May 17)" — their own start date — which is why this
+  // token is ALWAYS composable and deliberately non-dashable (v3 rule: it
+  // supersedes the v2 "—" sentinel for last-payment).
+  let paidUpToCycleWeek: number | null = null;
+  const ownWindowWeeks = (standing.weeks ?? [])
+    .filter((w) => w.weekNumber >= startWeek && w.weekNumber <= standing.finishWeek)
+    .sort((a, b) => a.weekNumber - b.weekNumber);
+  for (const w of ownWindowWeeks) {
+    if (w.weekNumber !== (paidUpToCycleWeek ?? startWeek - 1) + 1) break;
+    if (w.status !== "PAID") break;
+    paidUpToCycleWeek = w.weekNumber;
+  }
+  const startFullDate =
+    standing.startDate ?? weekDates.get(startWeek) ?? null;
+  const myPaidUpToWeek =
+    paidUpToCycleWeek !== null
+      ? myFullLabel(paidUpToCycleWeek)
+      : startFullDate
+        ? `the start (${memberFullDate(startFullDate)})`
+        : NO_VALUE;
 
   return {
     name: standing.name,
@@ -250,6 +300,14 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
     weeksPaid: String(weeksPaid),
     weeksTotal: String(standing.weeksCommitted),
     weeksLeft: String(weeksLeft),
+    /**
+     * PAYMENTS LEFT — committed minus paid, the COUNT STILL OWED. Same value
+     * as {weeksLeft}, named for what it states: it is NOT calendar weeks
+     * remaining, and the two split the moment a member is behind or ahead
+     * (the 13-Aug finding). The v3 winner carries this one, with the finish
+     * DATE as the run-until anchor beside it.
+     */
+    paymentsLeft: String(weeksLeft),
     weeksBehind: String(standing.weeksBehind),
     amountOwed: formatMoney(standing.amountOutstanding),
     lastPaymentWeek: standing.lastPaymentWeek === null ? NO_VALUE : String(standing.lastPaymentWeek),
@@ -279,26 +337,29 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
     /** "2–3 (Aug 23 – Aug 30)" — the weeks THIS receipt covered, their numbering. */
     myWeeksCovered: extras.weeksCovered?.length ? myPhrase(extras.weeksCovered) : NO_VALUE,
     /**
-     * "4 (Sep 6)" — where they are today, in their own counting.
+     * "13 (Sunday, August 9)" — where they are today, in their own counting,
+     * the v3 FULL-date form.
      *
      * CLAMPED to their own finish week. `currentCycleWeek` is the CYCLE's
      * calendar and keeps counting after a member's window ends — but their
-     * record stops changing at their final week, so "as of your week 10" IS
-     * the complete record for a 10-week member at cycle week 15. Unclamped,
-     * the lookup left their window, composed to the sentinel, and the behind
-     * notice became permanently unsendable for exactly the members most
-     * behind (every send a FAILED row, while the picker kept offering it).
+     * record stops changing at their final week, so "the current week is
+     * week 10" IS their frame's answer for a 10-week member at cycle week
+     * 15. Unclamped, the lookup left their window, composed to the sentinel,
+     * and the behind notice became permanently unsendable for exactly the
+     * members most behind (every send a FAILED row, while the picker kept
+     * offering it — the 14-Aug finding).
      */
-    myCurrentWeek: myPhrase([Math.min(standing.currentCycleWeek, standing.finishWeek)]),
+    myCurrentWeek: myFullLabel(Math.min(standing.currentCycleWeek, standing.finishWeek)),
     /**
-     * "1 (Aug 16)" — their last payment, their numbering. The "—" sentinel is
-     * LEGITIMATE here (DASHABLE): a member who has never paid has no last
-     * payment, and the dash is the honest value in that sentence.
+     * "11 (Sunday, July 26)", or "the start (Sunday, May 17)" for a member
+     * with no fully-paid prefix — always composable, never dashed (v3).
      */
-    myLastPaymentWeek:
-      standing.lastPaymentWeek === null ? NO_VALUE : myPhrase([standing.lastPaymentWeek]),
-    /** "2 (Aug 23) and 3 (Aug 30)" — the LATE weeks, their numbering. */
-    myLateWeeks: lateWeeks.length === 0 ? NO_VALUE : myPhrase(lateWeeks),
+    myPaidUpToWeek,
+    /**
+     * "12 and 13 (Aug 2 and Aug 9)" — the LATE weeks, their numbering, the
+     * v3 list form: no ranges, no dashes, dates grouped in one bracket.
+     */
+    myLateWeeks: lateWeeks.length === 0 ? NO_VALUE : myListPhrase(lateWeeks),
     /** The count beside the phrase — always the SAME set myLateWeeks names. */
     lateWeeksCount: String(lateWeeks.length),
     /** GROUP_ANNOUNCEMENT: the organizer's own words, required at the boundary. */
@@ -329,6 +390,7 @@ export const PLACEHOLDER_DOCS: { token: string; description: string }[] = [
   { token: "{weeksPaid}", description: "Weeks fully covered by their money so far" },
   { token: "{weeksTotal}", description: "Weeks they committed to" },
   { token: "{weeksLeft}", description: "Weeks still to pay" },
+  { token: "{paymentsLeft}", description: "Payments still owed — committed minus paid, NOT calendar weeks remaining" },
   { token: "{weeksBehind}", description: "How many weeks behind they are" },
   { token: "{amountOwed}", description: "Amount outstanding right now" },
   { token: "{lastPaymentWeek}", description: "The week of their last recorded payment" },
@@ -346,9 +408,9 @@ export const PLACEHOLDER_DOCS: { token: string; description: string }[] = [
   { token: "{lockMinutes}", description: "How long the PIN lock lasts (lockout notice only)" },
   // ————— the member-relative tokens (v2 set) —————
   { token: "{myWeeksCovered}", description: "The weeks a receipt covered, in the member's own numbering with dates — “2–3 (Aug 23 – Aug 30)”" },
-  { token: "{myCurrentWeek}", description: "Where the member is today, their own numbering with the date — “4 (Sep 6)”" },
-  { token: "{myLastPaymentWeek}", description: "Their last payment, their own numbering with the date — “1 (Aug 16)”, or — if they have never paid" },
-  { token: "{myLateWeeks}", description: "The late weeks, their own numbering with dates — “2 (Aug 23) and 3 (Aug 30)”" },
+  { token: "{myCurrentWeek}", description: "Where the member is today, their own numbering with the full date — “13 (Sunday, August 9)”" },
+  { token: "{myPaidUpToWeek}", description: "The last week they are fully paid through — “11 (Sunday, July 26)”, or “the start (Sunday, May 17)” before any full week" },
+  { token: "{myLateWeeks}", description: "The late weeks, their own numbering with dates — “12 and 13 (Aug 2 and Aug 9)”" },
   { token: "{lateWeeksCount}", description: "How many weeks are late — always the same set {myLateWeeks} names" },
   { token: "{announcementText}", description: "The announcement's own words (group announcement only)" },
 ];

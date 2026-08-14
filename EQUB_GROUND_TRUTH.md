@@ -482,7 +482,7 @@ already working.
 
 | Channel | Status | Use |
 |---|---|---|
-| **WhatsApp Business** | **LIVE** — business verified with Meta, sender **+13016835755** (WABA 1018506704190290), display name "Equb". Login codes through Twilio Verify; statements through the **six-template v2 set approved 13 Aug 2026** (payment_confirmed_v2, behind_notice_v2, late_notice_v2, winner_announcement_v2, whatsapp_welcome, group_announcement) plus the unchanged cycle_closing_statement from 7 Aug. | **Per-member messages** — confirmations, behind/late notices, winner announcements, the welcome that arms the agreement gate, per-member broadcasts, closing statements |
+| **WhatsApp Business** | **LIVE** — business verified with Meta, sender **+13016835755** (WABA 1018506704190290), display name "Equb". Login codes through Twilio Verify; statements through the live template set: **behind_notice_v3, late_notice_v3, winner_announcement_v3 (approved 14 Aug 2026)** + payment_confirmed_v2, whatsapp_welcome, group_announcement (13 Aug) + the unchanged cycle_closing_statement (7 Aug). Every v1/v2 predecessor is deleted from Twilio. | **Per-member messages** — confirmations, behind/late notices, winner announcements, the welcome that arms the agreement gate, per-member broadcasts, closing statements |
 | **Telegram group** | Working | Weekly group broadcast only — one bot, one chat, one message to everyone |
 | **US SMS** | **REJECTED — do not pursue** | none |
 
@@ -494,11 +494,22 @@ already working.
 > approved templates carried over. Test fixtures use the live number.
 
 **Statements speak the member's own weeks with dates, never the group calendar**
-(principle, 13 Aug 2026): every v2 template pairs the MEMBER'S own week numbers —
-week 1 is their first week — with the stored dates ("your week(s) 2–3 (Aug 23 –
-Aug 30)"). The composer is `lib/member-week-dates.ts`, and
-`lib/member-vocabulary.test.ts` fails the build on any template body that frames
-a slot as a cycle week.
+(principle, 13 Aug 2026): every template pairs the MEMBER'S own week numbers —
+week 1 is their first week — with the stored dates. The composer is
+`lib/member-week-dates.ts`, and `lib/member-vocabulary.test.ts` fails the build
+on any template body that frames a slot as a cycle week.
+
+**The v3 standing rules for ALL member-facing text** (organizer rulings,
+14 Aug 2026, from one day of v2 live use): **no dashes** — em or en — in fixed
+template text (guarded in `lib/whatsapp-templates.test.ts`; payment_confirmed_v2
+and whatsapp_welcome are Meta-frozen exemptions until resubmitted, and the
+exemption list may only shrink); **maximally simple** ("stupid-proof")
+sentences; **weeks are the member's counting language with dates in brackets as
+reference**; **repetition of facts is good** — the paid-up-to and current-week
+anchors repeat across notices on purpose. A never-paid member's paid-up-to
+composes as "the start (Sunday, May 17)", their own start date — always
+composable, superseding the v2 "—" sentinel. The winner's {{5}} is PAYMENTS
+LEFT (committed minus paid, the count owed), never calendar weeks remaining.
 
 **Why SMS is closed:** since February 2025 all major US carriers block unregistered A2P
 traffic from 10-digit numbers outright — no filtering, no delay, simply undelivered. The
@@ -581,7 +592,7 @@ then Claude Code implements it. Connect at the design phase, not before.
 | D-28 | Messages are statements carrying derived state (last payment, weeks behind, amount owed), not bare labels | **SETTLED** |
 | D-29 | Equb is outbound-only. Inbound SMS ("READY" for will-call) recorded as a Nexo idea, not built here | **SETTLED** |
 | D-37 | Messaging: WhatsApp Business (Meta-approved, already wired) for per-member messages; Telegram for the weekly group broadcast; US SMS is closed — TCR rejection is carrier-level and follows every provider | **SETTLED** |
-| D-38 | `WINNER_ANNOUNCEMENT` states the finish **WEEK**, not the finish **DATE** — a deliberate divergence from 2.22, accepted with Meta's v1 approval in hand and pinned by test so it stayed a decision rather than becoming a bug. | **RESOLVED 13 Aug 2026** — winner_announcement_v2 carries the finish **DATE** ("continue until Sunday, October 18, 2026"), restoring 2.22 in full; the pinning test flipped to assert the date. The drawn-week slot was removed entirely, which also retires the current-week-fallback defect class the v1 template carried. |
+| D-38 | `WINNER_ANNOUNCEMENT` states the finish **WEEK**, not the finish **DATE** — a deliberate divergence from 2.22, accepted with Meta's v1 approval in hand and pinned by test so it stayed a decision rather than becoming a bug. | **RESOLVED 13 Aug 2026, retained in v3 (14 Aug)** — the winner announcement carries the finish **DATE** ("your weeks run until Sunday, October 18, 2026"), restoring 2.22 in full; v3 adds {{5}} = payments left (the count owed, not calendar weeks). The drawn-week slot stays removed, so the current-week-fallback defect class the v1 template carried stays retired. |
 | D-39 | Every approved template declares `requiredExtras`, and `deliver()` refuses at the **extras boundary** — before rendering — when a caller has not supplied them. Enforced at **runtime**, because `MessageExtras` fields are all optional. Making `extras` a discriminated union keyed on template would move this to compile time; it touches every call site and is its own decision, not something folded into a bug fix. | **SETTLED (runtime); compile-time enforcement OPEN** |
 | D-36 | Lucky numbers leave the wheel pool automatically when drawn or when the owner's window ends; the system must warn in advance if a window is closing undrawn | **SETTLED** |
 | D-33 | Tests accompany every change touching money, allocation, derived state, or integrity — unit tests plus behavioural verification against the live DB | **SETTLED** |
@@ -642,7 +653,7 @@ that clean up after themselves, plus import/repair/diagnostic tools and the stan
 | Audit log — paged, filtered, append-only by DB trigger | Done |
 | Design pass — IA, charts, motion, glass surfaces, portalled overlays | Substantially done |
 | WhatsApp login codes | **Working** |
-| WhatsApp statements | **Working** — the v2 six-template set (13 Aug 2026), member-relative wording, live send by ContentSid on sender +13016835755; cycle_closing_statement unchanged from 7 Aug. Twilio's acceptance is logged ACCEPTED; SENT only on a confirmed StatusCallback (needs a public `APP_BASE_URL`, so local sends stay ACCEPTED). The four superseded v1 templates stay registered in Twilio until the retire-after-deploy list in docs/WHATSAPP_TEMPLATES.md clears. |
+| WhatsApp statements | **Working** — behind/late/winner on the v3 set (14 Aug 2026, no-dash stupid-proof wording), payment confirmation/welcome/group announcement from v2 (13 Aug), cycle_closing_statement unchanged from 7 Aug; live send by ContentSid on sender +13016835755. Twilio's acceptance is logged ACCEPTED; SENT only on a confirmed StatusCallback (needs a public `APP_BASE_URL`, so local sends stay ACCEPTED). Every superseded v1/v2 template is deleted from Twilio (retirement list in docs/WHATSAPP_TEMPLATES.md — DONE). |
 | WHATSAPP_WELCOME | **ARMED** (13 Aug 2026, HX90da…) — approved, registered, live: a successful send writes `agreementRequiredAt` in the same transaction as its log row and gates the member's portal until they sign. The portal-address and PIN-truth refusals in lib/welcome-send.ts still fire before the network. |
 | Lockout notice over WhatsApp | **No approved template, deliberately** — a security message; Twilio Verify is its channel. Skips honestly. The `notifyOnLockout` setting still has nothing behind it: disable it in the UI, or build the Verify-based channel. |
 | Member agreement + signing gate | Done — per-member generated document, SHA-256 signature record, portal gated by welcome-send or by zero payments; organizer sees state on profile + directory |
@@ -823,9 +834,10 @@ Priority is low: the default PIN signs every member in directly.
 ### 6.2 WHATSAPP — RESOLVED 7–8 AUGUST 2026
 
 **Both halves now work.** Login codes go through Twilio Verify; statements go through
-Meta-approved Content templates, all category UTILITY — first the five of 7 August 2026,
-now the six-template member-relative v2 set of 13 August 2026 plus the unchanged closing
-statement (§2.28 has the live set; four v1 templates await retirement per §7).
+Meta-approved Content templates, all category UTILITY — five approved 7 August 2026, the
+member-relative v2 rework 13 August, and the no-dash stupid-proof v3 rework of the three
+notices 14 August (§2.28 has the live set; every superseded template is deleted from
+Twilio).
 
 **Why freeform could never have worked.** A freeform body requires the member to have
 messaged the business within 24 hours, and the account has **one inbound message in its
