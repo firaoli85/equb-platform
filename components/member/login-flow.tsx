@@ -290,29 +290,24 @@ export function LoginFlow() {
     setRecovering(false);
   }
 
-  /**
-   * Send a code down whichever channel this deployment actually has (2.28).
-   * SMS is preferred when configured — it is the channel members already
-   * know — and WhatsApp is the fallback.
-   */
-  function startCodeChannel(l: Lookup) {
-    if (l.smsAvailable) {
-      setChoice("sms");
-      void sendSms(l);
-      return;
-    }
-    setChoice("otp");
-    void sendOtp(l);
-  }
-
   // "Forgot your PIN?" — a code is the way in; once signed in, they are
   // offered a fresh PIN.
+  //
+  // STRAIGHT TO WHATSAPP, ALWAYS. This used to route through a helper that
+  // PREFERRED SMS whenever it was configured — under a button that says "Get
+  // a WhatsApp code". SMS is §6.1's parked channel: it fails locally with
+  // auth/invalid-app-credential and is unproven in production, so recovery
+  // rode the one channel known to be broken while promising the one known to
+  // work. WhatsApp is the sole primary recovery channel; SMS stays where it
+  // already lives — the general sign-in picker — labelled as maybe
+  // unavailable, and nothing routes to it implicitly.
   function startPinRecovery() {
     if (!lookup) return;
     setRecovering(true);
     setPin("");
     setPinError(null);
-    startCodeChannel(lookup);
+    setChoice("otp");
+    void sendOtp(lookup);
   }
 
   // ── PIN ─────────────────────────────────────────────────────────
@@ -768,7 +763,12 @@ export function LoginFlow() {
                   </svg>
                   <span className="flex-1 text-left">
                     <span className="block text-sm font-bold text-gray-900 dark:text-white">Text me a code</span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400">6-digit code by SMS</span>
+                    {/* HONEST ABOUT §6.1: the SMS channel is parked — it fails
+                        locally and is unproven in production. It stays on this
+                        picker rather than being deleted, and it says so. */}
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">
+                      6-digit code by SMS — may not be available yet
+                    </span>
                   </span>
                   <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

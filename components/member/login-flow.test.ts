@@ -118,3 +118,41 @@ describe("signing in is NOT a save — exempt, but still owed the reason", () =>
     expect(source.match(/role="alert"/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
   });
 });
+
+// RECOVERY IS WHATSAPP, FULL STOP (organizer ruling, Aug 2026 — found from a
+// live screenshot: "Forgot your PIN? Get a WhatsApp code" landed on the
+// Firebase SMS screen, which fails with auth/invalid-app-credential, §6.1).
+describe("forgot-PIN routes to WhatsApp directly — never the parked SMS channel", () => {
+  const recovery = source.slice(
+    source.indexOf("function startPinRecovery"),
+    source.indexOf("function submitPin"),
+  );
+
+  // FALSIFIABLE: restore the SMS-preferring helper and both halves fail.
+  it("the recovery handler sends the WhatsApp code itself, with no SMS branch", () => {
+    expect(recovery).toContain('setChoice("otp")');
+    expect(recovery).toContain("sendOtp(lookup)");
+    expect(recovery).not.toContain("sendSms");
+    expect(recovery).not.toContain("smsAvailable");
+    // The SMS-preferring helper is DELETED, not bypassed — a dead function
+    // that prefers a broken channel is one refactor from being called again.
+    expect(source).not.toContain("function startCodeChannel");
+  });
+
+  // The screen the member lands on is the one the button promised: the
+  // WhatsApp step's wording, not the text-message step's.
+  it("the button's promise and the destination agree", () => {
+    expect(source).toContain("Forgot your PIN? Get a WhatsApp code");
+    // choice "otp" renders the WhatsApp step (its heading text), and the SMS
+    // step's wording belongs to choice "sms" alone.
+    expect(source).toContain('"WhatsApp code"');
+    const smsStep = source.slice(source.indexOf('step === "sms"'));
+    expect(smsStep).toContain("Text-message code");
+    expect(recovery).not.toContain('setChoice("sms")');
+  });
+
+  it("SMS stays on the general picker, honestly labelled as maybe unavailable", () => {
+    expect(source).toContain("Text me a code");
+    expect(source).toContain("may not be available yet");
+  });
+});
