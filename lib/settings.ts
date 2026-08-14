@@ -24,7 +24,6 @@ export {
   settingChangeSummary,
   settingValueLabel,
   WHATSAPP_DISABLED_REASON,
-  WHATSAPP_STATEMENTS_BLOCKED_REASON,
   type SettingKey,
   type SettingValue,
 } from "./setting-defaults";

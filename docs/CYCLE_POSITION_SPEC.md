@@ -1,4 +1,8 @@
-# THE CYCLE POSITION — SPEC (queued, not yet built)
+# THE CYCLE POSITION — SPEC (built — `/admin/cycle/position`)
+
+**Built August 2026** and proven daily: `npm run check:position` recomputes 17 figures
+from the raw receipt rows and exits non-zero if any screen disagrees. This document
+stays as the spec the build answers to.
 
 Two specs the organizer gave by name, in order. They are one build: the second compares
 against the first, so the first must land before the second can be checked against it.
@@ -73,7 +77,7 @@ not a setting** — so he can look back at what he held in week 8 versus week 12
 
 This is the **only stored fact** in the whole feature. Everything else is derived (2.14).
 
-### Schema sketch (needs a migration — not yet written)
+### Schema sketch (shipped — `20260807050000_cash_readings`, `CashReading` in schema.prisma)
 
 ```prisma
 model CashReading {

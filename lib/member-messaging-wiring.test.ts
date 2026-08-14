@@ -55,6 +55,14 @@ let person: {
 };
 /** A recorded payout makes the winner announcement have something to say. */
 let drawnPayout: { draw: { week: { weekNumber: number } } } | null = null;
+/** The participation row `findUnique` serves — reset by beforeEach. */
+let sendStateRow: {
+  agreementRequiredAt: Date | null;
+  status: string;
+  cycle: { status: string };
+  person: { nameEnglishFirst: string };
+  _count: { payments: number };
+};
 
 const cycle = (status: Row["cycle"]["status"], closedAt: Date | null = null) => ({
   status,
@@ -80,13 +88,11 @@ vi.mock("@/lib/prisma", () => ({
         const allowed = args?.where?.cycle?.status?.in ?? ["DRAFT", "ACTIVE", "CLOSED"];
         return participations.filter((p) => allowed.includes(p.cycle.status));
       }),
-      // The welcome/paid read: never welcomed, has paid — the state every
-      // member in these fixtures is in, so the closing-statement and refusal
-      // assertions below are undisturbed by the welcome's own applicability.
-      findUnique: vi.fn(async () => ({
-        agreementRequiredAt: null,
-        _count: { payments: 1 },
-      })),
+      // ONE ROW SERVES BOTH SELECTS: getMemberMessaging reads the requirement
+      // and the paid count; resendWelcome reads the requirement, the statuses
+      // and the name. A superset, driven by the mutable fixture below so each
+      // test states the world it is about.
+      findUnique: vi.fn(async () => sendStateRow),
     },
     messageLog: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     payout: { findFirst: vi.fn(async () => drawnPayout) },
@@ -110,7 +116,6 @@ const FACTS = {
 };
 
 vi.mock("@/lib/messaging-engine", () => ({
-  STATEMENTS_DELIVERABLE: true,
   // Standing loads for ANY participation id — the point being that the action,
   // not the engine, decides which id to ask about.
   loadStandingFacts: vi.fn(async (id: string) => ({
@@ -153,6 +158,13 @@ beforeEach(() => {
   participations = [];
   person = { id: "person-1", nameEnglishFirst: "Tsion", phone: "+12405550187", noMessages: false };
   drawnPayout = null;
+  sendStateRow = {
+    agreementRequiredAt: null,
+    status: "ACTIVE",
+    cycle: { status: "ACTIVE" },
+    person: { nameEnglishFirst: "Tsion" },
+    _count: { payments: 1 },
+  };
 });
 
 // ————————————— The rule, before it reaches a database —————————————
@@ -449,5 +461,120 @@ describe("the surfaces that render this view", () => {
     // that guard unreachable rather than a silent dead end.
     expect(profile).toContain("if (!view.participationId) return;");
     expect(centre).toContain("if (!view.participationId) return;");
+  });
+});
+
+// ————————————— The deliberate re-send (organizer, Aug 2026) —————————————
+//
+// Its server precondition is the MIRROR IMAGE of the ordinary send's: refused
+// unless a welcome was already sent. Between them the two actions cover every
+// state and neither can be reached by mistaking it for the other.
+describe("resendWelcome — refused until it is the deliberate case", () => {
+  async function resend() {
+    vi.resetModules();
+    const { resendWelcome } = await import("@/app/actions/member-messaging");
+    return resendWelcome({ participationId: "p-live" });
+  }
+
+  it("refuses a member who was never welcomed, and points at the first send", async () => {
+    sendStateRow.agreementRequiredAt = null;
+    const result = await resend();
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.error).toContain("has not been welcomed yet");
+  });
+
+  it("refuses a stopped member, and a member of a finished cycle", async () => {
+    sendStateRow.agreementRequiredAt = new Date("2026-08-10T14:00:00Z");
+    sendStateRow.status = "CLOSED";
+    const stopped = await resend();
+    expect(stopped.ok).toBe(false);
+    if (stopped.ok) throw new Error("expected a refusal");
+    expect(stopped.error).toContain("no longer contributing");
+
+    sendStateRow.status = "ACTIVE";
+    sendStateRow.cycle = { status: "CLOSED" };
+    const closed = await resend();
+    expect(closed.ok).toBe(false);
+    if (closed.ok) throw new Error("expected a refusal");
+    expect(closed.error).toContain("no longer contributing");
+  });
+
+  it("sends WHATSAPP_WELCOME through the SAME engine path once welcomed", async () => {
+    sendStateRow.agreementRequiredAt = new Date("2026-08-10T14:00:00Z");
+    vi.resetModules();
+    const engine = await import("@/lib/messaging-engine");
+    const { resendWelcome } = await import("@/app/actions/member-messaging");
+    const result = await resendWelcome({ participationId: "p-live" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    // ACCEPTED passes through with no reason — the engine mock's answer.
+    expect(result.data.status).toBe("ACCEPTED");
+    expect(result.data.reason).toBeNull();
+    // The one path every gate lives in (hardship, opt-out, welcomeSendCheck,
+    // the requirement write) — never a second implementation.
+    expect(engine.sendStatement).toHaveBeenCalledWith({
+      participationId: "p-live",
+      key: "WHATSAPP_WELCOME",
+      trigger: "MANUAL",
+    });
+  });
+});
+
+// THE MIRROR IS ENFORCED ON BOTH SIDES (verifier finding, 13 Aug). The UI
+// stops OFFERING the welcome once sent — but a server action cannot lean on
+// what a screen offers (2.21): a stale tab or crafted request through the
+// ordinary path would re-gate a member as a routine send.
+describe("sendToMember refuses a second welcome — resendWelcome is the only door", () => {
+  it("refuses WHATSAPP_WELCOME for an already-welcomed member, naming the card", async () => {
+    sendStateRow.agreementRequiredAt = new Date("2026-08-10T14:00:00Z");
+    vi.resetModules();
+    const { sendToMember } = await import("@/app/actions/member-messaging");
+    const result = await sendToMember({ participationId: "p-live", key: "WHATSAPP_WELCOME" });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.error).toContain("already been sent");
+    expect(result.error).toContain("Send the welcome again");
+  });
+
+  it("still sends the FIRST welcome through the ordinary path", async () => {
+    sendStateRow.agreementRequiredAt = null;
+    vi.resetModules();
+    const engine = await import("@/lib/messaging-engine");
+    const { sendToMember } = await import("@/app/actions/member-messaging");
+    const result = await sendToMember({ participationId: "p-live", key: "WHATSAPP_WELCOME" });
+    expect(result.ok).toBe(true);
+    expect(engine.sendStatement).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "WHATSAPP_WELCOME" }),
+    );
+  });
+});
+
+// THE CARD NEVER OUTLIVES THE ACTION (verifier finding, 13 Aug): a stopped
+// member's participation keeps its agreementRequiredAt forever, and a card
+// keyed on the timestamp alone would render a button resendWelcome refuses
+// every time — an offer without the means to act on it.
+describe("welcomeSentAt reaches the view only while the re-send can succeed", () => {
+  const welcomedAt = new Date("2026-08-10T14:00:00Z");
+
+  it("carries the timestamp for a live member of the running cycle", async () => {
+    participations.push({ id: "p-live", status: "ACTIVE", cycle: cycle("ACTIVE") });
+    sendStateRow.agreementRequiredAt = welcomedAt;
+    const data = await load();
+    expect(data.welcomeSentAt).toBe(welcomedAt.toISOString());
+  });
+
+  it("is null for a stopped member and for a closed cycle, whatever the row says", async () => {
+    sendStateRow.agreementRequiredAt = welcomedAt;
+    participations.push({ id: "p-stopped", status: "CLOSED", cycle: cycle("ACTIVE") });
+    expect((await load()).welcomeSentAt).toBeNull();
+
+    participations.length = 0;
+    participations.push({
+      id: "p-2025",
+      status: "ACTIVE",
+      cycle: cycle("CLOSED", new Date("2026-09-28")),
+    });
+    expect((await load()).welcomeSentAt).toBeNull();
   });
 });

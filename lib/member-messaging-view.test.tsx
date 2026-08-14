@@ -46,7 +46,7 @@ const view = (over: Partial<MemberMessagingView> = {}): MemberMessagingView => (
       preview: null,
     },
   ],
-  blockedReason: null,
+  welcomeSentAt: null,
   history: [],
   historyTotal: 0,
   ...over,
@@ -118,5 +118,51 @@ describe("a member who is blocked outright", () => {
     expect(out).toContain("Nothing can be sent right now");
     expect(out).not.toContain("their number has not been drawn");
     expect(out).toContain("receiving no messages");
+  });
+});
+
+// THE DELIBERATE RE-SEND (organizer, Aug 2026): once a welcome has been sent
+// the ordinary list stops offering it, and re-issuing to ONE person must not
+// mean unticking twenty-six in the batch. Its own card, its own copy — the
+// consequence (a re-locked portal) is read where it is pressed.
+describe("the welcome re-send card", () => {
+  const WELCOME_PREVIEW =
+    "Hi Tsion, welcome to your Equb. You are saving $250 a week for 20 weeks…";
+  const welcomed = (over: Partial<MemberMessagingView> = {}) =>
+    view({
+      welcomeSentAt: "2026-08-10T14:00:00.000Z",
+      types: [
+        {
+          key: "WHATSAPP_WELCOME",
+          label: "Welcome message",
+          applicable: false,
+          reason: "Tsion was welcomed on Monday, August 10, 2026…",
+          note: null,
+          chasing: false,
+          preview: WELCOME_PREVIEW,
+        },
+      ],
+      ...over,
+    });
+
+  it("appears once a welcome was sent, and states the consequence before the button", () => {
+    const out = html(welcomed());
+    expect(out).toContain("Send the welcome again");
+    expect(out).toContain("Last sent August 10, 2026");
+    // The two halves of what a second send DOES, in the card's own words —
+    // signing the current terms, and a portal shut until they do.
+    expect(out).toContain("current terms");
+    expect(out).toContain("portal stays closed to them until they sign");
+    expect(out).toContain("There is no un-send");
+    // The exact text a second send carries, not a description of it (2.20).
+    expect(out).toContain(WELCOME_PREVIEW);
+    expect(out).toContain("Send the welcome to Tsion again");
+  });
+
+  // FALSIFIABLE: key the card off the types list instead — the shape that
+  // renders it for a NEVER-welcomed member, where the primary send already
+  // covers it and two buttons would gate someone twice.
+  it("is absent until a welcome has actually been sent", () => {
+    expect(html(view({ welcomeSentAt: null }))).not.toContain("Send the welcome again");
   });
 });

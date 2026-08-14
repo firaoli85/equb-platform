@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { APPROVED_TEMPLATE_KEYS, DRAFT_TEMPLATE_KEYS } from "@/lib/whatsapp-templates";
 
 // ONE STATUS PANEL, NOT FOUR STACKED ALERTS.
 //
@@ -12,20 +13,30 @@ import Link from "next/link";
 // RIGHT NOW, AND IF NOT, WHY. The answer leads; the reasoning is underneath it
 // in a disclosure the organizer opens when he wants it, and which stays open
 // on its own page state rather than resetting.
+//
+// EVERY SENTENCE HERE IS DERIVED, NONE IS A STORED CLAIM (5.15). This panel
+// once keyed off a hardcoded "no templates are registered" string that stayed
+// on screen for days after Meta approved five — a reason the organizer could
+// not check and could not clear. Now the template counts come from the
+// registry and the blocked state from the live switch, so the panel cannot
+// outlive the facts again.
 
 export function ChannelStatus({
-  blockedReason,
   whatsappEnabled,
   disabledReason,
   missingConfig,
 }: {
-  /** Why statements cannot leave, from the engine. Empty when they can. */
-  blockedReason: string;
   whatsappEnabled: boolean;
   disabledReason: string;
   missingConfig: readonly string[];
 }) {
-  const blocked = blockedReason.length > 0;
+  // The two things that genuinely stop a statement today: the organizer's own
+  // switch, and this machine having no Twilio credentials. The registry is not
+  // one of them — five templates are approved, and a key without one refuses
+  // itself at send time with its own reason.
+  const off = !whatsappEnabled;
+  const unconfigured = missingConfig.length > 0;
+  const blocked = off || unconfigured;
 
   return (
     <section
@@ -65,9 +76,11 @@ export function ChannelStatus({
                 : "text-emerald-900/90 dark:text-emerald-200/90"
             }`}
           >
-            {blocked
-              ? `${blockedReason} Nothing on this page is being sent — every statement is refused before it reaches Twilio, so nothing is attempted and nothing is billed. Preparing and previewing still work, and everything you prepare is shown exactly as it would go out.`
-              : "Prepared statements will be delivered. Nothing leaves until you press send (2.20)."}
+            {off
+              ? `${disabledReason} Turn it back on under Settings → Messaging and everything here sends again.`
+              : unconfigured
+                ? "Twilio is not configured on this machine — the details are under the disclosure below. Preparing and previewing still work."
+                : `${APPROVED_TEMPLATE_KEYS.length} Meta-approved templates carry them. Nothing leaves until you press send (2.20).`}
           </p>
         </div>
       </div>
@@ -94,29 +107,26 @@ export function ChannelStatus({
           <p className="text-pretty">
             <strong className="font-semibold">The 24-hour window (2.28).</strong> Meta delivers a
             freeform WhatsApp message only within 24 hours of the member&apos;s own last reply to
-            the Equb sender. Outside that window Meta requires a pre-approved template. Once Meta
-            approves one, record its name or SID against the matching wording below so this
-            message type maps to it.
+            the Equb sender. Outside that window Meta requires a pre-approved template — which is
+            why every statement here goes out as one. {APPROVED_TEMPLATE_KEYS.length} are approved
+            and mapped
+            {DRAFT_TEMPLATE_KEYS.length > 0
+              ? `; ${DRAFT_TEMPLATE_KEYS.length} more (the welcome) is written and awaiting submission to Meta.`
+              : "."}{" "}
+            A type whose template is ever revoked refuses itself at send time with its own reason.
           </p>
           <p className="text-pretty">
-            <strong className="font-semibold">Login codes are unaffected.</strong> They go through
-            Twilio Verify as a pre-approved template, which needs no window. This is not a setting,
-            and turning WhatsApp on does not change it.
+            <strong className="font-semibold">Login codes</strong> go through Twilio Verify as a
+            pre-approved template, which needs no window. The channel switch on{" "}
+            <Link
+              href="/admin/settings/messaging"
+              className="font-semibold underline underline-offset-2 hover:text-indigo-700 dark:hover:text-indigo-300"
+            >
+              Settings → Messaging
+            </Link>{" "}
+            controls the whole channel — codes and statements together.
           </p>
-          {!whatsappEnabled && (
-            <p className="text-pretty">
-              <strong className="font-semibold">The channel switch is off.</strong> {disabledReason}{" "}
-              That switch controls WhatsApp <em>login codes</em>, which do work. It lives on{" "}
-              <Link
-                href="/admin/settings/messaging"
-                className="font-semibold underline underline-offset-2 hover:text-indigo-700 dark:hover:text-indigo-300"
-              >
-                Settings → Messaging
-              </Link>
-              .
-            </p>
-          )}
-          {whatsappEnabled && missingConfig.length > 0 && (
+          {whatsappEnabled && unconfigured && (
             <p className="text-pretty text-red-800 dark:text-red-300">
               <strong className="font-semibold">Not configured on this machine</strong> — missing{" "}
               <code className="rounded bg-black/5 px-1 py-0.5 font-mono dark:bg-white/10">

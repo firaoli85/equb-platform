@@ -2,11 +2,29 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { sendToMember, type MemberMessagingView } from "@/app/actions/member-messaging";
+import {
+  resendWelcome,
+  sendToMember,
+  type MemberMessagingView,
+} from "@/app/actions/member-messaging";
 import { Card, CardHeader, EmptyState, Pill } from "@/components/ui/primitives";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { TruncationNotice } from "@/components/ui/pager";
 import { CAPS, truncationNotice } from "@/lib/paging";
+
+// The re-send's slot key in the shared save state. Not a MessageKey on
+// purpose: the ordinary rows map over view.types, so this can never collide
+// with — or accidentally render as — one of them.
+const RESEND_WELCOME = "RESEND_WELCOME";
+
+/** "on August 10, 2026" — the requirement moment, in the organizer's clock. */
+function welcomedOn(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 // SEND ONE MESSAGE TO ONE MEMBER, FROM THEIR OWN PAGE.
 //
@@ -71,7 +89,14 @@ export function MemberMessaging({
     if (!view.participationId) return;
     setSave({ key, state: { kind: "saving" } });
     try {
-      const outcome = await sendToMember({ participationId: view.participationId, key });
+      // The re-send is its own ACTION, not a flag on the ordinary one — its
+      // server precondition is the mirror image (refused UNLESS already
+      // welcomed), so neither path can be reached by mistaking it for the
+      // other. It shares this helper because the four beats are identical.
+      const outcome =
+        key === RESEND_WELCOME
+          ? await resendWelcome({ participationId: view.participationId })
+          : await sendToMember({ participationId: view.participationId, key });
       if (!outcome.ok) {
         setSave({ key, state: { kind: "err", message: `Not sent — ${outcome.error}` } });
         return;
@@ -127,24 +152,14 @@ export function MemberMessaging({
 
   const applicable = view.types.filter((t) => t.applicable);
   const notApplicable = view.types.filter((t) => !t.applicable);
+  // The action renders the welcome's preview even once it stops being
+  // applicable, precisely so the re-send card can show the text a second
+  // send would carry.
+  const welcomePreview =
+    view.types.find((t) => t.key === "WHATSAPP_WELCOME")?.preview ?? null;
 
   return (
     <div className="space-y-4">
-      {/* Stated once, at the top. Repeating it on every button would make the
-          buttons unreadable and would still not be clearer. */}
-      {view.blockedReason && (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 dark:border-amber-900 dark:bg-amber-950/25">
-          <p className="text-sm font-bold text-amber-900 dark:text-amber-200">
-            Statements cannot send yet
-          </p>
-          <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-200/90 text-pretty">
-            {view.blockedReason} Everything below is ready and will work the moment Meta approves
-            the templates — pressing send now records an honest skip rather than a delivery.
-            Login codes are unaffected.
-          </p>
-        </div>
-      )}
-
       {/* THIS CARD USED TO SWALLOW THE WHOLE SCREEN THE DAY IT WAS NEEDED MOST.
           `participationId` was the id of an ACTIVE participation in an ACTIVE
           cycle, so the moment the cycle closed it went null and this replaced
@@ -261,6 +276,58 @@ export function MemberMessaging({
                   </li>
                 ))}
               </ul>
+            </Card>
+          )}
+
+          {/* SEND THE WELCOME AGAIN — the deliberate second send, its own card.
+              Appears only once a welcome HAS been sent, which is exactly when
+              the ordinary list stops offering it: between them the two
+              controls cover every state and never overlap. Separate from the
+              primary send because its consequence is different in kind — the
+              others deliver a statement; this one re-locks a portal — and a
+              consequence like that must be read where it is pressed, not
+              inferred from a button that looks like all the rest. */}
+          {view.welcomeSentAt !== null && (
+            <Card>
+              <CardHeader
+                title="Send the welcome again"
+                sub={`Last sent ${welcomedOn(view.welcomeSentAt)}.`}
+              />
+              <div className="border-t border-gray-100 px-5 py-4 dark:border-gray-800/60">
+                <p className="text-sm text-gray-700 dark:text-gray-300 text-pretty">
+                  Sending it again asks {personName} to read and sign their agreement on the{" "}
+                  <span className="font-semibold">current terms</span> — their earlier signature
+                  stops counting, and the portal stays closed to them until they sign. Use it
+                  after changing their commitment, so what they signed matches what they are in.
+                  There is no un-send.
+                </p>
+                {/* The exact text a second send carries — reading it IS the
+                    decision (2.20), same as every card above. */}
+                {welcomePreview !== null && (
+                  <p className="mt-3 whitespace-pre-wrap rounded-lg bg-gray-50 px-3 py-2.5 text-sm text-gray-800 dark:bg-white/5 dark:text-gray-200">
+                    {welcomePreview}
+                  </p>
+                )}
+                <SaveButton
+                  className="mt-3"
+                  state={
+                    save !== null && save.key === RESEND_WELCOME ? save.state : { kind: "idle" }
+                  }
+                  onSave={() => void send(RESEND_WELCOME)}
+                  onStateSettled={() =>
+                    setSave((current) =>
+                      current !== null &&
+                      current.key === RESEND_WELCOME &&
+                      current.state.kind === "ok"
+                        ? null
+                        : current,
+                    )
+                  }
+                  label={`Send the welcome to ${personName} again`}
+                  savingLabel="Sending…"
+                  disabled={sendingKey !== null && sendingKey !== RESEND_WELCOME}
+                />
+              </div>
             </Card>
           )}
         </>

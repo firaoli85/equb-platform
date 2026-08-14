@@ -1,11 +1,17 @@
 # WhatsApp is template-only
 
-**Status as of 2026-08-08.** Login codes work. Statements do not, and no setting
-can change that.
+**Status as of 2026-08-13. Login codes work. Statements work — as Meta-approved
+templates, which is the only way they ever could.** Five templates were
+approved on 7 August 2026 (see
+[WHATSAPP_TEMPLATES.md](WHATSAPP_TEMPLATES.md) for bodies and ContentSids);
+four deliver to real members today, and the fifth — the closing statement —
+has its first real use when the cycle closes. The sender is **+13016835755**
+("Equb", WABA 1018506704190290, business verified); the approved templates
+carried over to it.
 
-This is not a configuration problem, an outage, or a bug in our code. It is
-Meta's rule about what a business may send unprompted, and the platform is on
-the wrong side of it for statements.
+What follows is the rule that shaped this, and the history that proved it —
+kept because the rule still governs every future template, and because the
+wrong conclusion was drawn from the history once already.
 
 ---
 
@@ -17,29 +23,37 @@ the only thing that may be delivered is a **pre-approved template**.
 
 Two consequences, and they pull in opposite directions:
 
-| | Transport | Needs a window? | Works today |
+| | Transport | Needs a window? | Works |
 |---|---|---|---|
 | **Login codes** | Twilio **Verify** — Twilio owns the content and sends its own approved authentication template | **No** | **Yes** |
-| **Statements, reminders, payment confirmations** | Twilio **Messages API**, raw `Body`, no `ContentSid` — freeform | **Yes** | **No** |
+| **Statements, reminders, payment confirmations** | Twilio **Messages API**, `ContentSid` + `ContentVariables` — a Meta-approved template per message type | **No** | **Yes** |
+| **Freeform prose** (`Body`, no template) | Twilio Messages API | **Yes** | **Never in practice** — see below |
 
-## Why the window is never open
+## Why the freeform window is never open
 
-The Twilio account has **one inbound WhatsApp message in its entire history**:
+The account has **one inbound WhatsApp message in its entire history**:
 
 ```
 19 May 2026 01:36 UTC   from whatsapp:+16465894168
 ```
 
 That is the only time a member has ever messaged the sender. So there is no
-open window for anyone, and there is no reason to expect one to open — members
-receive from the Equb, they do not reply to it.
+open window for anyone, and no reason to expect one — members receive from
+the Equb, they do not reply to it. This is why "statements will work" was
+never a configuration question: the only route was templates, and the day the
+templates were approved, statements worked.
 
-Waiting does not help. Asking members to reply first would open a window per
-member for 24 hours, which is not a system anyone should depend on.
+**This rule still binds every FUTURE message type.** A new kind of statement
+is not a feature branch — it is a template authored in the Content Template
+Builder, submitted to Meta, approved, and only then wired by recording its
+ContentSid in [lib/whatsapp-templates.ts](../lib/whatsapp-templates.ts) (the
+registry is the source of truth; the drift guards hold the database rows to
+it). A type with no ContentSid refuses itself at send time — WHATSAPP_WELCOME
+does exactly this until its submission is approved.
 
-## What was actually observed
+## What was actually observed, and the wrong conclusion it produced
 
-Worth recording, because it produced a wrong conclusion once already.
+Worth keeping, because it cost a real diagnosis once.
 
 - **2026-08-06 03:03 → 2026-08-07 01:53 UTC** — 15 consecutive sends failed
   with Twilio **63112**, *"Meta disabled the WhatsApp Business Account"*.
@@ -47,60 +61,37 @@ Worth recording, because it produced a wrong conclusion once already.
 - That was read as permanent. **It was not.** It cleared on its own.
 - **2026-08-08 00:22 and 01:03 UTC** — two login codes **delivered**; the
   Verify attempt log shows the first as `converted`, meaning the code was
-  entered and accepted. The sender `+15559620327` ("Equb") reports:
-
-  ```
-  status ONLINE   quality HIGH   limit 100K customers/24hr
-  ```
+  entered and accepted.
 
 **Treat 63112 as an outage to wait out, not a verdict.** It says nothing about
 the template rule — the two failures look similar from the outside and are
 completely unrelated.
 
-One send in that window failed with **21656**, *"The ContentVariables Parameter
-is invalid"*. That is a malformed template variable on a single call, not a
-channel problem — and a preview of the failure mode below.
+One send in that window failed with **21656**, *"The ContentVariables
+Parameter is invalid"* — a malformed template variable on a single call, not a
+channel problem. That failure mode is now closed structurally:
+`buildContentVariables` refuses an incomplete or dashed variable set before
+anything reaches Twilio, so the alternative — Twilio substituting the approval
+SAMPLES and a member reading "Sara" and "$7,000.00" as fact — cannot happen.
 
-## How this is enforced in code
+## How the send path enforces all of this
 
-Deliberately **not** as a setting, because there is no value of a setting that
-makes a freeform send work, and a toggle invites someone to switch it on and
-get silent non-delivery back.
+- `lib/whatsapp.ts` — `sendWhatsAppMessage()` posts `ContentSid` +
+  `ContentVariables`. There is no freeform `Body` path, and there never was
+  one to remove: the function was a refusing stub until the send path was
+  written against templates from the start.
+- `lib/messaging-engine.ts` — `deliver()` refuses a key with no approved
+  template, per key, with a reason derived from the registry. There is
+  deliberately **no global "statements blocked" flag**: one existed, its
+  reason string outlived its cause (§5.15), and it was deleted rather than
+  parked.
+- **Delivery is never assumed.** Twilio's 201/"queued" is logged `ACCEPTED`;
+  `SENT` is written only when a StatusCallback confirms delivery — which
+  requires a public `APP_BASE_URL`, so local sends stay honestly ACCEPTED.
+- `whatsappEnabled` is the organizer's switch for the **whole channel** —
+  codes and statements together.
 
-- `lib/whatsapp.ts` — `sendWhatsAppMessage()` returns
-  `WHATSAPP_STATEMENTS_BLOCKED_REASON` unconditionally, before credentials and
-  before the network. The old `POST {API_BASE}/Accounts/{sid}/Messages.json`
-  with `To` / `From` / `Body` was removed rather than left unreachable.
-- `lib/messaging-engine.ts` — `STATEMENTS_DELIVERABLE = false`, checked
-  **before** the `whatsappEnabled` switch, so turning WhatsApp on restores
-  login codes only and never starts statement sends. It returns `SKIPPED`, not
-  `FAILED`: nothing was attempted, so no `MessageLog` failure row is written and
-  the real log stays readable.
-- `lib/setting-defaults.ts` — `whatsappEnabled` now governs **login codes
-  only**. Its reason string no longer blames Meta.
-
-`sendWhatsAppMessage` keeps its signature so every caller and test still checks
-against the same contract. Only the answer changed, and it is always the same
-answer.
-
-## What making statements deliverable actually requires
-
-Not a switch. Per message shape:
-
-1. **Author each template** in the Twilio Content Template Builder — one per
-   `MessageKey`, with numbered variables (`{{1}}`, `{{2}}`, …) in place of the
-   values our renderer substitutes today.
-2. **Submit each for Meta approval** and wait. Approval is per template, and
-   changing an approved template's text means re-approval.
-3. **Record the returned `ContentSid`** on the matching `MessageTemplate` row —
-   `metaTemplateSid` exists for exactly this.
-4. **Change the send** from `Body` to `ContentSid` + `ContentVariables`, where
-   `ContentVariables` is a JSON object keyed by variable number. Getting this
-   shape wrong is the `21656` above.
-5. **Flip `STATEMENTS_DELIVERABLE`** in `lib/messaging-engine.ts`. The
-   render-and-log path below it is unchanged and becomes correct again as-is.
-
-### The constraint this puts on message design
+### The constraint templates put on message design
 
 Templates are approved **text with holes**, not free prose. Ground truth 2.21
 says a message is a *statement carrying derived state* — that survives
@@ -110,12 +101,15 @@ situation. Any message whose wording changes shape conditionally needs to
 become either several templates or one template with more variables.
 
 Meta also categorises templates (utility / marketing / authentication) and
-prices them differently. Payment confirmations and reminders are utility.
+prices them differently. All five approved templates are UTILITY — see
+[WHATSAPP_TEMPLATES.md](WHATSAPP_TEMPLATES.md) for what would silently
+re-categorise one as marketing.
 
 ## What is safe to rely on today
 
-- **WhatsApp login codes** — working, no window needed, no template work
-  required on our side. Twilio Verify owns that template.
+- **WhatsApp login codes** — working through Twilio Verify, no window needed.
+- **WhatsApp statements** — working through the five approved templates,
+  addressed by ContentSid.
 - **PIN** — unaffected by any of this, and still the default door.
-- **SMS** — a separate matter entirely; see the Firebase notes. Failing locally
-  with `auth/invalid-app-credential` and parked.
+- **SMS** — a separate matter entirely; see the Firebase notes. Failing
+  locally with `auth/invalid-app-credential` and parked.

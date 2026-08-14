@@ -1,19 +1,18 @@
 // WhatsApp delivery via Twilio — ported from the previous build's WORKING,
 // Meta-approved integration (equb-app: src/lib/twilio.ts + the
-// whatsapp-send/whatsapp-verify routes). Sender +15559620327, display name
+// whatsapp-send/whatsapp-verify routes). Sender +13016835755, display name
 // "Equb", approved via Healthway Transport LLC (2.28).
 //
-// Two Twilio products, two jobs — they are not interchangeable, and TODAY ONLY
-// ONE OF THEM WORKS:
+// Two Twilio products, two jobs — they are not interchangeable, and BOTH WORK
+// as of 7 August 2026:
 //   • Verify API   — login codes ONLY. Twilio owns the content and sends a
-//     pre-approved template, which needs no service window. WORKING.
-//   • Messages API — arbitrary statement bodies (2.21). Freeform, so Meta
-//     accepts it only inside a 24-hour window that is open for nobody on this
-//     account. BLOCKED at the transport, unconditionally. See
-//     sendWhatsAppMessage and docs/WHATSAPP_TEMPLATE_ONLY.md.
-//
-// That asymmetry is the whole design of this file: one switch used to gate
-// both, which meant a dead statement path took login codes down with it.
+//     pre-approved template, which needs no service window.
+//   • Messages API — statements, each carried by a Meta-approved Content
+//     template, addressed by ContentSid + ContentVariables. A template needs
+//     no service window either, which is the whole reason statements became
+//     possible: freeform never could be — the 24-hour window is open for
+//     nobody on this account — and there is deliberately NO freeform `Body`
+//     path here. See docs/WHATSAPP_TEMPLATE_ONLY.md.
 //
 // Credentials come from env ONLY, and every function returns a result
 // object — honest errors, never a throw that reaches the UI.
@@ -22,20 +21,15 @@
 //   TWILIO_ACCOUNT_SID        account
 //   TWILIO_AUTH_TOKEN         account secret
 //   TWILIO_VERIFY_SERVICE_SID Verify service (login codes)
-//   TWILIO_WHATSAPP_FROM      the approved sender, e.g. +15559620327
+//   TWILIO_WHATSAPP_FROM      the approved sender, e.g. +13016835755
 //
-// Meta constraint to design around (2.28): a freeform body is deliverable
-// only inside the 24-hour service window after the member's last inbound
-// message. Outside it, Meta requires a pre-approved template — each
-// MessageTemplate row carries metaTemplateSid so the mapping is recorded
-// once approval lands; until then Twilio returns an honest error (63016)
-// which lands in MessageLog instead of being swallowed.
+// Meta constraint that shaped all of this (2.28): a freeform body is
+// deliverable only inside the 24-hour service window after the member's last
+// inbound message, so every statement is a pre-approved template. The
+// registry (lib/whatsapp-templates.ts) pairs each key with its ContentSid; a
+// key with none refuses itself in the engine before anything reaches Twilio.
 
-import {
-  getSetting,
-  WHATSAPP_DISABLED_REASON,
-  WHATSAPP_STATEMENTS_BLOCKED_REASON,
-} from "./settings";
+import { getSetting, WHATSAPP_DISABLED_REASON } from "./settings";
 import { classifyTwilioStatus, type DeliveryClass } from "./twilio-status";
 
 const VERIFY_BASE = "https://verify.twilio.com/v2/Services";
@@ -281,8 +275,9 @@ export type WhatsAppSendResult =
  * no caller can bypass it. Returns the refusal to report, or null when sending
  * is allowed.
  *
- * This gates LOGIN CODES only. Statements have their own, harder gate — see
- * sendWhatsAppMessage.
+ * This gates the WHOLE CHANNEL — login codes and statements alike; it is the
+ * first check inside sendWhatsAppMessage too. The old "statements have their
+ * own, harder gate" was the pre-approval block, deleted 7 Aug 2026.
  */
 async function channelRefusal(): Promise<string | null> {
   return (await getSetting("whatsappEnabled")) ? null : WHATSAPP_DISABLED_REASON;
@@ -494,21 +489,17 @@ export async function sendWhatsAppVerification(
   toE164Phone: string,
 ): Promise<
   | { ok: true }
-  // The code and permanence are carried through rather than flattened away.
-  // This is now the ONLY WhatsApp path that reaches Twilio, so it is the only
-  // one that can observe an outage like 63112 — throwing that detail away
-  // would leave the working channel less diagnosable than the dead one.
+  // The code and permanence are carried through rather than flattened away —
+  // a 63112 on this path is the fastest sign the whole WABA is having an
+  // outage, and throwing that detail away would leave login codes less
+  // diagnosable than statements.
   | { ok: false; error: string; code?: number | null; permanent?: boolean }
 > {
   // Login codes ride the same WhatsApp Business Account as statements, so a
-  // 63112 outage does take them down too — verified on this account, where
-  // Verify's own template sends failed alongside the freeform ones.
-  //
-  // But that is an OUTAGE, not the statement problem. Statements are blocked
-  // by the 24-hour window rule, which never applies to a Verify template. So
-  // this path is gated on the organizer's switch alone, and no longer shares a
-  // gate with sendWhatsAppMessage — that sharing is what kept a working login
-  // channel switched off.
+  // 63112 outage takes both down — verified on this account in the 6–7 Aug
+  // window, where Verify's own template sends failed alongside the rest.
+  // Both paths ask the same channelRefusal(); the organizer's switch is the
+  // one gate the whole channel shares.
   const disabled = await channelRefusal();
   if (disabled) return { ok: false, error: disabled };
   const creds = credentials();

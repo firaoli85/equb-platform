@@ -254,11 +254,16 @@ export const DRAFT_TEMPLATES: Record<DraftTemplateKey, DraftTemplate> = {
     // NEXT visit, not their first, and "the first time you sign in" describes
     // a moment that is already years behind them. The PIN sentence already
     // covers both cases the same way; this one now does too.
+    // THE LINK IS LAST (organizer, 13 Aug 2026): the sign-in address is the
+    // one thing the member acts on, and in a WhatsApp message the last line
+    // is the tappable one. {{6}} is still FOLLOWED by fixed text — Meta
+    // refuses a body that ends on a variable, and the organizer named that
+    // rule in the same breath as the request.
     draftBody:
       "Hi {{1}}, welcome to your Equb. You are saving {{2}} a week for {{3}}, from {{4}} to {{5}}. " +
-      "Sign in at {{6}} with your phone number. If you have set your own PIN use it, otherwise your " +
-      "PIN is the last 4 digits of your phone number. When you sign in you will be asked to read " +
-      "and sign your agreement.",
+      "When you sign in you will be asked to read and sign your agreement. Sign in at {{6}} with " +
+      "your phone number — if you have set your own PIN use it, otherwise your PIN is the last 4 " +
+      "digits of your phone number.",
     variableOrder: ["name", "weeklyAmount", "weeksCommitted", "startDate", "finishDate", "portalUrl"],
   }),
 };

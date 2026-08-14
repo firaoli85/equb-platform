@@ -543,11 +543,7 @@ function SendFromHere({
         Send {personName} a statement
       </h3>
 
-      {view.blockedReason ? (
-        <p role="status" className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          {view.blockedReason}
-        </p>
-      ) : applicable.length === 0 ? (
+      {applicable.length === 0 ? (
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
           Nothing applies to {personName} right now — every type below says why.
         </p>

@@ -1,10 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import {
-  SETTING_DEFAULTS,
-  WHATSAPP_DISABLED_REASON,
-  WHATSAPP_STATEMENTS_BLOCKED_REASON,
-} from "./settings";
+import { SETTING_DEFAULTS, WHATSAPP_DISABLED_REASON } from "./settings";
 
 // The channel switch as a contract: its default, its wording, where it is
 // enforced, and — the one that protects the money — that a dead channel can
@@ -31,13 +27,19 @@ describe("the whatsappEnabled setting", () => {
     expect(WHATSAPP_DISABLED_REASON).not.toContain("Business Account");
   });
 
-  // Both strings changed with Build 2, and both had to. The switch now stops
-  // statements as well as codes; and the statement block is no longer the
-  // normal state, so it must not say "today" about a condition that has ended.
-  it("states the STATEMENT block separately, in the agreed words", () => {
-    expect(WHATSAPP_STATEMENTS_BLOCKED_REASON).toBe(
-      "Statements need Meta-approved templates, and none are registered. Login codes are unaffected.",
-    );
+  // THE BLOCKED-REASON STRING IS GONE, AND MUST STAY GONE (§5.15, earned
+  // twice). "Statements need Meta-approved templates, and none are
+  // registered" was true until 7 August 2026 and false after it, and the
+  // constant kept saying it while eleven statements delivered. A type with no
+  // approved template refuses ITSELF from the registry now — there is no
+  // stored sentence left to outlive its cause, and re-adding one fails here.
+  it("the statements-blocked reason string is deleted, not parked", () => {
+    for (const file of ["lib/setting-defaults.ts", "lib/messaging-engine.ts"]) {
+      const source = readFileSync(file, "utf8");
+      expect(source, `${file} re-declares the retired flag or reason`).not.toMatch(
+        /export const (WHATSAPP_STATEMENTS_BLOCKED_REASON|STATEMENTS_DELIVERABLE)/,
+      );
+    }
   });
 });
 
@@ -113,14 +115,22 @@ describe("every WhatsApp send is gated", () => {
     expect(gate).toBeLessThan(deliver.indexOf("messageLog.create"));
   });
 
-  it("the engine stops statements BEFORE the switch — turning WhatsApp on must not start them", () => {
+  // WHAT REPLACED THE GLOBAL BLOCK: the registry, per key. A type with no
+  // ContentSid — LOCKOUT_NOTICE forever, WHATSAPP_WELCOME until Meta approves
+  // it — refuses ITSELF inside deliver(), before anything renders toward
+  // Twilio. Without this check a keyless send would carry Twilio's approval
+  // SAMPLES and deliver invented figures to real members, which is the exact
+  // failure the deleted flag existed to prevent — now enforced structurally
+  // instead of by a constant somebody must remember to flip.
+  it("a type with no approved template refuses itself, before anything is sent", () => {
     const engine = readFileSync("lib/messaging-engine.ts", "utf8");
     const deliver = engine.slice(engine.indexOf("async function deliver("));
-    const blocked = deliver.indexOf("STATEMENTS_DELIVERABLE");
-    const gate = deliver.indexOf(`getSetting("whatsappEnabled")`);
-    expect(blocked).toBeGreaterThan(-1);
-    expect(blocked, "the template block must be checked first").toBeLessThan(gate);
-    expect(blocked).toBeLessThan(deliver.indexOf("messageLog.create"));
+    const registryGate = deliver.indexOf("isApprovedTemplateKey(");
+    expect(registryGate).toBeGreaterThan(-1);
+    // Checked before the Twilio call leaves and before the log row claims
+    // anything happened.
+    expect(registryGate).toBeLessThan(deliver.indexOf("sendWhatsAppMessage("));
+    expect(registryGate).toBeLessThan(deliver.indexOf("messageLog.create"));
   });
 });
 

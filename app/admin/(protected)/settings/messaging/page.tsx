@@ -34,9 +34,10 @@ export default async function MessagingSettingsPage() {
               WhatsApp Business — approved
             </dt>
             <dd className="mt-0.5 max-w-prose text-gray-700 dark:text-gray-300">
-              Approved by Meta, sender +1 555 962 0327, display name &ldquo;Equb&rdquo;, wired
-              through Twilio. This is the per-member channel: confirmations, behind notices,
-              winner announcements, closing statements.
+              Business verified with Meta, sender +1 301 683 5755, display name &ldquo;Equb&rdquo;,
+              wired through Twilio. This is the per-member channel: confirmations, behind
+              notices, winner announcements, closing statements — each carried by a
+              Meta-approved template.
             </dd>
           </div>
           <div>

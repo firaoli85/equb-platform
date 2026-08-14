@@ -256,3 +256,164 @@ describe("the Prisma-client scripts the working practice promises", () => {
     expect(practice).toMatch(/Restart\s+the\s+dev\s+server\s+before\s+testing/i);
   });
 });
+
+// ————————————————————————————————————————————————————————————————————————
+// THE RETIRED SENDER CANNOT RESURFACE AS THE ACTIVE ONE (Build 1, item 1).
+//
+// The 555-prefix number was the first approval and is dead: Twilio's finding
+// was that a 555-prefix number is unsupported for WhatsApp Business. The live
+// sender is +13016835755. The old number cost a real debugging session — the
+// organizer read it off the settings screen while diagnosing delivery — so it
+// may survive ONLY as labelled history, never as a current fact.
+// ————————————————————————————————————————————————————————————————————————
+
+describe("GUARD — the retired WhatsApp sender is history, never the active sender", () => {
+  // Constructed, not written literally — this file is inside its own scan, and
+  // a guard that names the forbidden string verbatim reports itself forever.
+  const OLD = ["1555", "962", "0327"].join("");
+
+  it("no source file names the retired sender at all", () => {
+    const offenders: string[] = [];
+    for (const dir of CODE_DIRS) {
+      for (const file of filesUnder(dir, [".ts", ".tsx", ".mts", ".sql", ".prisma"])) {
+        if (readFileSync(file, "utf8").includes(OLD)) {
+          offenders.push(relative(ROOT, file).replaceAll("\\", "/"));
+        }
+      }
+    }
+    expect(
+      offenders,
+      `these files name the retired sender ${OLD} — the live sender is +13016835755, ` +
+        `and history belongs in EQUB_GROUND_TRUTH.md §2.28's sender-history note`,
+    ).toEqual([]);
+  });
+
+  it("in the documents it appears only inside the labelled sender-history note", () => {
+    const docs = [
+      ...filesUnder("docs", [".md"]),
+      join(ROOT, "EQUB_GROUND_TRUTH.md"),
+      join(ROOT, "README.md"),
+    ].filter(existsSync);
+    const offenders: string[] = [];
+    for (const file of docs) {
+      const text = readFileSync(file, "utf8");
+      for (const [i, line] of text.split("\n").entries()) {
+        if (!line.includes(OLD)) continue;
+        // The ONE legitimate home: the §2.28 blockquote that opens with the
+        // words "Sender history". A history line is a "> "-quoted line inside
+        // that note, so the test walks back to the start of the enclosing
+        // blockquote and reads its first line.
+        const lines = text.split("\n");
+        let start = i;
+        while (start > 0 && lines[start - 1].startsWith(">")) start--;
+        const labelled =
+          line.startsWith(">") && /sender history/i.test(lines[start] ?? "");
+        if (!labelled) {
+          offenders.push(
+            `${relative(ROOT, file).replaceAll("\\", "/")}:${i + 1} → ${line.trim().slice(0, 90)}`,
+          );
+        }
+      }
+    }
+    expect(
+      offenders,
+      "the retired sender appears outside the labelled history note — a reader " +
+        "will take it for the active number",
+    ).toEqual([]);
+  });
+
+  // NON-VACUITY (5.2): the history note itself exists and is caught as
+  // legitimate — if it were deleted, the first test would be scanning for a
+  // number that appears nowhere and this guard would prove nothing.
+  it("the labelled history note is really there, and really carries the number", () => {
+    expect(GROUND_TRUTH).toMatch(/\*\*Sender history\*\*/);
+    const note = GROUND_TRUTH.slice(GROUND_TRUTH.indexOf("**Sender history**"));
+    expect(note.slice(0, 600)).toContain(OLD);
+    expect(note.slice(0, 600)).toContain("13016835755");
+    expect(note.slice(0, 600)).toMatch(/555-prefix.*unsupported/);
+  });
+});
+
+// ————————————————————————————————————————————————————————————————————————
+// A DOCUMENT MAY NOT CALL AN APPROVED TEMPLATE UNAVAILABLE.
+//
+// The organizer's request, verbatim: "a document claiming a template is
+// unavailable fails when that template has a registered ContentSid." This is
+// §5.15 turned into a build failure: WHATSAPP_TEMPLATE_ONLY.md spent six days
+// saying "statements do not work" after Meta approved five templates, and the
+// day WHATSAPP_WELCOME's SID lands in the registry, any sentence still calling
+// it unsubmitted fails here — nobody has to remember the docs exist.
+// ————————————————————————————————————————————————————————————————————————
+
+describe("GUARD — no document calls a registered template unavailable", () => {
+  // The claims that would make a reader believe a template cannot send. Tight
+  // on purpose (5.3): "approved 7 August" and "the wording that was submitted"
+  // must keep passing — HISTORY is allowed, a present-tense denial is not.
+  const DENIALS = [
+    /not (?:yet )?submitted/i,
+    /remains? unsubmitted/i,
+    /awaiting submission/i,
+    /has no (?:approved )?(?:template|ContentSid)/i,
+    /no approved template exists/i,
+    /cannot (?:be )?sen[dt]/i,
+    /is not registered/i,
+    /none are registered/i,
+  ];
+
+  const DOCS = [
+    ...filesUnder("docs", [".md"]),
+    join(ROOT, "EQUB_GROUND_TRUTH.md"),
+  ].filter(existsSync);
+
+  it("every key with a registered ContentSid is free of unavailability claims", async () => {
+    const { APPROVED_TEMPLATE_KEYS } = await import("./whatsapp-templates");
+    const offenders: string[] = [];
+    for (const file of DOCS) {
+      const lines = readFileSync(file, "utf8").split("\n");
+      // A TWO-LINE WINDOW, because markdown wraps: "WHATSAPP_WELCOME is
+      // drafted below and\n**not yet submitted**" is one sentence on two
+      // lines, and a line-by-line scan reads it as neither. EXCEPT table
+      // rows: a "|" row is complete on its own line, and joining two rows
+      // pairs one template's name with its NEIGHBOUR'S status.
+      for (let i = 0; i < lines.length; i++) {
+        const window = lines[i].trimStart().startsWith("|")
+          ? lines[i]
+          : `${lines[i]}\n${lines[i + 1] ?? ""}`;
+        for (const key of APPROVED_TEMPLATE_KEYS) {
+          if (!window.includes(key)) continue;
+          if (DENIALS.some((d) => d.test(window))) {
+            offenders.push(
+              `${relative(ROOT, file).replaceAll("\\", "/")}:${i + 1} → ${window.replace(/\n/g, " ⏎ ").trim().slice(0, 100)}`,
+            );
+          }
+        }
+      }
+    }
+    expect(
+      offenders,
+      "a doc line claims a template with a registered ContentSid is unavailable — " +
+        "the registry (lib/whatsapp-templates.ts) says otherwise, and the registry is the truth",
+    ).toEqual([]);
+  });
+
+  // The teeth for the day the welcome is registered: these lines legitimately
+  // describe WHATSAPP_WELCOME as unsubmitted TODAY, because it has no SID. The
+  // moment it gains one, `isApprovedTemplateKey` starts answering true and the
+  // scan above starts covering every one of those sentences.
+  it("the scan reaches WHATSAPP_WELCOME's pending lines the day its SID registers", async () => {
+    const { isApprovedTemplateKey } = await import("./whatsapp-templates");
+    // Today: not approved, so its "not submitted" lines are legitimate.
+    // This assertion EXPIRES BY DESIGN — when the welcome registers, flip the
+    // expectation and delete the doc lines the first test then names.
+    expect(isApprovedTemplateKey("WHATSAPP_WELCOME")).toBe(false);
+    // And the denial patterns really match the doc's own pending wording, so
+    // the future failure is real rather than hoped for (5.2). Same two-line
+    // window as the scan itself — the doc wraps the sentence.
+    const lines = readFileSync(join(ROOT, "docs", "WHATSAPP_TEMPLATES.md"), "utf8").split("\n");
+    const pending = lines.some((l, i) => {
+      const window = `${l}\n${lines[i + 1] ?? ""}`;
+      return window.includes("WHATSAPP_WELCOME") && DENIALS.some((d) => d.test(window));
+    });
+    expect(pending, "no pending line found — the future guard would never fire").toBe(true);
+  });
+});

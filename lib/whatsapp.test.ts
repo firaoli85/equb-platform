@@ -10,17 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The reason strings are IMPORTED, never re-typed. They were duplicated here
 // as literals and went stale the moment the real one changed — a test that
 // asserts its own copy of a string proves nothing about what ships.
-import {
-  WHATSAPP_DISABLED_REASON,
-  WHATSAPP_STATEMENTS_BLOCKED_REASON,
-} from "./setting-defaults";
+import { WHATSAPP_DISABLED_REASON } from "./setting-defaults";
 
 let enabled = true;
 
 vi.mock("./settings", () => ({
   getSetting: vi.fn(async (key: string) => (key === "whatsappEnabled" ? enabled : true)),
   WHATSAPP_DISABLED_REASON,
-  WHATSAPP_STATEMENTS_BLOCKED_REASON,
 }));
 
 async function freshModule() {
@@ -41,7 +37,7 @@ beforeEach(() => {
   vi.stubEnv("TWILIO_ACCOUNT_SID", "ACtest");
   vi.stubEnv("TWILIO_AUTH_TOKEN", "token");
   vi.stubEnv("TWILIO_VERIFY_SERVICE_SID", "VAtest");
-  vi.stubEnv("TWILIO_WHATSAPP_FROM", "+15559620327");
+  vi.stubEnv("TWILIO_WHATSAPP_FROM", "+13016835755");
 });
 
 afterEach(() => {
@@ -50,12 +46,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// THE TWO PATHS ARE NO LONGER ONE CHANNEL. Login codes go through Twilio
-// Verify as a pre-approved template, which needs no 24-hour service window and
-// works today. Statements post a freeform Body, which Meta accepts only inside
-// a window this account has open for nobody (one inbound message ever, 19 May
-// 2026). Sharing a single switch is what kept a WORKING login channel switched
-// off, so these are now tested as the separate things they are.
+// TWO PATHS, ONE CHANNEL, BOTH WORKING (7 Aug 2026). Login codes go through
+// Twilio Verify as a pre-approved template; statements go through the
+// Messages API as Meta-approved Content templates by ContentSid — never a
+// freeform Body, because the 24-hour window is open for nobody on this
+// account (one inbound message ever, 19 May 2026). Tested separately because
+// they are different transports with different failure modes.
 const SEND = {
   toE164Phone: "+12405550187",
   contentSid: "HX87cb0a437434f7f9bba329958c74544a",
@@ -88,7 +84,7 @@ describe("statements now SEND — but only as an approved template", () => {
     const sent = new URLSearchParams(calls[0].body);
     expect(calls[0].url).toContain("api.twilio.com");
     expect(sent.get("To")).toBe("whatsapp:+12405550187");
-    expect(sent.get("From")).toBe("whatsapp:+15559620327");
+    expect(sent.get("From")).toBe("whatsapp:+13016835755");
     expect(sent.get("ContentSid")).toBe(SEND.contentSid);
     expect(JSON.parse(sent.get("ContentVariables")!)).toEqual(SEND.contentVariables);
     // A Body would make it freeform, which Meta refuses outside the window.

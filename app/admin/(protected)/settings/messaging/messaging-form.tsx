@@ -113,7 +113,7 @@ export function MessagingForm({
       setSave({
         kind: "ok",
         message:
-          `Saved — sign-in codes are ${whatsappEnabled ? "ON" : "OFF"}, lockout notices are ${notifyOnLockout ? "ON" : "OFF"}` +
+          `Saved — sign-in codes are ${whatsappEnabled ? "ON" : "OFF"}` +
           (portalChanged
             ? portalUrl.trim() === ""
               ? ", and there is no member sign-in address — the welcome will not send."
@@ -167,18 +167,27 @@ export function MessagingForm({
             )
           }
         />
+        {/* DISABLED, NOT REMOVED (reconciliation Build 1, item 5). The switch
+            promised a send that cannot happen: LOCKOUT_NOTICE deliberately has
+            no Meta-approved template — it is a security message, and
+            submitting one risks the whole sender — so with this ON the
+            organizer believed locked-out members were being told, and nobody
+            was. The setting row stays (the value survives; nothing forgets
+            his choice) but the control refuses until the notice has a real
+            channel, which is Twilio Verify. Disabled rather than hidden:
+            UI_STANDARDS 6b, a control that vanishes leaves him hunting for
+            something he used yesterday. */}
         <SettingSwitch
           label="Notice when a member locks themselves out"
           checked={notifyOnLockout}
-          onChange={(v) => {
-            setNotifyOnLockout(v);
-            touched();
-          }}
+          disabled
+          onChange={() => {}}
           description={
             <>
-              Sends the Lockout notice template — calm, it-unlocks-by-itself wording, editable
-              under Messages. The hardship &ldquo;no messages&rdquo; flag on a person still wins.
-              Every send lands in the message log, successful or not.
+              Cannot send yet, so it cannot be switched on: the Lockout notice has no
+              Meta-approved template — deliberately, because it is a security message and
+              submitting one risks the whole sender. Its intended channel is Twilio Verify,
+              which is not built. Until then a lockout sends nothing, whatever this switch says.
             </>
           }
         />

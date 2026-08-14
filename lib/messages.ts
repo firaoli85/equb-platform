@@ -628,12 +628,12 @@ export function applicableTypes(state: {
         // So the state is shown instead of hidden (organizer ruling): not
         // welcomed is an action, welcomed is a record with a date on it.
         //
-        // WHAT THIS COSTS, stated because it is a real trade. Re-sending was
-        // the whole re-sign mechanism — change someone from 10 weeks to 12,
-        // send again, they sign the new terms. That route is now closed from
-        // this panel. It is still open from the batch (“Send to many”), which
-        // resolves the same type against the same rule and is where a
-        // deliberate re-issue belongs anyway.
+        // RE-SENDING STAYS POSSIBLE, DELIBERATELY. It is the whole re-sign
+        // mechanism — change someone from 10 weeks to 12, send again, they
+        // sign the new terms — and it lives in its own control: the “Send the
+        // welcome again” card the profile renders directly below this list
+        // (resendWelcome, whose server precondition is the mirror image of
+        // this one), and the batch for re-issuing to many at once.
         //
         // The two things that genuinely stop a FIRST send — no sign-in
         // address, and the phone-digit PIN switched off — are PLATFORM
@@ -656,8 +656,8 @@ export function applicableTypes(state: {
           applicable: false,
           reason:
             `${state.name} was welcomed on ${formatDateLongUTC(state.welcomeSentAt)}, so their ` +
-            `signature is already required. Sending it again would ask for a new signature ` +
-            `against current terms — do that from “Send to many” if the terms have changed.`,
+            `signature is already required. To ask again — after changing their terms — use ` +
+            `“Send the welcome again” below, which says what a second send does before you press it.`,
           note: null,
           chasing: false,
         };

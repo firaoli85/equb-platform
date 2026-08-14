@@ -20,7 +20,6 @@ import {
   loadStandingFacts,
   loadTemplates,
   sendStatement,
-  STATEMENTS_DELIVERABLE,
   type SendOutcome,
 } from "@/lib/messaging-engine";
 import {
@@ -30,11 +29,7 @@ import {
 } from "@/lib/whatsapp-templates";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
-import {
-  getSetting,
-  WHATSAPP_DISABLED_REASON,
-  WHATSAPP_STATEMENTS_BLOCKED_REASON,
-} from "@/lib/settings";
+import { getSetting, WHATSAPP_DISABLED_REASON } from "@/lib/settings";
 import { portalUrlValue, welcomeSendCheck } from "@/lib/welcome-send";
 import { calculatePayout } from "@/lib/wheel";
 import { whatsAppMissingConfig } from "@/lib/whatsapp";
@@ -144,17 +139,6 @@ export async function getMessagingOverview(input?: { logPage?: number }) {
         // rather than letting the organizer discover it in the log.
         whatsappEnabled: await getSetting("whatsappEnabled"),
         whatsappDisabledReason: WHATSAPP_DISABLED_REASON,
-        // Why STATEMENTS specifically cannot send — separate from the switch
-        // above, and not something the organizer can turn on.
-        //
-        // EMPTY WHEN THEY CAN. This was passed unconditionally, which was
-        // correct only while statements were blocked outright. With the five
-        // templates approved it would have left /admin/messages permanently
-        // announcing that statements cannot send while they were in fact
-        // sending — the panel keys off this string being non-empty.
-        whatsappStatementsBlockedReason: STATEMENTS_DELIVERABLE
-          ? ""
-          : WHATSAPP_STATEMENTS_BLOCKED_REASON,
         templates: MESSAGE_KEYS.map((key) => {
           const row = templates.get(key)!;
           return {

@@ -135,3 +135,92 @@ describe("GUARD — members read dates and their own counts, never cycle weeks",
     expect(all).toMatch(/formatDate(Long)?UTC/);
   });
 });
+
+// ————————————————————————————————————————————————————————————————————————
+// THE SAME RULE OVER THE MESSAGE TEMPLATES (organizer, 13 Aug 2026 — raised
+// three times before it reached here).
+//
+// A WhatsApp message IS a member surface — the most member-facing one the
+// platform has — and the winner announcement still read "your Equb payout for
+// week 1 is $9,800. Your contributions continue to week 23" at a member who
+// joined for ten weeks and has never seen either number.
+//
+// TWO DIFFERENT OBLIGATIONS, so two different scans:
+//
+//   DRAFT bodies (unsubmitted) and the REWORK drafts in the doc are OURS to
+//   fix today, so a cycle-week frame in one fails the build outright.
+//
+//   APPROVED bodies are Meta's exact wording — the drift guard holds them
+//   verbatim, week numbers included, until a reworked body's ContentSid lands.
+//   Scanning them would fail the build on text nobody may change (5.3), so
+//   they are exempt HERE and the rework's whole purpose is recorded in
+//   docs/WHATSAPP_TEMPLATES.md.
+// ————————————————————————————————————————————————————————————————————————
+
+import { DRAFT_TEMPLATES } from "./whatsapp-templates";
+
+describe("GUARD — message templates speak the member's frame too", () => {
+  // A {{n}} slot whose neighbouring fixed text frames it as a cycle week
+  // number: "week {{2}}", "week(s) {{3}}", "to week {{4}}", "as of week {{2}}".
+  // "weekly payments" and "a week for {{3}}" survive — the word "week" is not
+  // banned, POSITIONING a number slot as a week coordinate is.
+  const CYCLE_WEEK_SLOT = /week(?:\(s\))?\s+\{\{\d+\}\}/i;
+
+  // The cycle-frame placeholders, by name. `week`, `finishWeek`,
+  // `lastPaymentWeek` and `lateWeeks` all render CYCLE week numbers;
+  // `weeksCovered` renders a cycle-week RANGE ("11-13"). A draft that lists
+  // one in its variableOrder is putting a cycle coordinate into a member's
+  // message whatever the fixed text around it says.
+  const CYCLE_FRAME_PLACEHOLDERS = ["week", "finishWeek", "lastPaymentWeek", "lateWeeks", "weeksCovered"];
+
+  it("no DRAFT body positions a variable as a cycle week number", () => {
+    for (const [key, draft] of Object.entries(DRAFT_TEMPLATES)) {
+      expect(draft.draftBody, `${key} frames a slot as a cycle week`).not.toMatch(CYCLE_WEEK_SLOT);
+    }
+  });
+
+  it("no DRAFT carries a cycle-frame placeholder", () => {
+    for (const [key, draft] of Object.entries(DRAFT_TEMPLATES)) {
+      for (const name of CYCLE_FRAME_PLACEHOLDERS) {
+        expect(
+          draft.variableOrder as readonly string[],
+          `${key} renders {${name}} — a cycle coordinate — to a member`,
+        ).not.toContain(name);
+      }
+    }
+  });
+
+  // The four reworked bodies in the doc are what the organizer submits to
+  // Meta. They are fenced "Draft" blocks; every one must already obey the
+  // rule, because approval freezes the wording — a week number approved is a
+  // week number members read for the life of the template.
+  it("every REWORK draft block in the doc is free of cycle week slots", () => {
+    const doc = readFileSync(join(ROOT, "docs", "WHATSAPP_TEMPLATES.md"), "utf8");
+    const rework = doc.slice(doc.indexOf("# REWORK"));
+    expect(rework.length, "the REWORK section is gone from the doc").toBeGreaterThan(100);
+    // Fenced blocks introduced by "**Draft" — the submission wording. "Now"
+    // blocks quote the live (Meta-frozen) bodies and are deliberately exempt.
+    // The marker may wrap over lines (the winner's carries a dated note), so
+    // the scan allows a short run of any text between marker and fence.
+    const drafts = [...rework.matchAll(/\*\*Draft[\s\S]{0,220}?```\n([\s\S]*?)```/g)].map(
+      (m) => m[1],
+    );
+    expect(drafts.length, "no Draft blocks found — the scan is scanning nothing").toBeGreaterThanOrEqual(4);
+    for (const body of drafts) {
+      expect(body, `a submission draft still frames a slot as a cycle week:\n${body}`).not.toMatch(
+        CYCLE_WEEK_SLOT,
+      );
+    }
+  });
+
+  // NON-VACUITY: the exact reported sentence, in template form, is caught by
+  // both halves.
+  it("the template scan catches the winner announcement that shipped", () => {
+    expect("Hi {{1}}, your Equb payout for week {{2}} is {{3}}.").toMatch(CYCLE_WEEK_SLOT);
+    expect("your Equb week(s) {{2}} closed without a payment").toMatch(CYCLE_WEEK_SLOT);
+    // …and does NOT fire on the member-frame shapes that must survive:
+    expect("You are saving {{2}} a week for {{3}}").not.toMatch(CYCLE_WEEK_SLOT);
+    expect("you are {{4}} weekly payments behind").not.toMatch(CYCLE_WEEK_SLOT);
+    expect("your last payment was for the week of {{3}}").not.toMatch(CYCLE_WEEK_SLOT);
+  });
+});

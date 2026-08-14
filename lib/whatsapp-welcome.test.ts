@@ -494,8 +494,9 @@ describe("the welcome is offered per member, and never pre-ticked in a batch", (
     const t = welcome(sent);
     expect(t.applicable).toBe(false);
     expect(t.reason).toContain("August 10, 2026");
-    // …and the way to deliberately re-issue is named, not closed silently.
-    expect(t.reason).toContain("Send to many");
+    // …and the way to deliberately re-issue is named, not closed silently —
+    // the card this same panel renders directly below the list.
+    expect(t.reason).toContain("Send the welcome again");
     expect(t.note).toBeNull();
   });
 

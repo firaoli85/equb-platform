@@ -15,7 +15,15 @@ placement decisions obvious later.
 
 ## 1. PAST CYCLES — IN ACCOUNT, NEVER ON THE HOME SCREEN
 
-**Lands with:** member portal.
+**✅ LANDED (Aug 2026).** `/me/history` renders every past cycle from the
+archive (`getMyPastCycles`), linked from Account and from the calm
+"You're not in the current cycle" page at `app/me/page.tsx` — the design
+below is the record of what was built. The dependency notes underneath are
+kept as HISTORY: all three were true when queued and are closed now
+(`getMyPastCycles` reads `CycleArchive` for the member; the not-in-cycle
+page is designed, not accidental). The residue that stays open is narrower —
+`getGroupProgress` / `getMemberCollections` still require an ACTIVE cycle
+(STATE_CONSISTENCY_AUDIT §9 #17's tail).
 
 Members keep access to their completed cycles **permanently**.
 
@@ -69,7 +77,9 @@ current one.
 
 ## 2. SHOW-PASSWORD TOGGLE ON ADMIN LOGIN
 
-**Lands with:** the design pass over `/admin/login`.
+**✅ LANDED (7 Aug 2026)** — `app/admin/login/admin-login-form.tsx`: a real
+button, Show/Hide labels, `aria-pressed`, live region; recorded in
+ADMIN_IA §10. The requirement below stands as what was built.
 
 An eye toggle on the password field at `/admin/login`, so the organizer can see what he
 typed.
@@ -90,13 +100,15 @@ Follows `docs/UI_STANDARDS.md` for hit target and control sizing.
 
 **Lands with:** the pass immediately after payment entry (#4). Organizer's ordering.
 
-`components/ui/save-button.tsx` now owns all four beats of UI_STANDARDS rule 6, so the
-confirmation renders inside the same element as the button and cannot be placed wrongly.
-It is currently used by the control that exposed the defect (the participation Save) and
-by the seven confirmed defects the audit found.
+**✅ LANDED (12 Aug 2026, commit 5950258)** — the sweep is done:
+SaveButton/SaveFeedback is imported by ~40 production files across the admin
+and member surfaces, every screen in UI_STANDARDS' 6b table included, and
+`lib/save-feedback.test.ts` guards the pattern. Ground truth §4.1 records it
+platform-wide. The reasoning below stays because it is why the pattern must
+not regress.
 
-Every other mutating screen still rolls its own: a `busy` flag here, a `saved` string
-there, an `Alert` at the top of the page somewhere else.
+`components/ui/save-button.tsx` owns all four beats of UI_STANDARDS rule 6, so the
+confirmation renders inside the same element as the button and cannot be placed wrongly.
 
 > **Why (organizer):** *"A control that behaves differently on different screens is its
 > own defect."*

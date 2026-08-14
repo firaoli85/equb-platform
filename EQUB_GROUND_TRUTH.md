@@ -482,9 +482,16 @@ already working.
 
 | Channel | Status | Use |
 |---|---|---|
-| **WhatsApp Business** | **APPROVED by Meta** (via Healthway Transport LLC), sender +15559620327, display name "Equb", wired through Twilio Verify | **Per-member messages** — payment confirmations, behind notices, winner announcements, closing statements |
+| **WhatsApp Business** | **LIVE** — business verified with Meta, sender **+13016835755** (WABA 1018506704190290), display name "Equb". Login codes through Twilio Verify; statements through five Meta-approved Content templates (7 Aug 2026), carried over to this sender. | **Per-member messages** — payment confirmations, behind notices, late notices, winner announcements, closing statements |
 | **Telegram group** | Working | Weekly group broadcast only — one bot, one chat, one message to everyone |
 | **US SMS** | **REJECTED — do not pursue** | none |
+
+> **Sender history** — kept so the old number does not resurface as "settled":
+> the first approval was on +15559620327 via Healthway Transport LLC. Twilio
+> support's finding was that a **555-prefix number is unsupported for WhatsApp
+> Business** — that is why it changed, not a preference. The platform moved to
+> +13016835755 under its own business-verified WABA (12 Aug 2026), and the five
+> approved templates carried over. Test fixtures use the live number.
 
 **Why SMS is closed:** since February 2025 all major US carriers block unregistered A2P
 traffic from 10-digit numbers outright — no filtering, no delay, simply undelivered. The
@@ -596,13 +603,16 @@ researched options and tradeoffs, then is recorded here as SETTLED.
 **Stack:** Next.js 16, React 19, Prisma 7, Supabase Postgres (hosted free tier), Tailwind,
 Vercel (pending). Firebase Auth for SMS login. Twilio for WhatsApp.
 
-**Live data:** Cycle 1 2026 — 20 weeks from 17 May 2026, 27 members, 31 lucky numbers,
-past week 12. Imported from the old app and **verified to the cent**: $197,175 received,
-$124,950 paid out at import. Figures move as payments are recorded.
+**Live data:** Cycle 1 2026 — 20-week plan from 17 May 2026, 23 weeks generated —
+mid-cycle joiners running their own windows, as designed (§2.7, §2.22). 29 people,
+27 participations (25 ACTIVE), 30 lucky numbers, at week 13. Imported from the old app
+and **verified to the cent**: $197,175 received, $124,950 paid out at import. Figures
+move as payments are recorded.
 
-**Test suite:** ~1180 tests across 66 files, `tsc --noEmit` clean, `next build` compiles,
-8 behavioural verification scripts run against the live database and clean up after
-themselves.
+**Test suite:** ~2200 tests across 113 files, `tsc --noEmit` clean, `next build` compiles,
+34 scripts under `scripts/` (20 `verify-*` behavioural checks against the live database
+that clean up after themselves, plus import/repair/diagnostic tools and the standing
+`npm run check:position`).
 
 ### 4.1 WHAT IS BUILT
 
@@ -625,8 +635,15 @@ themselves.
 | Audit log — paged, filtered, append-only by DB trigger | Done |
 | Design pass — IA, charts, motion, glass surfaces, portalled overlays | Substantially done |
 | WhatsApp login codes | **Working** |
-| WhatsApp statements | **Working** — five Meta-approved templates (7 Aug 2026), live send by ContentSid |
-| Lockout notice over WhatsApp | **No approved template** — skips silently. The `notifyOnLockout` setting has nothing behind it: it must be disabled in the UI, or given a Twilio Verify-based channel. |
+| WhatsApp statements | **Working** — five Meta-approved templates (7 Aug 2026), live send by ContentSid on sender +13016835755. Four deliver today; CYCLE_CLOSING_STATEMENT is approved and wired, first real use at cycle close. Twilio's acceptance is logged ACCEPTED; SENT only on a confirmed StatusCallback (needs a public `APP_BASE_URL`, so local sends stay ACCEPTED). |
+| WHATSAPP_WELCOME | **Drafted, not submitted** — no ContentSid, refuses itself at send time. Submitting it and registering the SID is what arms the agreement gate. |
+| Lockout notice over WhatsApp | **No approved template, deliberately** — a security message; Twilio Verify is its channel. Skips honestly. The `notifyOnLockout` setting still has nothing behind it: disable it in the UI, or build the Verify-based channel. |
+| Member agreement + signing gate | Done — per-member generated document, SHA-256 signature record, portal gated by welcome-send or by zero payments; organizer sees state on profile + directory |
+| Message centre | Done — member list + conversation view, send within, search/filter/date, paginated |
+| Manual LATE override | Done — stored with timestamp + note, reversible, payment clears it, deferral outranks it (DOMAIN_RULES rule 5) |
+| Mid-cycle participation close | Done — `ParticipationBreak`, gaps are holes not cutoffs (rule 17) |
+| Payment entry | Done — one route through PaymentEntry: grid as preview, tick-to-compute, oldest-first allocation unchanged (rule 4) |
+| Save feedback | Done — `SaveButton` renders confirmation at the control platform-wide (2.10, UI_STANDARDS 6) |
 | SMS login | **Failing locally — parked** |
 
 ### 4.2 THE STATE-CONSISTENCY AUDIT
@@ -636,7 +653,7 @@ findings**. Status:
 
 - **Money findings: 7 of 7 closed.** Every defect that lost or misreported money.
 - **High findings: 19 of 19 closed.**
-- **Medium: 13 of 26 closed**, 12 deferred with a one-line cost each in
+- **Medium: 14 of 26 closed**, 12 deferred with a one-line cost each in
   `docs/STATE_CONSISTENCY_AUDIT.md` §9.1.
 
 The money findings are worth remembering, because they show the shape of the risk:
@@ -805,7 +822,15 @@ entire history (19 May 2026)** — so no window is open for anyone, ever. A temp
 window, which is the whole reason this became possible.
 
 The earlier "Meta disabled the WABA" reading was wrong — 63112 was a temporary block that
-cleared. The sender is ONLINE, quality HIGH.
+cleared. The platform has since moved to the business-verified sender **+13016835755**
+(WABA 1018506704190290, display name "Equb"); the five approved templates carried over.
+
+**Acceptance is not delivery, and the log now says which is which.** Twilio answers a
+send with 201/"queued" — that is logged **ACCEPTED**. **SENT** is written only when a
+StatusCallback confirms delivery, and Twilio can only call the webhook when a public
+`APP_BASE_URL` is set — so on a dev machine every send stays honestly ACCEPTED. Set
+`APP_BASE_URL` at deploy, and run `scripts/reconcile-message-status.mts` to true up any
+rows written before the distinction existed.
 
 **What the work actually was.** `sendWhatsAppMessage` was a **refusing stub** — it returned
 a permanent failure and never called Twilio at all. So this was *writing* the send path,
@@ -825,6 +850,13 @@ security message; Meta's UTILITY category covers transactional account activity,
 submitting "your account is locked" invites a rejection that risks the whole sender.
 Twilio Verify is its channel. Until then it renders and goes nowhere — see §4.1.
 
+**`WHATSAPP_WELCOME` is the OTHER template-less key, and its absence is temporary, not a
+decision.** Drafted (`DRAFT_TEMPLATES`, deliberately without a `contentSid` field so the
+send path cannot reach it by mistake), refused at send time with its own
+queued-behind-a-submission sentence. Submitting it and recording its ContentSid is what
+arms the agreement gate — until then a welcome send skips and gates nobody, which is
+honest: the agreement is owed by a member who was TOLD.
+
 **Meta rule that reshaped every template:** a body may not begin or end with a variable.
 All originals opened with `{name},` and would have been rejected. Names *are* allowed in
 UTILITY; only the position was wrong.
@@ -841,7 +873,7 @@ written against defects that actually occurred. **The organizer runs it.**
 
 - **Week 6** holds only Hana (#19) at $4,900 — her real partner needs adding via
   Collections → "Add a winner to this week".
-- **Slot 23** is empty wheel clutter — delete on Wheel Setup or ignore.
+- ~~**Slot 23** is empty wheel clutter~~ — deleted; the pool holds 30 numbers.
 - **12 medium audit findings** deferred, listed with costs in
   `docs/STATE_CONSISTENCY_AUDIT.md` §9.1. `closeCycle` irreversibility is the one worth
   doing before 27 September.
@@ -855,13 +887,17 @@ written against defects that actually occurred. **The organizer runs it.**
 
 ## 7. WHAT IS NEXT
 
-1. **Run `docs/MANUAL_QA_CHECKLIST.md`** — the organizer's eyes, in short sittings.
-2. **Deploy** — Vercel, environment variables, the production domain into Firebase
-   authorized domains, the keep-alive scheduler for the idle gap, CI gating typecheck and
-   tests.
-3. **Parallel run** — record payments in both systems for the remaining weeks and compare.
+1. **Submit `WHATSAPP_WELCOME` to Meta** (wording in `docs/WHATSAPP_TEMPLATES.md`) and
+   register its ContentSid — this is what arms the agreement gate. The four reworked
+   statement bodies switch over the same way, each when its new SID lands in the registry.
+2. **Run `docs/MANUAL_QA_CHECKLIST.md`** — the organizer's eyes, in short sittings.
+3. **Deploy** — Vercel, environment variables (including a public `APP_BASE_URL`, so
+   Twilio's StatusCallback can confirm deliveries and ACCEPTED rows can become SENT), the
+   production domain into Firebase authorized domains, the keep-alive scheduler for the
+   idle gap, CI gating typecheck and tests.
+4. **Parallel run** — record payments in both systems for the remaining weeks and compare.
    The old app stays live for members until this proves out.
-4. **Cycle close on 27 September**, then Cycle 2 on the new platform.
+5. **Cycle close on 27 September**, then Cycle 2 on the new platform.
 
 ---
 

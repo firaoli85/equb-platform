@@ -187,7 +187,12 @@ case: the screen renders success over a refusal.
 failure *inside the button label* ("Could not switch — try again"); `components/admin/week-winner-editor.tsx:215`
 puts a `role="alert"` slot in the editor block, two lines from the control it serves.
 
-**Known violations, from the audit — real outstanding work, not a disclaimer:**
+**Known violations, from the audit — ✅ ALL CLOSED (12 Aug 2026, commit 5950258).**
+Every control below now renders its feedback at the control through
+SaveButton/SaveFeedback, and `add-member-wizard.tsx` checks the
+`recordCarryDecision` result it used to discard. The table stays as the
+record of what the audit found and `lib/save-feedback.test.ts` +
+`lib/refusal-placement.test.ts` are what keep it closed:
 
 | Severity | Control | File |
 |---|---|---|

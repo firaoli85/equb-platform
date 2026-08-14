@@ -24,11 +24,7 @@ import type { Prisma } from "./generated/prisma/client";
 import { calculateFinishWeek, currentWeekNumber } from "./money";
 import { toE164 } from "./phone";
 import { prisma } from "./prisma";
-import {
-  getSetting,
-  WHATSAPP_DISABLED_REASON,
-  WHATSAPP_STATEMENTS_BLOCKED_REASON,
-} from "./settings";
+import { getSetting, WHATSAPP_DISABLED_REASON } from "./settings";
 
 import { computeStanding, pinnedMapFromEvents, type Standing } from "./standing";
 import { sendWhatsAppMessage } from "./whatsapp";
@@ -43,29 +39,20 @@ import {
 } from "./whatsapp-templates";
 import { portalUrlValue, welcomeSendCheck } from "./welcome-send";
 
-/**
- * Can a STATEMENT reach a member over WhatsApp? YES, as of this build.
- *
- * Meta approved five Content templates on 7 August 2026 under category UTILITY
- * (lib/whatsapp-templates.ts). A template needs no 24-hour service window,
- * which is the whole reason this can now be true: freeform never could be,
- * because this account has ONE inbound message in its entire history
- * (19 May 2026), so no window is open for anyone, ever.
- *
- * THIS IS NOT THE ORGANIZER'S CONTROL. It records whether approved templates
- * exist to carry a statement at all. The live control is
- * getSetting("whatsappEnabled") — checked immediately after this in deliver()
- * — which the organizer owns from /admin/settings and can turn off at any
- * moment, and which turning off stops every statement instantly.
- *
- * Set back to false if the templates are ever revoked or the registry emptied:
- * with no ContentSid, a send would carry Twilio's approval SAMPLES and deliver
- * invented figures to real members.
- *
- * Annotated `: boolean` deliberately — without it TypeScript narrows the
- * literal and marks the downstream path unreachable.
- */
-export const STATEMENTS_DELIVERABLE: boolean = true;
+// STATEMENTS DELIVER. Meta approved five Content templates on 7 August 2026
+// under category UTILITY (lib/whatsapp-templates.ts); a template needs no
+// 24-hour service window, which is why freeform never worked and these do.
+//
+// THERE IS DELIBERATELY NO GLOBAL "CAN STATEMENTS SEND" FLAG. One existed
+// (`STATEMENTS_DELIVERABLE`) and it earned §5.15 twice: first its reason
+// string outlived the blocked state, then the flag itself sat hardcoded true
+// with an unreachable branch under it — a kill switch nobody owned, wired to
+// nothing anyone could check. The two real protections both survive it:
+//   the organizer's control  — getSetting("whatsappEnabled"), in deliver();
+//   the registry             — isApprovedTemplateKey() refuses PER KEY, so a
+//                              revoked template stops ITSELF, and an emptied
+//                              registry stops everything, with the honest
+//                              reason and without a constant to remember.
 
 /**
  * Make sure every message type has its editable row (idempotent — the
@@ -246,17 +233,9 @@ async function deliver(input: {
   });
   if (!decision.send) return { status: "SKIPPED", reason: decision.reason };
 
-  // Whether statements can be delivered at all. Checked before the switch
-  // because it is not the same question: the switch is the organizer's choice
-  // about the channel, this is whether Meta-approved templates exist to carry
-  // the message. A skip HERE writes no MessageLog row, which is right — a
-  // message that was never attempted did not FAIL at the provider.
-  if (!STATEMENTS_DELIVERABLE) {
-    return { status: "SKIPPED", reason: WHATSAPP_STATEMENTS_BLOCKED_REASON };
-  }
-
-  // The organizer's own switch, checked second: by here the message COULD be
-  // delivered, and this is the choice about whether to.
+  // The organizer's own switch: the choice about whether to send, distinct
+  // from whether an approved template exists to carry it — the registry guard
+  // below answers that per key.
   if (!(await getSetting("whatsappEnabled"))) {
     return { status: "SKIPPED", reason: WHATSAPP_DISABLED_REASON };
   }

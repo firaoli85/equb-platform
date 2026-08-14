@@ -711,9 +711,14 @@ describe("per-member sending inherits the batch's gate, never its own", () => {
     expect(action).toContain("outcome.reason");
   });
 
-  it("states the statements block rather than hiding the buttons", () => {
+  it("no longer carries the statements-blocked banner — the state it described ended", () => {
+    // "Statements cannot send yet" was true until 7 August 2026 and false
+    // after it, and the banner kept saying it while eleven statements
+    // delivered (§5.15). It keyed off a hardcoded constant, so nothing the
+    // organizer could do would clear it. The per-type refusals — each derived
+    // at send time — are what remain, and they are the honest version.
     const ui = read("app/admin/(protected)/people/[id]/member-messaging.tsx");
-    expect(ui).toContain("Statements cannot send yet");
-    expect(ui).toContain("Login codes are unaffected");
+    expect(ui).not.toContain("Statements cannot send yet");
+    expect(ui).not.toContain("blockedReason");
   });
 });

@@ -1,8 +1,14 @@
 # WhatsApp Content templates — approved by Meta
 
-**Status: APPROVED BY META 7 August 2026. ContentSids recorded below. Code
-switch not yet made — `sendWhatsAppMessage` still uses `Body`, and
-`STATEMENTS_DELIVERABLE` is still false.**
+**Status: LIVE AND DELIVERING (13 August 2026).** Approved by Meta 7 August
+2026, ContentSids recorded below, and the send path sends by
+`ContentSid` + `ContentVariables` — there is no freeform `Body` path. Four of
+the five deliver to real members today (PAYMENT_CONFIRMED, BEHIND_NOTICE,
+LATE_NOTICE, WINNER_ANNOUNCEMENT); CYCLE_CLOSING_STATEMENT is approved and
+wired, and has its first real use when the cycle closes. The sender is
+**+1 301 683 5755** (WABA 1018506704190290, business verified) — the five
+approved templates carried over to it. WHATSAPP_WELCOME is drafted below and
+**not yet submitted**.
 
 The five bodies below are the text that was submitted. They are now the wording
 of record: changing any of them means re-submitting that template and waiting
@@ -33,9 +39,11 @@ explains why statements need these at all.
   variable to the body; it does not expose sample fields for existing ones.
   Sample values are collected in a dialog that opens on Save.
 - Editing an approved template requires re-approval, and Twilio greys out the
-  Edit action once a template is submitted. The in-app template editor must
-  surface this, per "Things to decide before submission" item 1 — it remains
-  unresolved.
+  Edit action once a template is submitted. The in-app template editor now
+  surfaces exactly this: the five approved templates are locked read-only with
+  the approved-wording note, and the server refuses a wording edit
+  (`templates-editor.tsx`, `app/actions/messages.ts`) — "Things to decide
+  before submission" item 1, resolved.
 - LOCKOUT_NOTICE remains undrafted and unsubmitted.
 
 ---
@@ -308,20 +316,23 @@ template variants — each is a separate submission and approval.
    entry. It has no approved template and must not gain one by accident: a
    lockout notice is a security message, and Twilio Verify is its channel.
 
-**Not done — Build 2:**
+**Done (Build 2):**
 
-4. ⬜ **Write the send path.** `sendWhatsAppMessage` is currently a *refusing
-   stub*: it returns a permanent failure and never calls Twilio at all. So this
-   is not "change `Body` to `ContentSid`" on an existing call — the call does
-   not exist yet. Build 2 writes it, using `ContentSid` + `ContentVariables`
-   from the start; there is no `Body` path to migrate away from.
-5. ⬜ **Make an incomplete variable set structurally impossible** (see the
-   sample-value warning below).
-6. ⬜ Flip `STATEMENTS_DELIVERABLE` in
-   [lib/messaging-engine.ts](../lib/messaging-engine.ts) — currently `false`,
-   and it stays `false` until 4 and 5 are done.
-
-The render-and-log path is unchanged by all of this and is already correct.
+4. ✅ **The send path is written and live.** `sendWhatsAppMessage` posts
+   `ContentSid` + `ContentVariables`; there never was a `Body` path to migrate
+   away from. Delivery status is classified honestly — Twilio's 201/"queued"
+   is logged **ACCEPTED**, and **SENT** is written only when a StatusCallback
+   confirms it (which requires a public `APP_BASE_URL`, so local sends stay
+   ACCEPTED).
+5. ✅ **An incomplete variable set is refused, not delivered.**
+   `buildContentVariables` rejects a missing or dashed money placeholder and a
+   template's `requiredExtras` are checked before rendering — the
+   approval-sample failure mode below cannot reach a member.
+6. ✅ `STATEMENTS_DELIVERABLE` is **deleted**, not flipped. Statements deliver;
+   a global flag would only be a second copy of the registry's answer. A type
+   with no ContentSid (the welcome, the lockout notice) refuses ITSELF in
+   `deliver()` with a reason derived from the registry, so nothing depends on
+   a constant somebody must remember to update.
 
 ---
 
@@ -360,8 +371,14 @@ itself, so a name that function does not return is already a compile error.
 
 # REWORK — cycle week numbers must leave the member's messages
 
-**Status: DRAFT FOR REVIEW. Nothing here has been submitted to Meta, and no
-code has been changed. Approve the wording first.**
+**Status: DRAFTED FOR SUBMISSION — not yet registered.** The four live
+templates still send the 7 August wording above; nothing switches until a
+reworked body's new ContentSid is recorded in
+[lib/whatsapp-templates.ts](../lib/whatsapp-templates.ts) (the registry is the
+source of truth, and the drift guards hold the database to it). When Meta
+approves a reworked body, replace that template's ContentSid and approvedBody
+in the registry, run `scripts/sync-approved-templates.mts`, regenerate and
+restart — that is the whole switchover.
 
 ## The defect, from live use
 
@@ -547,7 +564,7 @@ not to pursue.
 
 ---
 
-### 4. WINNER_ANNOUNCEMENT — the one Henok reported
+### 4. WINNER_ANNOUNCEMENT — the one Henok reported, twice
 
 **Now**
 
@@ -555,30 +572,34 @@ not to pursue.
 Hi {{1}}, your Equb payout for week {{2}} is {{3}}. Your contributions continue to week {{4}}. Firaoli will arrange the handover.
 ```
 
-**Draft**
+**Draft (organizer's wording, 13 Aug 2026 — replaces the earlier draft that
+still dated the drawn week)**
 
 ```
-Hi {{1}}, your Equb payout for the week of {{2}} is {{3}}. You have {{4}} more weekly payments, finishing {{5}}. Firaoli will arrange the handover.
+Hi {{1}}, your Equb payout is {{2}}. You are still paying {{3}} a week for the rest of your {{4}}, finishing {{5}}. Firaoli will arrange the handover.
 ```
 
 | Var | Fills from | Change |
 |---|---|---|
 | `{{1}}` | `name` | — |
-| `{{2}}` | **`drawnWeekDate`** — NEW | the date of the drawn week, not its number |
-| `{{3}}` | `payoutAmount` | — |
-| `{{4}}` | `weeksLeft` | **already exists** — their own count |
-| `{{5}}` | `finishDate` | **already exists** — 2.22 requires their own finish date |
+| `{{2}}` | `payoutAmount` | — |
+| `{{3}}` | `weeklyAmount` | **already exists** — their own rate |
+| `{{4}}` | `weeksCommitted` | **already exists** — "10 weeks", pluralised |
+| `{{5}}` | `finishDate` | **already exists** — 2.22, their own finish date |
 
-> Hi Henok, your Equb payout for the week of August 9, 2026 is $9,500.00. You
-> have 9 more weekly payments, finishing Sunday, October 18, 2026. Firaoli will
+> Hi Henok, your Equb payout is $9,800. You are still paying $1,000 a week for
+> the rest of your 10 weeks, finishing Sunday, October 18, 2026. Firaoli will
 > arrange the handover.
 
-**This is the sentence in the report, verbatim.** It goes from four variables to
-five, which Meta treats as a new template regardless.
+**No reference to the drawn week at all — not even as a date.** The first
+rework kept "the week of {{2}}" for the drawn week, and that is still the
+cycle's frame wearing a date: the member's question is "how much, and what do
+I still owe", and the drawn week answers neither. Winning does not shorten the
+commitment, and the sentence now says that plainly.
 
-**Code needed:** `drawnWeekDate` only. `weeksLeft` and `finishDate` are already
-computed by `placeholderValues`, and `finishDate` already carries the member's
-own finish date per 2.22.
+**Code needed: none.** All five placeholders already exist and render from
+facts the system holds. `requiredExtras` shrinks to `payoutNet` alone — the
+drawn week is no longer part of the message.
 
 ---
 
@@ -601,16 +622,17 @@ appears. No re-approval needed. Do not resubmit this one.**
 | `asOfDate` | the send moment | no |
 | `lastPaymentDate` | the stored date of `lastPaymentWeek`'s row | yes — one week row |
 | `lateWeekDates` | the stored dates of the LATE weeks | yes — the member's week rows |
-| `drawnWeekDate` | the stored date of the drawn week | yes — one week row |
 
-All five dates must come from the **stored week rows** (2.14), never from
+Every date must come from the **stored week rows** (2.14), never from
 projecting a week number off the cycle start date — the same rule
 `resolveWeekDate` already enforces for `finishDate`.
 
-`requiredExtras` grows for one template: WINNER_ANNOUNCEMENT gains
-`drawnWeekDate`. PAYMENT_CONFIRMED keeps `weeksCovered` (the count derives from
-it). The boundary check in `checkRequiredExtras` is what stops a caller omitting
-one and having Twilio substitute the approval sample.
+WINNER_ANNOUNCEMENT needs **no new placeholder** (13 Aug rework): its five
+variables all exist today, and its `requiredExtras` shrinks to `payoutNet` —
+the drawn week left the message entirely. PAYMENT_CONFIRMED keeps
+`weeksCovered` (the count derives from it). The boundary check in
+`checkRequiredExtras` is what stops a caller omitting an extra and having
+Twilio substitute the approval sample.
 
 ---
 
@@ -665,18 +687,24 @@ it is waiting in a queue.
 
 ## Body
 
+**Reordered 13 Aug 2026 (organizer): the sign-in address is the LAST thing in
+the message** — in WhatsApp the final line is the tappable one, and the address
+is the one thing the member acts on. `{{6}}` is still followed by fixed text,
+because Meta refuses a body that ends on a variable.
+
 ```
-Hi {{1}}, welcome to your Equb. You are saving {{2}} a week for {{3}}, from {{4}} to {{5}}. Sign in at {{6}} with your phone number. If you have set your own PIN use it, otherwise your PIN is the last 4 digits of your phone number. When you sign in you will be asked to read and sign your agreement.
+Hi {{1}}, welcome to your Equb. You are saving {{2}} a week for {{3}}, from {{4}} to {{5}}. When you sign in you will be asked to read and sign your agreement. Sign in at {{6}} with your phone number — if you have set your own PIN use it, otherwise your PIN is the last 4 digits of your phone number.
 ```
 
 Six variables, each separated by fixed text; the body opens and closes on fixed
 text. Both shape rules from the top of this document are satisfied.
 
-**"When you sign in", not "the first time you sign in".** The organizer may send
-this to a member who has been in the group for months — that is the intended way
-to bring an existing member into signing. For them the agreement arrives on their
-NEXT visit, and "the first time you sign in" describes a moment already long
-past. The PIN sentence covers both cases the same way, and so must this one.
+**"When you sign in", not "the first time you sign in" — kept, per the 12 Aug
+ruling.** The organizer may send this to a member who has been in the group for
+months — that is the intended way to bring an existing member into signing. For
+them the agreement arrives on their NEXT visit, and "the first time you sign
+in" describes a moment already long past. The PIN sentence covers both cases
+the same way, and so must this one.
 
 | Var | Fills from `placeholderValues()` | Notes |
 |---|---|---|
@@ -696,10 +724,10 @@ obeying it.
 ## Rendered
 
 > Hi Henok, welcome to your Equb. You are saving $1,000 a week for 10 weeks,
-> from Sunday, August 16, 2026 to Sunday, October 18, 2026. Sign in at
-> https://equb.example.org with your phone number. If you have set your own PIN
-> use it, otherwise your PIN is the last 4 digits of your phone number. When you
-> sign in you will be asked to read and sign your agreement.
+> from Sunday, August 16, 2026 to Sunday, October 18, 2026. When you sign in
+> you will be asked to read and sign your agreement. Sign in at
+> https://equb.example.org with your phone number — if you have set your own
+> PIN use it, otherwise your PIN is the last 4 digits of your phone number.
 
 *(A member joining at week 14 of Cycle 1 2026 for 10 weeks. He is never shown
 "week 14" or "week 23".)*

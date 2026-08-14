@@ -2,13 +2,7 @@
 
 import { requireAdmin } from "@/lib/auth";
 import { errorMessage } from "@/lib/action-result";
-import {
-  loadStandingFacts,
-  loadTemplates,
-  sendStatement,
-  STATEMENTS_DELIVERABLE,
-} from "@/lib/messaging-engine";
-import { WHATSAPP_STATEMENTS_BLOCKED_REASON } from "@/lib/setting-defaults";
+import { loadStandingFacts, loadTemplates, sendStatement } from "@/lib/messaging-engine";
 import { applicableTypes, isMessageKey, renderMessage, type MessageKey } from "@/lib/messages";
 import { messagingSubject } from "@/lib/messaging-subject";
 import { CAPS } from "@/lib/paging";
@@ -47,8 +41,12 @@ export type MemberMessagingView = {
     /** The real rendered text, with their real figures (2.20/2.21). */
     preview: string | null;
   }[];
-  /** Why nothing can leave at all right now, or null. */
-  blockedReason: string | null;
+  /**
+   * When the welcome was last sent (ISO), or null — what the re-send card
+   * keys off. Sent means REQUIRED: this is `agreementRequiredAt`, the same
+   * column the gate reads, so the card and the portal door cannot disagree.
+   */
+  welcomeSentAt: string | null;
   /** What has already been sent to this person, newest first. */
   history: {
     id: string;
@@ -240,9 +238,11 @@ export async function getMemberMessaging(input: { personId: string }) {
         chasing: t.chasing,
         // RENDERED EVEN WHEN BLOCKED, on purpose: the organizer's next question
         // after "why not" is "what would it have said", and the preview is
-        // where the empty address shows itself as a hole in the sentence.
+        // where the empty address shows itself as a hole in the sentence. The
+        // welcome renders even once sent, because the re-send card below the
+        // list shows the organizer the text a deliberate second send carries.
         preview:
-          t.applicable && loaded && templates
+          (t.applicable || t.key === "WHATSAPP_WELCOME") && loaded && templates
             ? renderMessage(
                 t.key,
                 loaded.facts,
@@ -264,8 +264,16 @@ export async function getMemberMessaging(input: { personId: string }) {
         // pins, and the one nothing was checking.
         participationId,
         types: withPreviews,
-        // Stated once, at the top, rather than repeated on every button.
-        blockedReason: STATEMENTS_DELIVERABLE ? null : WHATSAPP_STATEMENTS_BLOCKED_REASON,
+        // ONLY FOR A LIVE MEMBER OF THE RUNNING CYCLE — the exact set
+        // `resendWelcome` will accept. The timestamp survives on a stopped
+        // participation's row, but surfacing it there would render a re-send
+        // card whose button the action refuses every time: an offer without
+        // the means to act on it, the same defect class this file's wiring
+        // test was written for.
+        welcomeSentAt:
+          subject.participation === "live" && !subject.cycleClosed
+            ? (sendState?.agreementRequiredAt?.toISOString() ?? null)
+            : null,
         history: history.map((h) => ({
           id: h.id,
           templateKey: h.templateKey,
@@ -311,6 +319,29 @@ export async function sendToMember(input: { participationId: string; key: string
       };
     }
 
+    // A SECOND WELCOME IS NEVER AN ORDINARY SEND. The UI stops offering the
+    // welcome once one has been sent, but a server action cannot lean on what
+    // a screen offers (2.21): a stale tab or a crafted request would re-gate
+    // the member's portal through the path that treats it as routine. The
+    // deliberate route is `resendWelcome`, whose precondition is exactly the
+    // mirror of this refusal — between the two checks, neither action can be
+    // reached by mistaking it for the other.
+    if (input.key === "WHATSAPP_WELCOME") {
+      const already = await prisma.participation.findUnique({
+        where: { id: input.participationId },
+        select: { agreementRequiredAt: true },
+      });
+      if (already?.agreementRequiredAt != null) {
+        return {
+          ok: false as const,
+          error:
+            "A welcome has already been sent, so their signature is already required. " +
+            "Sending it again re-gates their portal against current terms — use " +
+            "“Send the welcome again”, which says so before you press it.",
+        };
+      }
+    }
+
     // THE DEFECT THAT REACHED A MEMBER.
     //
     // This called sendStatement with NO extras. For a winner announcement that
@@ -353,6 +384,91 @@ export async function sendToMember(input: { participationId: string; key: string
     };
   } catch (e) {
     console.error("sendToMember failed:", e);
+    return { ok: false as const, error: `Could not send. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * Send the welcome AGAIN, deliberately — the changed-terms mechanism, from
+ * the one screen where changing a member's terms actually happens.
+ *
+ * A SEPARATE ACTION, NOT A FLAG ON sendToMember. The ordinary send's contract
+ * is "offer what applies", and the welcome stops applying once sent — that is
+ * what keeps a routine glance-and-click from re-gating somebody. This action
+ * has the OPPOSITE precondition: it refuses unless a welcome was already
+ * sent, so neither path can be reached by mistaking it for the other. Routing
+ * a single re-issue through the batch would mean unticking twenty-six people
+ * (organizer, Aug 2026).
+ *
+ * WHAT A SECOND SEND DOES is the whole point and the card says it before the
+ * button: the engine writes a LATER `agreementRequiredAt` in the same
+ * transaction as the message log, so their earlier signature stops answering
+ * and the portal is gated until they sign the CURRENT terms. There is no
+ * un-send.
+ */
+export async function resendWelcome(input: { participationId: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (await getSetting("presentationMode")) {
+      return { ok: false as const, error: PRESENTATION_HIDDEN };
+    }
+
+    // RE-READ, NEVER TRUSTED FROM THE BROWSER (2.21). The preconditions are
+    // the server's: a stale tab whose member was un-gated, stopped, or whose
+    // cycle closed since the page loaded is refused with the current fact.
+    const participation = await prisma.participation.findUnique({
+      where: { id: input.participationId },
+      select: {
+        agreementRequiredAt: true,
+        status: true,
+        cycle: { select: { status: true } },
+        person: { select: { nameEnglishFirst: true } },
+      },
+    });
+    if (!participation) return { ok: false as const, error: "Participation not found." };
+    const name = participation.person.nameEnglishFirst;
+
+    // The mirror image of the ordinary send's rule: this door only opens
+    // where that one has closed.
+    if (participation.agreementRequiredAt === null) {
+      return {
+        ok: false as const,
+        error: `${name} has not been welcomed yet — send the welcome from the list above, which is the first send.`,
+      };
+    }
+    // The same bound applicableTypes puts on the first send: a member who has
+    // stopped, or whose cycle has finished, is not welcomed to it (rule 17,
+    // 2.18) — and the engine's own requirement write is ACTIVE-only, so a
+    // send here would message them without gating them.
+    if (participation.status !== "ACTIVE" || participation.cycle.status !== "ACTIVE") {
+      return {
+        ok: false as const,
+        error: `${name} is no longer contributing to a running cycle, so there is no portal obligation to renew.`,
+      };
+    }
+
+    // The SAME path as every other send — hardship flag, opt-out, channel
+    // switch, welcomeSendCheck and the requirement write all live in there.
+    const outcome = await sendStatement({
+      participationId: input.participationId,
+      key: "WHATSAPP_WELCOME",
+      trigger: "MANUAL",
+    });
+    return {
+      ok: true as const,
+      data: {
+        status: outcome.status,
+        reason:
+          outcome.status === "SENT" || outcome.status === "ACCEPTED"
+            ? null
+            : outcome.status === "SKIPPED"
+              ? outcome.reason
+              : outcome.error,
+      },
+    };
+  } catch (e) {
+    console.error("resendWelcome failed:", e);
     return { ok: false as const, error: `Could not send. ${errorMessage(e)}` };
   }
 }

@@ -68,7 +68,6 @@ export default async function MessagesPage({
     whatsAppMissingConfig,
     whatsappEnabled,
     whatsappDisabledReason,
-    whatsappStatementsBlockedReason,
     templates,
     members,
     log,
@@ -124,7 +123,6 @@ export default async function MessagesPage({
 
       {/* One panel, not four stacked alerts — see channel-status.tsx. */}
       <ChannelStatus
-        blockedReason={whatsappStatementsBlockedReason}
         whatsappEnabled={whatsappEnabled}
         disabledReason={whatsappDisabledReason}
         missingConfig={whatsAppMissingConfig}

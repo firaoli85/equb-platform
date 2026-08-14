@@ -46,7 +46,6 @@ let whatsappEnabled = true;
 vi.mock("./settings", () => ({
   getSetting: vi.fn(async (key: string) => (key === "whatsappEnabled" ? whatsappEnabled : true)),
   WHATSAPP_DISABLED_REASON: "SWITCH OFF",
-  WHATSAPP_STATEMENTS_BLOCKED_REASON: "NO TEMPLATES",
 }));
 
 vi.mock("./prisma", () => ({
@@ -101,7 +100,7 @@ beforeEach(() => {
   messageLogCreate.mockClear();
   vi.stubEnv("TWILIO_ACCOUNT_SID", "ACtest");
   vi.stubEnv("TWILIO_AUTH_TOKEN", "token");
-  vi.stubEnv("TWILIO_WHATSAPP_FROM", "+15559620327");
+  vi.stubEnv("TWILIO_WHATSAPP_FROM", "+13016835755");
 });
 
 afterEach(() => {
@@ -347,10 +346,10 @@ describe("deliver() end to end", () => {
     whatsappEnabled = false;
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const { sendStatement, STATEMENTS_DELIVERABLE } = await engine();
+    const { sendStatement } = await engine();
 
-    // The point of the test: deliverable and still not sent.
-    expect(STATEMENTS_DELIVERABLE).toBe(true);
+    // The point of the test: the templates are approved and it STILL does not
+    // send — the organizer's switch outranks the registry.
     const outcome = await sendStatement({
       participationId: "p1",
       key: "BEHIND_NOTICE",

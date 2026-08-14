@@ -110,31 +110,21 @@ export const SETTING_DEFAULTS: SettingDefaults = {
  *
  * This no longer says "Meta has disabled the Business Account". That WAS true
  * — 15 consecutive sends failed with Twilio 63112 between 2026-08-06 03:03 and
- * 2026-08-07 01:53 UTC — but it has since cleared: the sender +15559620327
- * ("Equb") reports ONLINE, quality HIGH, 100K customers/24hr, and login codes
- * delivered again on 2026-08-08. The switch is now just a switch.
+ * 2026-08-07 01:53 UTC — but it has since cleared, and the platform has since
+ * moved to the business-verified sender +13016835755 (WABA 1018506704190290),
+ * with the five approved templates carried over. The switch is now just a
+ * switch.
+ *
+ * `WHATSAPP_STATEMENTS_BLOCKED_REASON` used to sit beside this one. It is
+ * deleted, not parked (§5.15): the state it described ended on 7 August 2026
+ * when Meta approved the templates, and the string then spent days telling
+ * the organizer statements could not send while eleven of them delivered. A
+ * type without an approved template now refuses ITSELF at send time
+ * (lib/whatsapp-templates.ts, isApprovedTemplateKey) with a reason derived
+ * from the registry — never a stored sentence that can outlive its cause.
  */
 export const WHATSAPP_DISABLED_REASON =
   "WhatsApp is switched off — no codes or statements will send until it is turned back on.";
-
-/**
- * Why STATEMENTS cannot send — shown ONLY when there is no approved template
- * to carry them, which is not something the organizer can turn on.
- *
- * NO LONGER THE NORMAL STATE. Meta approved five templates on 7 August 2026,
- * so `STATEMENTS_DELIVERABLE` is true and this string is not reached. It stays
- * because the condition it describes can return: if the registry is emptied or
- * the templates are revoked, sending would fall back to Twilio's approval
- * SAMPLES and deliver invented figures to real members, so the code must still
- * be able to say why it stopped.
- *
- * It is therefore worded for that state and not for "today" — a reason string
- * that outlives its cause is a lie, and this one has already outlived one.
- *
- * See docs/WHATSAPP_TEMPLATE_ONLY.md for what registering templates involves.
- */
-export const WHATSAPP_STATEMENTS_BLOCKED_REASON =
-  "Statements need Meta-approved templates, and none are registered. Login codes are unaffected.";
 
 export type SettingKey = keyof SettingDefaults;
 export type SettingValue<K extends SettingKey> = SettingDefaults[K];
