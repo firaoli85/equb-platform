@@ -1,4 +1,4 @@
-// REWRITE THE FIVE MESSAGE TEMPLATE ROWS FROM THE APPROVED REGISTRY.
+// REWRITE THE APPROVED MESSAGE TEMPLATE ROWS FROM THE REGISTRY.
 //
 //   npx tsx scripts/sync-approved-templates.mts            # DRY RUN
 //   npx tsx scripts/sync-approved-templates.mts --apply    # writes
@@ -6,22 +6,26 @@
 // THESE ARE REAL WRITES TO THE LIVE PRODUCTION DATABASE. The dry run is the
 // default for that reason.
 //
-// WHAT IT DOES. Five WhatsApp Content templates were approved by Meta on
-// 7 August 2026. The database still holds the freeform text that predates them
-// — text Meta never saw. Twilio sends by ContentSid, so those stale bodies are
-// not what members would receive; they are what the ORGANIZER reads while
+// WHAT IT DOES. The registry (lib/whatsapp-templates.ts) holds the Meta-
+// approved wording — first the five of 7 August 2026, now the seven-key set
+// after the 13 August 2026 switchover (six new/reworked + the unchanged
+// cycle-closing statement). Twilio sends by ContentSid, so a stale database
+// body is not what members receive; it is what the ORGANIZER reads while
 // something else goes out. This makes the two agree, by making the database
-// mirror the registry (lib/whatsapp-templates.ts).
+// mirror the registry, row for row.
+//
+// A key that is new to the platform (GROUP_ANNOUNCEMENT, 13 Aug 2026) may
+// have no MessageTemplate row yet — it is CREATED from the registry, named
+// from DEFAULT_TEMPLATES, in the same transaction.
 //
 // WHAT IT WILL NOT DO:
 //   - touch LOCKOUT_NOTICE, which has no approved template and must not gain
 //     one by accident (it is a security message; Twilio Verify is its channel)
-//   - proceed if any of the five keys is missing
-//   - proceed if more or fewer than five rows would be updated
+//   - proceed if the registry does not hold exactly the expected key count
 //   - send anything. This build does not touch the send path at all.
 //
-// Everything happens in ONE transaction, so a failure anywhere leaves all six
-// rows exactly as they were.
+// Everything happens in ONE transaction, so a failure anywhere leaves every
+// row exactly as it was.
 
 import { config } from "dotenv";
 config({ path: ".env.local", quiet: true });
@@ -36,7 +40,7 @@ const prisma = new PrismaClient({
 const { APPROVED_TEMPLATES, APPROVED_TEMPLATE_KEYS } = await import(
   "../lib/whatsapp-templates"
 );
-const { MESSAGE_KEYS } = await import("../lib/messages");
+const { MESSAGE_KEYS, DEFAULT_TEMPLATES } = await import("../lib/messages");
 
 class SyncError extends Error {}
 
@@ -60,13 +64,13 @@ for (const row of before) show(row);
 const byKey = new Map(before.map((r) => [r.key, r]));
 const missing = APPROVED_TEMPLATE_KEYS.filter((k) => !byKey.has(k));
 if (missing.length > 0) {
-  console.error(`\nREFUSING: no MessageTemplate row for ${missing.join(", ")}.`);
-  console.error("Every approved key must already exist — this script rewrites, it does not create.");
-  await prisma.$disconnect();
-  process.exit(1);
+  // 13 Aug 2026: a brand-new approved key (GROUP_ANNOUNCEMENT) has no row
+  // until something creates it. This script does, from the registry, in the
+  // same transaction as the updates — announced here, proven in AFTER.
+  console.log(`\nNew key(s) with no MessageTemplate row yet — will CREATE: ${missing.join(", ")}`);
 }
-if (APPROVED_TEMPLATE_KEYS.length !== 5) {
-  console.error(`\nREFUSING: the registry holds ${APPROVED_TEMPLATE_KEYS.length} templates, not 5.`);
+if (APPROVED_TEMPLATE_KEYS.length !== 7) {
+  console.error(`\nREFUSING: the registry holds ${APPROVED_TEMPLATE_KEYS.length} templates, not the 7 of the 13 Aug 2026 set.`);
   await prisma.$disconnect();
   process.exit(1);
 }
@@ -90,8 +94,15 @@ const lockoutBefore = byKey.get("LOCKOUT_NOTICE")!;
 console.log(`\n=== PLANNED CHANGES ===\n`);
 let changing = 0;
 for (const key of APPROVED_TEMPLATE_KEYS) {
-  const row = byKey.get(key)!;
+  const row = byKey.get(key);
   const t = APPROVED_TEMPLATES[key];
+  if (!row) {
+    changing += 1;
+    console.log(`  ${key}  (CREATE — no row exists)`);
+    console.log(`    body            ${t.namedBody}`);
+    console.log(`    metaTemplateSid ${t.contentSid}`);
+    continue;
+  }
   const bodyChanges = row.body !== t.namedBody;
   const sidChanges = row.metaTemplateSid !== t.contentSid;
   if (bodyChanges || sidChanges) changing += 1;
@@ -105,7 +116,7 @@ for (const key of APPROVED_TEMPLATE_KEYS) {
   }
 }
 console.log(`\n  LOCKOUT_NOTICE  UNTOUCHED (undeliverable by design)`);
-console.log(`\n${changing} of 5 rows would change.`);
+console.log(`\n${changing} of ${APPROVED_TEMPLATE_KEYS.length} rows would change or be created.`);
 
 if (!APPLY) {
   console.log("\nNothing was written. Re-run with --apply to perform the update.");
@@ -118,9 +129,23 @@ if (!APPLY) {
 try {
   await prisma.$transaction(
     async (tx) => {
-      let updated = 0;
+      let touched = 0;
       for (const key of APPROVED_TEMPLATE_KEYS) {
         const t = APPROVED_TEMPLATES[key];
+        if (!byKey.has(key)) {
+          // New platform key — same shape ensureMessageTemplates creates,
+          // except the body and SID come straight from the registry.
+          await tx.messageTemplate.create({
+            data: {
+              key,
+              name: DEFAULT_TEMPLATES[key].name,
+              body: t.namedBody,
+              metaTemplateSid: t.contentSid,
+            },
+          });
+          touched += 1;
+          continue;
+        }
         const result = await tx.messageTemplate.updateMany({
           where: { key },
           data: { body: t.namedBody, metaTemplateSid: t.contentSid },
@@ -130,10 +155,10 @@ try {
             `${key}: expected to update exactly 1 row, updated ${result.count}. Rolling back.`,
           );
         }
-        updated += result.count;
+        touched += result.count;
       }
-      if (updated !== 5) {
-        throw new SyncError(`Expected to update exactly 5 rows, updated ${updated}. Rolling back.`);
+      if (touched !== 7) {
+        throw new SyncError(`Expected to touch exactly 7 rows, touched ${touched}. Rolling back.`);
       }
 
       // Belt and braces INSIDE the transaction: LOCKOUT_NOTICE must be byte

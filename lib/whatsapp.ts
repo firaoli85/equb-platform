@@ -1,7 +1,9 @@
 // WhatsApp delivery via Twilio — ported from the previous build's WORKING,
 // Meta-approved integration (equb-app: src/lib/twilio.ts + the
 // whatsapp-send/whatsapp-verify routes). Sender +13016835755, display name
-// "Equb", approved via Healthway Transport LLC (2.28).
+// "Equb", approved under the platform's own business-verified WABA
+// 1018506704190290 (12 Aug 2026). The Healthway Transport LLC approval
+// belonged to the RETIRED 555-prefix sender — §2.28's sender-history note.
 //
 // Two Twilio products, two jobs — they are not interchangeable, and BOTH WORK
 // as of 7 August 2026:

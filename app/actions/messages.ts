@@ -340,10 +340,16 @@ export async function previewMessage(input: {
 function manualKeyOrError(key: string) {
   if (!isMessageKey(key)) return { ok: false as const, error: "Unknown message type." };
   if (!MANUAL_MESSAGE_KEYS.includes(key)) {
+    // THREE kinds of key are absent from MANUAL, for three different reasons —
+    // the refusal must name the right one, or it misdirects: the broadcast is
+    // not a payment confirmation, and telling its caller it "sends
+    // automatically" is false twice over.
     return {
       ok: false as const,
       error:
-        "Payment confirmations send automatically when a payment is recorded — they are not sent as a batch (2.20).",
+        key === "GROUP_ANNOUNCEMENT"
+          ? "The group announcement sends from its own card on this page — it is composed once for everyone, never picked per member or batched by type."
+          : "Payment confirmations send automatically when a payment is recorded — they are not sent as a batch (2.20).",
     };
   }
   return { ok: true as const, key };
@@ -661,6 +667,109 @@ export async function sendGroupAnnouncement(input: { text: string }) {
     return { ok: true as const };
   } catch (e) {
     console.error("sendGroupAnnouncement failed:", e);
+    return { ok: false as const, error: `Could not send. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * THE WHATSAPP SIDE OF THE ANNOUNCEMENT CARD (v2 set, 13 Aug 2026).
+ *
+ * GROUP_ANNOUNCEMENT is a broadcast sent PER MEMBER, individually — there is
+ * no group chat on WhatsApp. The organizer composes once; every ACTIVE member
+ * of the running cycle gets their own send through the SAME `sendStatement`
+ * path as every statement, so the hardship flag, the missing-phone refusal,
+ * the channel switch and the registry gate all apply per member, and every
+ * outcome lands in MessageLog — one row each, exactly like a batch.
+ *
+ * The text rides as a REQUIRED extra: `buildContentVariables` refuses an
+ * empty one before the network, because Twilio's answer to a missing
+ * variable is the approval SAMPLE delivered as fact.
+ */
+export async function broadcastAnnouncement(input: { text: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (await getSetting("presentationMode")) {
+      return { ok: false as const, error: PRESENTATION_HIDDEN };
+    }
+    const text = input.text?.trim();
+    if (!text) return { ok: false as const, error: "There is nothing to send — the announcement is empty." };
+    if (text.length > 1000) {
+      return {
+        ok: false as const,
+        error: "Keep the announcement under 1,000 characters — WhatsApp templates carry a sentence, not a page.",
+      };
+    }
+    // META'S PARAMETER RULES, refused where the organizer can still act. A
+    // template body parameter may not carry newlines, tabs, or runs of four
+    // or more spaces: Twilio ACCEPTS the send and Meta kills it moments later
+    // — and with no public status callback every log row would sit ACCEPTED
+    // while nothing was delivered. Formatted text belongs on the Telegram
+    // side, which posts it verbatim.
+    if (/[\n\r\t]| {4,}/.test(text)) {
+      return {
+        ok: false as const,
+        error:
+          "WhatsApp delivers the announcement through a template, and Meta refuses template text with line breaks, tabs, or long runs of spaces — silently, after the send looks accepted. Make it one line for WhatsApp, or post the formatted version to Telegram.",
+      };
+    }
+    // THE ORGANIZER'S CHANNEL SWITCH, asked once up front. deliver() refuses
+    // it anyway, but as N identical skips counted after the press — and the
+    // count alone would invite a wrong guess at the reason (2.20: refuse
+    // where the fix can still be made).
+    if (!(await getSetting("whatsappEnabled"))) {
+      return {
+        ok: false as const,
+        error: "WhatsApp sending is switched off (Settings → Messaging), so no member would receive it.",
+      };
+    }
+
+    const cycle = await prisma.cycle.findFirst({ where: { status: "ACTIVE" } });
+    if (!cycle) return { ok: false as const, error: "No cycle is running — there is nobody to announce to." };
+    const participations = await prisma.participation.findMany({
+      where: { cycleId: cycle.id, status: "ACTIVE" },
+      select: { id: true, person: { select: { nameEnglishFirst: true } } },
+    });
+
+    // Meta caps a RENDERED template body at 1,024 characters, and the render
+    // is "Hi {name}, a message from your Equb: {text}" — so the real budget
+    // depends on the longest recipient name. Checked against it here rather
+    // than discovered as a silent per-member delivery failure.
+    const longestName = participations.reduce(
+      (m, p) => Math.max(m, p.person.nameEnglishFirst.length),
+      0,
+    );
+    const renderedFixed = "Hi , a message from your Equb: ".length;
+    const renderedMax = renderedFixed + longestName + text.length;
+    if (renderedMax > 1024) {
+      return {
+        ok: false as const,
+        error: `Shorten the announcement by ${renderedMax - 1024} characters — WhatsApp caps the delivered message at 1,024, and the longest member name uses ${longestName} of them.`,
+      };
+    }
+
+    // SEQUENTIAL, deliberately: 27 sends in a burst is how a provider rate
+    // limit turns half a broadcast into FAILED rows. The engine re-derives
+    // per member and refuses per member; this loop only counts.
+    let left = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const p of participations) {
+      const outcome = await sendStatement({
+        participationId: p.id,
+        key: "GROUP_ANNOUNCEMENT",
+        trigger: "MANUAL",
+        extras: { announcementText: text },
+      });
+      if (outcome.status === "SENT" || outcome.status === "ACCEPTED") left++;
+      else if (outcome.status === "SKIPPED") skipped++;
+      else failed++;
+    }
+
+    revalidatePath("/admin/messages");
+    return { ok: true as const, data: { left, skipped, failed, total: participations.length } };
+  } catch (e) {
+    console.error("broadcastAnnouncement failed:", e);
     return { ok: false as const, error: `Could not send. ${errorMessage(e)}` };
   }
 }

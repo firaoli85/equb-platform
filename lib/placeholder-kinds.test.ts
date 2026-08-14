@@ -19,19 +19,20 @@ import { placeholderValues } from "./messages";
 // A message that delivers with a missing amount is worse than one that fails,
 // because it looks fine.
 
+const factsWeekDate = (w: number) => new Date(Date.UTC(2026, 4, 17 + (w - 1) * 7));
 const facts = {
   name: "Firaoli",
   weeklyAmount: 100_000,
   weeksCommitted: 20,
   currentCycleWeek: 12,
   finishWeek: 20,
-  finishDate: null,
+  finishDate: factsWeekDate(20),
   weeksCredited: 13,
   weeksBehind: 0,
   amountOutstanding: 0,
   totalPaid: 1_300_000,
   lastPaymentWeek: 13,
-  weeks: [],
+  weeks: Array.from({ length: 20 }, (_, i) => ({ weekNumber: i + 1, status: "PAID", date: factsWeekDate(i + 1) })),
 };
 
 describe("the delivered bug, reproduced", () => {
@@ -54,13 +55,13 @@ describe("the delivered bug, reproduced", () => {
   });
 
   it("with the payout supplied it sends, and {{3}} carries the figure", () => {
-    const values = placeholderValues(facts, { payoutNet: 1_960_000, drawnWeek: 12 });
+    const values = placeholderValues(facts, { payoutNet: 1_960_000 });
     const result = buildContentVariables("WINNER_ANNOUNCEMENT", values);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Position 3 is payoutAmount in this template's variableOrder.
-    expect(result.variables["3"]).toBe("$19,600");
-    expect(result.variables["2"]).toBe("12");
+    // v2: position 2 is the payout, position 3 the member's finish DATE.
+    expect(result.variables["2"]).toBe("$19,600");
+    expect(result.variables["3"]).toBe("Sunday, September 27, 2026");
   });
 
   // THE SECOND, QUIETER BUG. {week} is not in MONEY_PLACEHOLDERS, so the guard
@@ -97,7 +98,7 @@ describe("the guard refuses money holes, and only money holes", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.variables["3"]).toBe(NO_VALUE);
-    expect(result.variables["5"]).toBe("$7,000");
+    expect(result.variables["6"]).toBe("$7,000");
   });
 
   it("a money placeholder of $0 is a real figure and sends", () => {
@@ -154,6 +155,7 @@ describe("the money classification is complete and honest", () => {
       "CYCLE_CLOSING_STATEMENT",
       "LATE_NOTICE",
       "PAYMENT_CONFIRMED",
+      "WHATSAPP_WELCOME",
       "WINNER_ANNOUNCEMENT",
     ]);
   });
@@ -172,26 +174,32 @@ describe("the money classification is complete and honest", () => {
 // ————————————————————————————————————————————————————————————————
 
 /** A member mid-cycle, paid through week 6 of 20. */
+const weekDate = (w: number) => new Date(Date.UTC(2026, 4, 17 + (w - 1) * 7));
+const datedWeeks = (statusOf: (w: number) => string) =>
+  Array.from({ length: 20 }, (_, i) => ({ weekNumber: i + 1, status: statusOf(i + 1), date: weekDate(i + 1) }));
 const STANDING = {
   name: "Tizita",
   weeklyAmount: 100_000,
   weeksCommitted: 20,
   currentCycleWeek: 12,
   finishWeek: 20,
-  finishDate: null,
+  finishDate: weekDate(20),
+  startDate: weekDate(1),
+  portalUrl: "https://equb.example.org",
   weeksCredited: 6,
   weeksBehind: 6,
   amountOutstanding: 600_000,
   totalPaid: 600_000,
   lastPaymentWeek: 6,
-  weeks: [],
+  // Dates present, no LATE weeks — the v2 my* tokens can always compose.
+  weeks: datedWeeks(() => "PAID"),
 };
 
 describe("AUDIT — every placeholder that can reach the sentinel", () => {
   it("PAYMENT_CONFIRMED: weeksCovered dashes when the caller omits its extras", () => {
     // Reproduce: no extras at all, exactly as the winner bug happened.
     const values = placeholderValues(STANDING, {});
-    expect(values.weeksCovered).toBe(NO_VALUE);
+    expect(values.myWeeksCovered).toBe(NO_VALUE);
     expect(values.amountReceived).toBe(NO_VALUE);
 
     // The sentence this WOULD have produced:
@@ -200,7 +208,7 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.missing).toContain("amountReceived"); // money — was guarded
-      expect(r.missing).toContain("weeksCovered"); // NOT money — was not
+      expect(r.missing).toContain("myWeeksCovered"); // NOT money — was not
     }
   });
 
@@ -209,7 +217,7 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     // weeks it landed on are not.
     const values = placeholderValues(STANDING, { amountReceived: 75_000 });
     expect(values.amountReceived).toBe("$750");
-    expect(values.weeksCovered).toBe(NO_VALUE);
+    expect(values.myWeeksCovered).toBe(NO_VALUE);
 
     const r = buildContentVariables("PAYMENT_CONFIRMED", values);
     expect(r.ok, "a confirmation must say which weeks the money landed on").toBe(false);
@@ -217,7 +225,7 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     // call unexpectedly SUCCEEDS, which is the failure worth catching.
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.missing).toEqual(["weeksCovered"]);
+      expect(r.missing).toEqual(["myWeeksCovered"]);
       expect(r.error).toContain("hole where a fact belongs");
     }
   });
@@ -226,19 +234,19 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     // sendDecision normally refuses this — but only when `weeks` is supplied.
     // A caller that omits them skips that gate and lands here.
     const values = placeholderValues({ ...STANDING, weeks: [] }, {});
-    expect(values.lateWeeks).toBe(NO_VALUE);
+    expect(values.myLateWeeks).toBe(NO_VALUE);
 
     // "your Equb week(s) — closed without a payment recorded."
     const r = buildContentVariables("LATE_NOTICE", values);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.missing).toContain("lateWeeks");
+    if (!r.ok) expect(r.missing).toContain("myLateWeeks");
   });
 
   it("BEHIND_NOTICE: lastPaymentWeek MAY dash — it is the honest answer", () => {
     // The exception, and the reason an allowlist is the right shape: a member
     // who has never paid genuinely has no last payment week.
     const values = placeholderValues({ ...STANDING, lastPaymentWeek: null }, {});
-    expect(values.lastPaymentWeek).toBe(NO_VALUE);
+    expect(values.myLastPaymentWeek).toBe(NO_VALUE);
 
     const r = buildContentVariables("BEHIND_NOTICE", values);
     expect(r.ok, "a never-paid member must still be reachable").toBe(true);
@@ -263,10 +271,12 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     if (!r.ok) expect(r.error).toContain("money figure");
   });
 
-  it("with real extras, all five build cleanly — the guard is not over-eager", () => {
+  it("with real extras, all SEVEN build cleanly — the guard is not over-eager", () => {
     const values = placeholderValues(
-      { ...STANDING, weeks: [{ weekNumber: 7, status: "LATE" }] },
-      { amountReceived: 75_000, weeksCovered: [4, 5, 6], payoutNet: 980_000, drawnWeek: 12 },
+      // Dated weeks throughout — the my* tokens need each named week's stored
+      // day — with week 7 late so the late notice has something to name.
+      { ...STANDING, weeks: datedWeeks((w) => (w === 7 ? "LATE" : "PAID")) },
+      { amountReceived: 75_000, weeksCovered: [4, 5, 6], payoutNet: 980_000, announcementText: "Draw moves to Saturday." },
     );
     for (const key of APPROVED_TEMPLATE_KEYS) {
       expect(buildContentVariables(key, values).ok, key).toBe(true);
@@ -286,9 +296,10 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     }
     // These are the four that CAN dash — all now refused rather than sent.
     expect(offenders.sort()).toEqual([
-      "LATE_NOTICE.lateWeeks",
+      "GROUP_ANNOUNCEMENT.announcementText",
+      "LATE_NOTICE.myLateWeeks",
       "PAYMENT_CONFIRMED.amountReceived",
-      "PAYMENT_CONFIRMED.weeksCovered",
+      "PAYMENT_CONFIRMED.myWeeksCovered",
       "WINNER_ANNOUNCEMENT.payoutAmount",
     ]);
     for (const key of APPROVED_TEMPLATE_KEYS) {

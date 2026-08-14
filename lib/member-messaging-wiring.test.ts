@@ -550,6 +550,27 @@ describe("sendToMember refuses a second welcome — resendWelcome is the only do
   });
 });
 
+// THE BROADCAST NEVER TRAVELS THE PER-MEMBER PATH (verifier finding, 14 Aug).
+// Its required text has no way to arrive here, so without the refusal a
+// crafted request would reach deliver(), fail at the extras boundary, and
+// plant a FAILED "Group announcement" row on a real member's personal log —
+// where every other wrong-path key gets a clean refusal and no row.
+describe("sendToMember refuses GROUP_ANNOUNCEMENT — the card is the only door", () => {
+  it("refuses cleanly, naming the card, and never reaches the engine", async () => {
+    vi.resetModules();
+    const engine = await import("@/lib/messaging-engine");
+    // The mock outlives resetModules — drop earlier tests' calls so the
+    // assertion below is about THIS request only.
+    vi.mocked(engine.sendStatement).mockClear();
+    const { sendToMember } = await import("@/app/actions/member-messaging");
+    const result = await sendToMember({ participationId: "p-live", key: "GROUP_ANNOUNCEMENT" });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.error).toContain("its own card");
+    expect(engine.sendStatement).not.toHaveBeenCalled();
+  });
+});
+
 // THE CARD NEVER OUTLIVES THE ACTION (verifier finding, 13 Aug): a stopped
 // member's participation keeps its agreementRequiredAt forever, and a card
 // keyed on the timestamp alone would render a button resendWelcome refuses

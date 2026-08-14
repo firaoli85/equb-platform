@@ -78,6 +78,9 @@ export function isMoneyPlaceholder(name: string): boolean {
  */
 export const DASHABLE_PLACEHOLDERS = [
   "lastPaymentWeek",
+  // The v2 form of the same fact — "1 (Aug 16)", or honestly "—" for a
+  // member who has never paid. Same sentence, same legitimacy.
+  "myLastPaymentWeek",
 ] as const satisfies readonly PlaceholderName[];
 
 /** True when this placeholder is allowed to be the sentinel in a real send. */

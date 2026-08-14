@@ -57,6 +57,15 @@ describe("the database bodies still match what Meta approved", () => {
         toApprovedBody(row!.body, t.variableOrder),
         driftMessage(key, "The stored database body"),
       ).toBe(t.approvedBody);
+
+      // AND the stored form must be the NAMED form. The round-trip above
+      // cannot see this alone: toApprovedBody leaves {{n}} tokens untouched,
+      // so a row holding the RAW approved string would round-trip clean while
+      // renderTemplate — which substitutes only {name} tokens — showed the
+      // organizer literal "{{1}}" in every preview and log body.
+      expect(row!.body, driftMessage(key, "The stored database body (named form)")).toBe(
+        t.namedBody,
+      );
     });
 
     it(`${key}: the stored ContentSid is the approved one`, async () => {

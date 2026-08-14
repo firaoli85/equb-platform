@@ -250,6 +250,14 @@ export function ComposeSend() {
                           {outcome &&
                             (outcome.status === "SENT" ? (
                               <Pill tone="good">Sent</Pill>
+                            ) : outcome.status === "ACCEPTED" ? (
+                              // The ORDINARY success: Twilio answered 201 and
+                              // delivery confirmation arrives later (or never,
+                              // without a public status callback). Lumping it
+                              // in with "Skipped" told the organizer a normal
+                              // batch had sent nothing — inviting a re-send of
+                              // messages members already had.
+                              <Pill tone="good">Handed to WhatsApp</Pill>
                             ) : outcome.status === "FAILED" ? (
                               <Pill tone="problem">Failed</Pill>
                             ) : (

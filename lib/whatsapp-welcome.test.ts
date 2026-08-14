@@ -255,7 +255,7 @@ describe("the new placeholders speak the member's frame, not the cycle's", () =>
       // …and each one is a variable this template actually carries, so a
       // renamed placeholder fails here rather than passing as an unknown string.
       expect(
-        DRAFT_TEMPLATES.WHATSAPP_WELCOME.variableOrder,
+        APPROVED_TEMPLATES.WHATSAPP_WELCOME.variableOrder,
         `${name} is no longer a variable of the welcome`,
       ).toContain(name);
       expect(mayRenderAsNoValue(name), `${name} must not be dashable`).toBe(false);
@@ -278,57 +278,45 @@ describe("the new placeholders speak the member's frame, not the cycle's", () =>
 // 3. IT CANNOT REACH A MEMBER — the guard that matters most.
 // ————————————————————————————————————————————————————————————————
 
-describe("WHATSAPP_WELCOME is a real message type that Meta has NOT approved", () => {
+describe("WHATSAPP_WELCOME is APPROVED and armed (whatsapp_welcome, 13 Aug 2026)", () => {
+  const WELCOME = APPROVED_TEMPLATES.WHATSAPP_WELCOME;
+
   it("is a message key, and is sent by hand", () => {
     expect(MESSAGE_KEYS).toContain("WHATSAPP_WELCOME");
     expect(MANUAL_MESSAGE_KEYS).toContain("WHATSAPP_WELCOME");
   });
 
-  // THE GUARD THIS FILE EXISTS FOR.
-  //
-  // FALSIFIABLE: add the entry to APPROVED_TEMPLATES — the one-line "fix" that
-  // makes the send work — and this fails. It has to, because Twilio answers a
-  // missing or unrecognised template by substituting the values submitted at
-  // APPROVAL: "Sara", "$7,000.00". The welcome would then deliver a fabricated
-  // name and invented figures to a real member, formatted exactly like fact,
-  // AND set an agreement requirement on the strength of it.
-  it("is NOT in the approved registry, and the registry still holds exactly five", () => {
-    expect(APPROVED_TEMPLATE_KEYS).not.toContain("WHATSAPP_WELCOME" as never);
-    expect(Object.keys(APPROVED_TEMPLATES)).toHaveLength(5);
-    expect(isApprovedTemplateKey("WHATSAPP_WELCOME")).toBe(false);
+  // THE ARMING. The draft-and-refuse era is over: the entry with this SID is
+  // what makes deliver() send it, and a successful send is what writes
+  // `agreementRequiredAt`. The queue behind Meta is empty.
+  it("is in the approved registry with its real SID, and the queue is empty", () => {
+    expect(APPROVED_TEMPLATE_KEYS).toContain("WHATSAPP_WELCOME");
+    expect(isApprovedTemplateKey("WHATSAPP_WELCOME")).toBe(true);
+    expect(WELCOME.contentSid).toBe("HX90da7257223b48177b95dbbb132ea182");
+    expect(isDraftTemplateKey("WHATSAPP_WELCOME")).toBe(false);
+    expect(Object.keys(DRAFT_TEMPLATES)).toHaveLength(0);
   });
 
-  // FALSIFIABLE: give DraftTemplate a `contentSid: ""` field and this fails.
-  // An empty ContentSid is the dangerous shape — it is a request on the wire
-  // with no template behind it — so the field is ABSENT rather than blank, and
-  // the send path has nothing to read even by mistake.
-  it("the draft carries no ContentSid field at all — absent, not empty", () => {
-    const draft = DRAFT_TEMPLATES.WHATSAPP_WELCOME;
-    expect(isDraftTemplateKey("WHATSAPP_WELCOME")).toBe(true);
-    expect(Object.hasOwn(draft, "contentSid")).toBe(false);
-    expect(JSON.stringify(draft)).not.toContain("HX");
+  // THE SUBMITTED WORDING, verbatim — the commitment-first form, NOT the
+  // PIN-instructions draft that waited in the queue (that one is history in
+  // docs/WHATSAPP_TEMPLATES.md). The drift guard holds the registry to Meta
+  // character for character; this pins the sentence the switchover shipped.
+  it("carries the submitted body — commitment first, the sign-in address last", () => {
+    expect(WELCOME.approvedBody).toBe(
+      "Hi {{1}}, welcome to the Equb. Your commitment is {{2}} every week for {{3}}, starting {{4}} and finishing {{5}}. Your first step is to sign in and sign your agreement at {{6}} — your account opens once you have.",
+    );
+    expect(toNamedBody(WELCOME.approvedBody, WELCOME.variableOrder)).toBe(WELCOME.namedBody);
+    expect(toApprovedBody(WELCOME.namedBody, WELCOME.variableOrder)).toBe(WELCOME.approvedBody);
+    expect(DEFAULT_TEMPLATES.WHATSAPP_WELCOME.body).toBe(WELCOME.namedBody);
   });
 
-  it("the draft's named body is DERIVED from the body that will be submitted", () => {
-    const draft = DRAFT_TEMPLATES.WHATSAPP_WELCOME;
-    expect(toNamedBody(draft.draftBody, draft.variableOrder)).toBe(draft.namedBody);
-    expect(toApprovedBody(draft.namedBody, draft.variableOrder)).toBe(draft.draftBody);
-    // And it is what the editable row starts from, so the organizer reads the
-    // exact sentence that will be submitted rather than a second copy of it.
-    expect(DEFAULT_TEMPLATES.WHATSAPP_WELCOME.body).toBe(draft.namedBody);
-  });
-
-  // FALSIFIABLE: Meta rejects a body that begins or ends with a variable — a
-  // "dangling parameter" — and a rejection permanently burns the template name.
-  // Every one of our six original bodies opened with `{name},` and would have
-  // been rejected; this one is checked before submission rather than after.
   it("obeys Meta's shape rules: no dangling parameter, sequential numbering", () => {
-    const body = DRAFT_TEMPLATES.WHATSAPP_WELCOME.draftBody;
+    const body = WELCOME.approvedBody;
     expect(body.startsWith("{{")).toBe(false);
     expect(body.trimEnd().endsWith("}}")).toBe(false);
     const positions = [...body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number.parseInt(m[1], 10));
     expect([...new Set(positions)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(DRAFT_TEMPLATES.WHATSAPP_WELCOME.variableOrder).toHaveLength(6);
+    expect(WELCOME.variableOrder).toHaveLength(6);
   });
 
   // FALSIFIABLE: a name placeholderValues does not return is not a blank on
@@ -336,7 +324,7 @@ describe("WHATSAPP_WELCOME is a real message type that Meta has NOT approved", (
   // approval sample. The type already enforces this; this catches a widening.
   it("every variable name is one placeholderValues actually returns", () => {
     const available = Object.keys(placeholderValues(HENOK));
-    for (const name of DRAFT_TEMPLATES.WHATSAPP_WELCOME.variableOrder) {
+    for (const name of WELCOME.variableOrder) {
       expect(available, `the welcome uses {${name}}, which nothing provides`).toContain(name);
     }
   });

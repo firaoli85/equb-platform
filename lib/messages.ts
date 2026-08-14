@@ -8,6 +8,7 @@
 // not UI behavior.
 
 import { formatDateLongUTC, formatMoney } from "./format";
+import { memberWeeksPhraseFromCycleWeeks } from "./member-week-dates";
 // The sentinel and the money classification live in a leaf module so the
 // registry can import them as values without closing an import cycle.
 import { NO_VALUE } from "./placeholder-kinds";
@@ -26,12 +27,15 @@ export const MESSAGE_KEYS = [
   "LATE_NOTICE",
   "WINNER_ANNOUNCEMENT",
   "CYCLE_CLOSING_STATEMENT",
-  // The welcome. A real message type with a real editable row — and NOT in
-  // APPROVED_TEMPLATES, because it has not been submitted to Meta (see the
-  // header of lib/whatsapp-templates.ts). Listed after the five and before
-  // LOCKOUT_NOTICE so `MANUAL_MESSAGE_KEYS[0]`, which is what the batch
-  // composer opens on, stays the behind notice.
+  // The welcome — APPROVED and armed since 13 Aug 2026 (whatsapp_welcome,
+  // v2 set). Listed after the five so `MANUAL_MESSAGE_KEYS[0]`, which is
+  // what the batch composer opens on, stays the behind notice.
   "WHATSAPP_WELCOME",
+  // The per-member BROADCAST (v2 set, 13 Aug 2026): one text the organizer
+  // composes once, delivered individually so each member reads their own
+  // name. Sent from the announcement card, never from the per-member panel
+  // or the batch — see BROADCAST_MESSAGE_KEYS below.
+  "GROUP_ANNOUNCEMENT",
   "LOCKOUT_NOTICE",
 ] as const;
 
@@ -61,12 +65,24 @@ export function isMessageKey(value: string): value is MessageKey {
 }
 
 /**
- * The types the organizer sends by hand as a batch (2.20). The automatic
- * ones are absent on purpose: they fire from their own events, never a
- * batch button.
+ * The one text-to-everyone type. Sent per member — each recipient reads
+ * their own name — from the announcement card alone, with the text as a
+ * required extra composed at send time.
+ */
+export const BROADCAST_MESSAGE_KEYS = ["GROUP_ANNOUNCEMENT"] as const;
+
+/**
+ * The types the organizer sends by hand, per member or as a batch (2.20).
+ * The automatic ones are absent on purpose: they fire from their own
+ * events, never a batch button.
  */
 export const MANUAL_MESSAGE_KEYS = MESSAGE_KEYS.filter(
-  (k): k is MessageKey => !(AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(k),
+  (k): k is MessageKey =>
+    !(AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(k) &&
+    // A broadcast is sent by hand, but never PER MEMBER by hand: it has its
+    // own card, its own extras, and no per-member judgement to make. Listing
+    // it here would put it on every profile with a preview it cannot render.
+    !(BROADCAST_MESSAGE_KEYS as readonly string[]).includes(k),
 );
 
 // ————————————————— Facts: what a statement may say —————————————————
@@ -115,8 +131,14 @@ export type StandingFacts = {
   amountOutstanding: number;
   totalPaid: number;
   lastPaymentWeek: number | null;
-  /** Per-week derived statuses; lets {lateWeeks} name the closed weeks. */
-  weeks?: readonly { weekNumber: number; status: string }[];
+  /**
+   * Per-week derived statuses; lets {lateWeeks} name the closed weeks — and,
+   * since the v2 set, each week's STORED DATE (rule 7), so the my* tokens can
+   * pair the member's own week numbers with real days. `date` is optional for
+   * older callers; a my* token whose week lacks one renders the sentinel and
+   * is REFUSED at the ContentVariables boundary rather than guessing a day.
+   */
+  weeks?: readonly { weekNumber: number; status: string; date?: Date }[];
 };
 
 /** Event facts that exist only at certain moments (a receipt, a draw). */
@@ -131,6 +153,8 @@ export type MessageExtras = {
   drawnWeek?: number;
   /** LOCKOUT_NOTICE: how long the lock lasts, in minutes. */
   lockMinutes?: number;
+  /** GROUP_ANNOUNCEMENT: the organizer's text, composed at send time. */
+  announcementText?: string;
 };
 
 /**
@@ -193,6 +217,33 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
   const lateWeeks = (standing.weeks ?? [])
     .filter((w) => w.status === "LATE")
     .map((w) => w.weekNumber);
+
+  // ————— THE MEMBER-RELATIVE TOKENS (v2 set, 13 Aug 2026) —————
+  //
+  // Their own week numbers paired with stored dates — "2–3 (Aug 23 – Aug 30)"
+  // — composed by lib/member-week-dates.ts. `startWeek` is derived, not a new
+  // fact: their week 1 IS startWeek, and finishWeek = start + committed − 1.
+  //
+  // A week whose stored date is missing composes to the SENTINEL, never a
+  // guessed day (rule 7) — and every my* token except myLastPaymentWeek is
+  // non-dashable, so the send is refused at the ContentVariables boundary
+  // with the reason, before anything reaches Twilio.
+  const startWeek = standing.finishWeek - standing.weeksCommitted + 1;
+  const weekDates = new Map(
+    (standing.weeks ?? [])
+      .filter((w): w is { weekNumber: number; status: string; date: Date } => w.date !== undefined)
+      .map((w) => [w.weekNumber, w.date]),
+  );
+  const myPhrase = (cycleWeeks: readonly number[]): string => {
+    if (cycleWeeks.length === 0) return NO_VALUE;
+    try {
+      return memberWeeksPhraseFromCycleWeeks({ cycleWeeks, startWeek, weekDates });
+    } catch {
+      // A named week with no stored date — refuse-at-boundary, never guess.
+      return NO_VALUE;
+    }
+  };
+
   return {
     name: standing.name,
     week: String(extras.drawnWeek ?? lastCovered ?? standing.currentCycleWeek),
@@ -224,6 +275,37 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
     lateWeeks: formatWeekList(lateWeeks),
     payoutAmount: extras.payoutNet === undefined ? NO_VALUE : formatMoney(extras.payoutNet),
     lockMinutes: extras.lockMinutes === undefined ? NO_VALUE : String(extras.lockMinutes),
+    // ————— the member-relative tokens (v2) —————
+    /** "2–3 (Aug 23 – Aug 30)" — the weeks THIS receipt covered, their numbering. */
+    myWeeksCovered: extras.weeksCovered?.length ? myPhrase(extras.weeksCovered) : NO_VALUE,
+    /**
+     * "4 (Sep 6)" — where they are today, in their own counting.
+     *
+     * CLAMPED to their own finish week. `currentCycleWeek` is the CYCLE's
+     * calendar and keeps counting after a member's window ends — but their
+     * record stops changing at their final week, so "as of your week 10" IS
+     * the complete record for a 10-week member at cycle week 15. Unclamped,
+     * the lookup left their window, composed to the sentinel, and the behind
+     * notice became permanently unsendable for exactly the members most
+     * behind (every send a FAILED row, while the picker kept offering it).
+     */
+    myCurrentWeek: myPhrase([Math.min(standing.currentCycleWeek, standing.finishWeek)]),
+    /**
+     * "1 (Aug 16)" — their last payment, their numbering. The "—" sentinel is
+     * LEGITIMATE here (DASHABLE): a member who has never paid has no last
+     * payment, and the dash is the honest value in that sentence.
+     */
+    myLastPaymentWeek:
+      standing.lastPaymentWeek === null ? NO_VALUE : myPhrase([standing.lastPaymentWeek]),
+    /** "2 (Aug 23) and 3 (Aug 30)" — the LATE weeks, their numbering. */
+    myLateWeeks: lateWeeks.length === 0 ? NO_VALUE : myPhrase(lateWeeks),
+    /** The count beside the phrase — always the SAME set myLateWeeks names. */
+    lateWeeksCount: String(lateWeeks.length),
+    /** GROUP_ANNOUNCEMENT: the organizer's own words, required at the boundary. */
+    announcementText:
+      extras.announcementText === undefined || extras.announcementText.trim() === ""
+        ? NO_VALUE
+        : extras.announcementText.trim(),
   };
 }
 
@@ -262,6 +344,13 @@ export const PLACEHOLDER_DOCS: { token: string; description: string }[] = [
   { token: "{lateWeeks}", description: "Weeks unpaid after their window closed" },
   { token: "{payoutAmount}", description: "The net payout (winner announcement only)" },
   { token: "{lockMinutes}", description: "How long the PIN lock lasts (lockout notice only)" },
+  // ————— the member-relative tokens (v2 set) —————
+  { token: "{myWeeksCovered}", description: "The weeks a receipt covered, in the member's own numbering with dates — “2–3 (Aug 23 – Aug 30)”" },
+  { token: "{myCurrentWeek}", description: "Where the member is today, their own numbering with the date — “4 (Sep 6)”" },
+  { token: "{myLastPaymentWeek}", description: "Their last payment, their own numbering with the date — “1 (Aug 16)”, or — if they have never paid" },
+  { token: "{myLateWeeks}", description: "The late weeks, their own numbering with dates — “2 (Aug 23) and 3 (Aug 30)”" },
+  { token: "{lateWeeksCount}", description: "How many weeks are late — always the same set {myLateWeeks} names" },
+  { token: "{announcementText}", description: "The announcement's own words (group announcement only)" },
 ];
 
 const KNOWN_TOKENS = new Set(PLACEHOLDER_DOCS.map((p) => p.token.slice(1, -1)));
@@ -319,6 +408,8 @@ const TEMPLATE_NAMES: Record<ApprovedTemplateKey, string> = {
   LATE_NOTICE: "Late notice",
   WINNER_ANNOUNCEMENT: "Winner announcement",
   CYCLE_CLOSING_STATEMENT: "Cycle closing statement",
+  WHATSAPP_WELCOME: "Welcome message",
+  GROUP_ANNOUNCEMENT: "Group announcement",
 };
 
 /**
@@ -331,7 +422,6 @@ const TEMPLATE_NAMES: Record<ApprovedTemplateKey, string> = {
  */
 export const LABELS_BY_KEY: Record<MessageKey, string> = {
   ...TEMPLATE_NAMES,
-  WHATSAPP_WELCOME: "Welcome message",
   LOCKOUT_NOTICE: "Lockout notice",
 };
 
@@ -343,16 +433,10 @@ const APPROVED_DEFAULTS = Object.fromEntries(
 ) as Record<ApprovedTemplateKey, { name: string; body: string }>;
 
 export const DEFAULT_TEMPLATES: Record<MessageKey, { name: string; body: string }> = {
+  // Seven of the eight keys are Meta-approved now (v2 set, 13 Aug 2026) —
+  // welcome and group announcement included — so their bodies all read off
+  // the one registry. Only LOCKOUT_NOTICE remains ours alone.
   ...APPROVED_DEFAULTS,
-  // WHATSAPP_WELCOME is absent from the APPROVED registry and present in the
-  // DRAFT one, so its body is read off DRAFT_TEMPLATES for the same reason the
-  // five above are read off APPROVED_TEMPLATES: the sentence is written once,
-  // and the row the organizer edits starts from the exact text that will be
-  // submitted. Editing it is allowed — nothing is locked until Meta owns it.
-  WHATSAPP_WELCOME: {
-    name: LABELS_BY_KEY.WHATSAPP_WELCOME,
-    body: DRAFT_TEMPLATES.WHATSAPP_WELCOME.namedBody,
-  },
   // LOCKOUT_NOTICE is deliberately absent from the registry — it has no
   // approved template and must never look sendable (see the header of
   // lib/whatsapp-templates.ts). Its wording is ours, so it is written here.

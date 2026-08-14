@@ -11,7 +11,8 @@ import { DEFAULT_TEMPLATES, MESSAGE_KEYS, placeholderValues } from "./messages";
 
 // THE DRIFT GUARD.
 //
-// Five templates were approved by Meta on 7 August 2026. Twilio sends them by
+// Seven templates carry Meta-approved wording (five on 7 August 2026, the
+// member-relative v2 rework on 13 August 2026). Twilio sends them by
 // ContentSid, which means the approved sentence goes out no matter what the
 // database says — so a database body that has drifted does not change the
 // message, it only makes the app lie to the organizer about what members are
@@ -83,7 +84,7 @@ describe("the approved registry reproduces Meta's wording exactly", () => {
   it("PAYMENT_CONFIRMED keeps its EM DASH (U+2014), not a hyphen or an en dash", () => {
     const body = APPROVED_TEMPLATES.PAYMENT_CONFIRMED.approvedBody;
     expect(body).toContain("—");
-    expect(body).toContain("for your Equb — recorded on week(s)");
+    expect(body).toContain("for your Equb — recorded on your week(s)");
     // The two characters it is most likely to be silently "corrected" into.
     expect(body).not.toContain("–"); // en dash
     expect(body).not.toMatch(/Equb - recorded/); // hyphen
@@ -105,7 +106,7 @@ describe("LOCKOUT_NOTICE is undeliverable BY DESIGN", () => {
   // notice is a security message; Twilio Verify is the channel for it.
   it("has NO approved template, and must not gain one by accident", () => {
     expect(APPROVED_TEMPLATE_KEYS).not.toContain("LOCKOUT_NOTICE" as ApprovedTemplateKey);
-    expect(Object.keys(APPROVED_TEMPLATES)).toHaveLength(5);
+    expect(Object.keys(APPROVED_TEMPLATES)).toHaveLength(7);
   });
 });
 

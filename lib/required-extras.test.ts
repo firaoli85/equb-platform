@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { placeholderValues, type MessageExtras, type StandingFacts } from "./messages";
-import { buildContentVariables, checkRequiredExtras } from "./whatsapp-templates";
+import { APPROVED_TEMPLATES, buildContentVariables, checkRequiredExtras } from "./whatsapp-templates";
 
 // THE PRODUCTION PATH, RUN END TO END.
 //
@@ -22,19 +22,20 @@ import { buildContentVariables, checkRequiredExtras } from "./whatsapp-templates
  * read "week 12" because {week} fell through to this value, and it looked
  * right only because the draw happened to be for the current week.
  */
+const wd = (w: number) => new Date(Date.UTC(2026, 4, 17 + (w - 1) * 7));
 const FACTS: StandingFacts = {
   name: "Firaoli",
   weeklyAmount: 100_000,
   weeksCommitted: 20,
   currentCycleWeek: 12,
   finishWeek: 20,
-  finishDate: null,
+  finishDate: wd(20),
   weeksCredited: 13,
   weeksBehind: 0,
   amountOutstanding: 0,
   totalPaid: 1_300_000,
   lastPaymentWeek: 13,
-  weeks: [],
+  weeks: Array.from({ length: 20 }, (_, i) => ({ weekNumber: i + 1, status: "PAID", date: wd(i + 1) })),
 };
 
 /** The full production sequence, in order, stopping where production stops. */
@@ -60,7 +61,7 @@ describe("WINNER_ANNOUNCEMENT — the message that reached a real phone", () => 
     expect(r.ok).toBe(false);
     if (r.ok) return;
     // Literals, not derived from requiredExtras.
-    expect(r.missing).toEqual(["drawnWeek", "payoutNet"]);
+    expect(r.missing).toEqual(["payoutNet"]);
   });
 
   it("refuses identically when extras is an empty object", () => {
@@ -68,50 +69,35 @@ describe("WINNER_ANNOUNCEMENT — the message that reached a real phone", () => 
     expect(r.stage).toBe("extras");
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.missing).toEqual(["drawnWeek", "payoutNet"]);
+    expect(r.missing).toEqual(["payoutNet"]);
   });
 
-  // THE INVISIBLE DEFECT. payoutNet present, drawnWeek absent: the money guard
-  // is satisfied, and without this check the message renders and sends with
-  // standing.currentCycleWeek in place of the drawn week.
-  it("with payoutNet but NO drawnWeek, refuses rather than silently using the current week", () => {
+  // THE DRAWN-WEEK ERA IS OVER (winner_announcement_v2, 13 Aug 2026). The v1
+  // body carried "{week}", which without `drawnWeek` silently fell back to
+  // the CURRENT cycle week — the invisible defect this file was written for.
+  // The v2 body has NO week slot at all, so the entire fallback class is gone
+  // structurally: `drawnWeek` is no longer required, and no slot exists for
+  // it to mis-fill.
+  it("with payoutNet alone it SENDS — no drawn-week slot exists to mis-fill", () => {
     const r = runSendPath("WINNER_ANNOUNCEMENT", { payoutNet: 1_960_000 });
-    expect(r.stage).toBe("extras");
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.missing).toEqual(["drawnWeek"]);
-    expect(r.missing).not.toContain("payoutNet");
-  });
-
-  it("proves the fallback it prevents: without the check, week 6's draw would send as week 12", () => {
-    // placeholderValues on its own, with the check bypassed — the state the
-    // member's message was rendered in.
-    const values = placeholderValues(FACTS, { payoutNet: 1_960_000 });
-    expect(values.week).toBe("12"); // currentCycleWeek, NOT a drawn week
-    // And it passes every downstream guard, because "12" is a valid string.
-    const variables = buildContentVariables("WINNER_ANNOUNCEMENT", values);
-    expect(variables.ok).toBe(true);
-  });
-
-  it("WITH drawnWeek differing from the current week, the message carries the DRAWN week", () => {
-    const r = runSendPath("WINNER_ANNOUNCEMENT", { drawnWeek: 6, payoutNet: 1_960_000 });
     expect(r.stage).toBe("sent");
     expect(r.ok).toBe(true);
     if (!r.ok || r.stage !== "sent") return;
-    expect(r.variables["2"]).toBe("6"); // the drawn week
-    expect(r.variables["2"]).not.toBe("12"); // not the current week
-    expect(r.variables["3"]).toBe("$19,600");
+    expect(r.variables["2"]).toBe("$19,600");
+    // The member's own finish DATE — D-38 resolved in 2.22's favour.
+    expect(r.variables["3"]).toBe("Sunday, September 27, 2026");
+    expect(r.variables["4"]).toBe("7"); // 20 committed − 13 paid
+    expect(Object.values(r.variables)).not.toContain("12");
   });
 
-  it("a null drawnWeek counts as absent — a caller that looked and found nothing", () => {
-    const r = runSendPath("WINNER_ANNOUNCEMENT", {
-      drawnWeek: null as unknown as number,
-      payoutNet: 1_960_000,
-    });
-    expect(r.stage).toBe("extras");
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.missing).toEqual(["drawnWeek"]);
+  // The registry's own contract, pinned as a literal so a resubmission that
+  // reintroduces a week slot re-arms the old defect loudly.
+  it("drawnWeek is NOT required, and {week} is not a v2 variable", () => {
+    const check = checkRequiredExtras("WINNER_ANNOUNCEMENT", { payoutNet: 1 });
+    expect(check.ok).toBe(true);
+    expect(
+      APPROVED_TEMPLATES.WINNER_ANNOUNCEMENT.variableOrder as readonly string[],
+    ).not.toContain("week");
   });
 });
 
@@ -141,7 +127,54 @@ describe("PAYMENT_CONFIRMED — the other extras-fed template", () => {
     expect(r.ok).toBe(true);
     if (!r.ok || r.stage !== "sent") return;
     expect(r.variables["2"]).toBe("$2,000");
-    expect(r.variables["3"]).toBe("12–13");
+    // v2: the member's own numbering with dates (start week 1 here, so own
+    // numbers coincide with the cycle's).
+    expect(r.variables["3"]).toBe("12–13 (Aug 2 – Aug 9)");
+  });
+});
+
+// THE SWITCHOVER'S NEW EXTRAS-FED TEMPLATE (13 Aug 2026).
+//
+// The build order asked for this plant-proof on the WELCOME — but the welcome
+// REQUIRES no extras: {portalUrl} is a standing fact read from settings, and
+// welcomeSendCheck refuses an unset one before any network. GROUP_ANNOUNCEMENT
+// is the one NEW template with a required extra, so the proof runs here. An
+// omitted composition would not blank the message — Twilio would deliver the
+// approval SAMPLE ("The draw this week moves to Saturday 7pm...") as if the
+// organizer had said it today. Same defect class as drawnWeek: silent,
+// plausible, wrong.
+describe("GROUP_ANNOUNCEMENT — the organizer's words are required, never sampled", () => {
+  it("with extras entirely omitted, REFUSES at the extras boundary", () => {
+    const r = runSendPath("GROUP_ANNOUNCEMENT", undefined);
+    expect(r.stage).toBe("extras");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    // A literal, not derived from requiredExtras (lesson 5.6).
+    expect(r.missing).toEqual(["announcementText"]);
+  });
+
+  it("a whitespace-only composition is caught at the variables layer — two nets", () => {
+    // It passes the extras boundary (the key IS present) and becomes NO_VALUE
+    // in placeholderValues; announcementText is not DASHABLE, so the variables
+    // layer refuses. Different net, same outcome: nothing sampled is sent.
+    const r = runSendPath("GROUP_ANNOUNCEMENT", { announcementText: "   " });
+    expect(r.stage).toBe("variables");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.missing).toContain("announcementText");
+  });
+
+  it("with the text supplied, sends the organizer's words verbatim", () => {
+    const r = runSendPath("GROUP_ANNOUNCEMENT", {
+      announcementText: "The draw this week moves to Saturday 7pm. Same Zoom link as always.",
+    });
+    expect(r.stage).toBe("sent");
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.stage !== "sent") return;
+    expect(r.variables["1"]).toBe("Firaoli");
+    expect(r.variables["2"]).toBe(
+      "The draw this week moves to Saturday 7pm. Same Zoom link as always.",
+    );
   });
 });
 
@@ -149,6 +182,28 @@ describe("PAYMENT_CONFIRMED — the other extras-fed template", () => {
 // messages is its own defect, and the temptation after a bug like this is to
 // require everything everywhere.
 describe("templates that need no extras still send", () => {
+  it("BEHIND_NOTICE still sends after the cycle runs past the member's own window", () => {
+    // The cycle calendar keeps counting after a member's window ends —
+    // currentCycleWeek 25 in a 20-week window here. Unclamped, myCurrentWeek
+    // looked up a week the member does not have, composed to the sentinel,
+    // and the notice became permanently unsendable for exactly the members
+    // most behind (verifier finding, 14 Aug 2026). Their record stops
+    // changing at their final week, so "as of your week 20" IS the complete
+    // record — the clamp states it instead of refusing.
+    const pastWindow: StandingFacts = {
+      ...FACTS,
+      currentCycleWeek: 25,
+      weeksBehind: 7,
+      amountOutstanding: 700_000,
+    };
+    const r = runSendPath("BEHIND_NOTICE", undefined, pastWindow);
+    expect(r.stage).toBe("sent");
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.stage !== "sent") return;
+    expect(r.variables["2"]).toBe("20 (Sep 27)");
+    expect(r.variables["4"]).toBe("7");
+  });
+
   it("BEHIND_NOTICE with NO extras sends, and a never-paid member's dash is kept", () => {
     const neverPaid: StandingFacts = {
       ...FACTS,
@@ -162,7 +217,7 @@ describe("templates that need no extras still send", () => {
     if (!r.ok || r.stage !== "sent") return;
     // "—" is the honest answer here and must survive both guards.
     expect(r.variables["3"]).toBe("—");
-    expect(r.variables["5"]).toBe("$7,000");
+    expect(r.variables["6"]).toBe("$7,000");
   });
 
   it("CYCLE_CLOSING_STATEMENT with NO extras sends — it has no extras-fed variables", () => {
@@ -189,7 +244,7 @@ describe("LATE_NOTICE refuses an empty week list without help from sendDecision"
     expect(r.stage).toBe("variables");
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.missing).toContain("lateWeeks");
+    expect(r.missing).toContain("myLateWeeks");
   });
 
   it("refuses even when weeks exist but none are LATE", () => {
@@ -203,7 +258,7 @@ describe("LATE_NOTICE refuses an empty week list without help from sendDecision"
     const r = runSendPath("LATE_NOTICE", undefined, paidUp);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.missing).toContain("lateWeeks");
+    expect(r.missing).toContain("myLateWeeks");
   });
 
   it("sends when weeks really are late", () => {
@@ -212,15 +267,15 @@ describe("LATE_NOTICE refuses an empty week list without help from sendDecision"
       weeksBehind: 2,
       amountOutstanding: 200_000,
       weeks: [
-        { weekNumber: 7, status: "LATE" },
-        { weekNumber: 8, status: "LATE" },
+        { weekNumber: 7, status: "LATE", date: wd(7) },
+        { weekNumber: 8, status: "LATE", date: wd(8) },
       ],
     };
     const r = runSendPath("LATE_NOTICE", undefined, late);
     expect(r.stage).toBe("sent");
     expect(r.ok).toBe(true);
     if (!r.ok || r.stage !== "sent") return;
-    expect(r.variables["2"]).toBe("7–8");
+    expect(r.variables["2"]).toBe("7–8 (Jun 28 – Jul 5)");
   });
 });
 
@@ -231,8 +286,8 @@ describe("the refusal tells the caller what to DO", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toContain("WINNER_ANNOUNCEMENT");
-    expect(r.error).toContain("extras.drawnWeek");
     expect(r.error).toContain("extras.payoutNet");
+    expect(r.error).not.toContain("extras.drawnWeek");
   });
 
   it("explains that the failure is SILENT, not loud", () => {

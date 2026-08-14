@@ -121,6 +121,18 @@ describe("ContentVariables are built in the approved ORDER", () => {
   const VALUES = {
     name: "Tizita",
     week: "12",
+    myWeeksCovered: "4–6 (Jun 7 – Jun 21)",
+    myCurrentWeek: "12 (Aug 2)",
+    myLastPaymentWeek: "6 (Jun 21)",
+    myLateWeeks: "7–11 (Jun 28 – Jul 26)",
+    lateWeeksCount: "5",
+    announcementText: "The draw moves to Saturday 7pm.",
+    weeksLeft: "8",
+    finishDate: "October 4",
+    startDate: "May 17",
+    weeklyAmount: "$1,000",
+    weeksCommitted: "20 weeks",
+    portalUrl: "https://equb.example.org",
     weeksPaid: "6",
     weeksTotal: "20",
     weeksBehind: "6",
@@ -134,21 +146,21 @@ describe("ContentVariables are built in the approved ORDER", () => {
     totalPaid: "$6,000",
   };
 
-  it("PAYMENT_CONFIRMED — name, amount, weeks covered, paid, total", () => {
+  it("PAYMENT_CONFIRMED v2 — name, amount, MY covered weeks with dates, paid, total", () => {
     const r = buildContentVariables("PAYMENT_CONFIRMED", VALUES);
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
         "2": "$750",
-        "3": "4–6",
+        "3": "4–6 (Jun 7 – Jun 21)",
         "4": "6",
         "5": "20",
       });
     }
   });
 
-  it("BEHIND_NOTICE — name, week, last payment, weeks behind, outstanding", () => {
+  it("BEHIND_NOTICE v2 — six slots: my current week, my last payment, both counts, amount", () => {
     const r = buildContentVariables("BEHIND_NOTICE", VALUES);
     // Without this the block is skipped on a refusal and the test
     // passes with ZERO assertions — on the template that shipped the bug.
@@ -156,15 +168,17 @@ describe("ContentVariables are built in the approved ORDER", () => {
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
-        "2": "12",
-        "3": "6",
+        "2": "12 (Aug 2)",
+        "3": "6 (Jun 21)",
         "4": "6",
-        "5": "$6,000",
+        "5": "20",
+        "6": "$6,000",
       });
+      expect(Object.keys(r.variables)).toHaveLength(6);
     }
   });
 
-  it("LATE_NOTICE — name, late weeks, outstanding, weeks behind (only four)", () => {
+  it("LATE_NOTICE v2 — my late weeks with dates, amount, the late count, the total", () => {
     const r = buildContentVariables("LATE_NOTICE", VALUES);
     // Without this the block is skipped on a refusal and the test
     // passes with ZERO assertions — on the template that shipped the bug.
@@ -172,15 +186,16 @@ describe("ContentVariables are built in the approved ORDER", () => {
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
-        "2": "7–11",
+        "2": "7–11 (Jun 28 – Jul 26)",
         "3": "$6,000",
-        "4": "6",
+        "4": "5",
+        "5": "20",
       });
-      expect(Object.keys(r.variables)).toHaveLength(4);
+      expect(Object.keys(r.variables)).toHaveLength(5);
     }
   });
 
-  it("WINNER_ANNOUNCEMENT — name, drawn week, payout, finish week", () => {
+  it("WINNER_ANNOUNCEMENT v2 — payout, finish DATE, weeks remaining; no drawn week", () => {
     const r = buildContentVariables("WINNER_ANNOUNCEMENT", VALUES);
     // Without this the block is skipped on a refusal and the test
     // passes with ZERO assertions — on the template that shipped the bug.
@@ -188,9 +203,35 @@ describe("ContentVariables are built in the approved ORDER", () => {
     if (r.ok) {
       expect(r.variables).toEqual({
         "1": "Tizita",
-        "2": "12",
-        "3": "$9,800",
-        "4": "20",
+        "2": "$9,800",
+        "3": "October 4",
+        "4": "8",
+      });
+    }
+  });
+
+  it("WHATSAPP_WELCOME — commitment, both dates, the portal address", () => {
+    const r = buildContentVariables("WHATSAPP_WELCOME", VALUES);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.variables).toEqual({
+        "1": "Tizita",
+        "2": "$1,000",
+        "3": "20 weeks",
+        "4": "May 17",
+        "5": "October 4",
+        "6": "https://equb.example.org",
+      });
+    }
+  });
+
+  it("GROUP_ANNOUNCEMENT — the name and the organizer's own words", () => {
+    const r = buildContentVariables("GROUP_ANNOUNCEMENT", VALUES);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.variables).toEqual({
+        "1": "Tizita",
+        "2": "The draw moves to Saturday 7pm.",
       });
     }
   });
@@ -215,10 +256,16 @@ describe("ContentVariables are built in the approved ORDER", () => {
     // The cross-check: if someone reorders variableOrder, the explicit
     // objects above start failing, and this says why.
     expect(APPROVED_TEMPLATES.PAYMENT_CONFIRMED.variableOrder).toEqual([
-      "name", "amountReceived", "weeksCovered", "weeksPaid", "weeksTotal",
+      "name", "amountReceived", "myWeeksCovered", "weeksPaid", "weeksTotal",
     ]);
     expect(APPROVED_TEMPLATES.LATE_NOTICE.variableOrder).toEqual([
-      "name", "lateWeeks", "amountOwed", "weeksBehind",
+      "name", "myLateWeeks", "amountOwed", "lateWeeksCount", "weeksTotal",
+    ]);
+    expect(APPROVED_TEMPLATES.WINNER_ANNOUNCEMENT.variableOrder).toEqual([
+      "name", "payoutAmount", "finishDate", "weeksLeft",
+    ]);
+    expect(APPROVED_TEMPLATES.GROUP_ANNOUNCEMENT.variableOrder).toEqual([
+      "name", "announcementText",
     ]);
   });
 });
@@ -228,14 +275,14 @@ describe("an incomplete variable set REFUSES", () => {
     const r = buildContentVariables("PAYMENT_CONFIRMED", {
       name: "Tizita",
       amountReceived: "$750",
-      // weeksCovered missing
+      // myWeeksCovered missing
       weeksPaid: "6",
       weeksTotal: "20",
     });
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.missing).toEqual(["weeksCovered"]);
-      expect(r.error).toContain("weeksCovered");
+      expect(r.missing).toEqual(["myWeeksCovered"]);
+      expect(r.error).toContain("myWeeksCovered");
       // The reason has to say WHY refusing beats sending.
       expect(r.error).toContain("SAMPLE");
     }
@@ -243,7 +290,7 @@ describe("an incomplete variable set REFUSES", () => {
 
   it("treats an EMPTY STRING as missing — Twilio would sample-fill it", () => {
     const r = buildContentVariables("PAYMENT_CONFIRMED", {
-      name: "", amountReceived: "$750", weeksCovered: "4–6", weeksPaid: "6", weeksTotal: "20",
+      name: "", amountReceived: "$750", myWeeksCovered: "4–6 (Jun 7 – Jun 21)", weeksPaid: "6", weeksTotal: "20",
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.missing).toEqual(["name"]);
@@ -253,7 +300,7 @@ describe("an incomplete variable set REFUSES", () => {
     // lastPaymentWeek is legitimately "—" for a member who has never paid,
     // and "no payment recorded" is exactly what they should read.
     const r = buildContentVariables("BEHIND_NOTICE", {
-      name: "Tizita", week: "12", lastPaymentWeek: "—", weeksBehind: "12", amountOwed: "$12,000",
+      name: "Tizita", myCurrentWeek: "12 (Aug 2)", myLastPaymentWeek: "—", weeksBehind: "12", weeksTotal: "20", amountOwed: "$12,000",
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.variables["3"]).toBe("—");

@@ -318,6 +318,17 @@ export async function sendToMember(input: { participationId: string; key: string
         error: "That message sends itself when its event happens — it cannot be sent by hand.",
       };
     }
+    // The broadcast is composed ONCE for everyone on its own card and its
+    // required text never travels this path — without the refusal, a crafted
+    // request would reach deliver(), fail at the extras boundary, and plant a
+    // FAILED "Group announcement" row on a real member's personal log. Every
+    // other wrong-path key gets a clean refusal; this one must too.
+    if (input.key === "GROUP_ANNOUNCEMENT") {
+      return {
+        ok: false as const,
+        error: "The group announcement sends from its own card on the Messages page — it is composed once for everyone, never per member.",
+      };
+    }
 
     // A SECOND WELCOME IS NEVER AN ORDINARY SEND. The UI stops offering the
     // welcome once one has been sent, but a server action cannot lean on what

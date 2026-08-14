@@ -39,8 +39,9 @@ import {
 } from "./whatsapp-templates";
 import { portalUrlValue, welcomeSendCheck } from "./welcome-send";
 
-// STATEMENTS DELIVER. Meta approved five Content templates on 7 August 2026
-// under category UTILITY (lib/whatsapp-templates.ts); a template needs no
+// STATEMENTS DELIVER. Meta first approved Content templates on 7 August 2026,
+// reworked to the seven-key member-relative set on 13 August 2026, all
+// category UTILITY (lib/whatsapp-templates.ts); a template needs no
 // 24-hour service window, which is why freeform never worked and these do.
 //
 // THERE IS DELIBERATELY NO GLOBAL "CAN STATEMENTS SEND" FLAG. One existed
@@ -139,6 +140,12 @@ export async function loadStandingFacts(participationId: string): Promise<Loaded
     ),
   });
 
+  // Every stored week date, keyed by number — what the my* tokens compose
+  // from (rule 7: the stored row's day, never a projection).
+  const weekDateByNumber = new Map(
+    participation.cycle.weeks.map((w) => [w.weekNumber, w.date]),
+  );
+
   const facts: StandingFacts = {
     name: participation.person.nameEnglishFirst,
     weeklyAmount: participation.weeklyAmount,
@@ -173,7 +180,14 @@ export async function loadStandingFacts(participationId: string): Promise<Loaded
     amountOutstanding: standing.amountOutstanding,
     totalPaid: standing.totalPaid,
     lastPaymentWeek: standing.lastPaymentWeek,
-    weeks: standing.weeks.map((w) => ({ weekNumber: w.weekNumber, status: w.status })),
+    // Each week's STORED date rides along (rule 7) so the my* tokens can pair
+    // the member's own numbering with real days. From the cycle's own rows —
+    // the same rows the window derivation read — never a projection.
+    weeks: standing.weeks.map((w) => ({
+      weekNumber: w.weekNumber,
+      status: w.status,
+      date: weekDateByNumber.get(w.weekNumber),
+    })),
   };
 
   return { participation, standing, facts };
@@ -329,12 +343,12 @@ async function deliver(input: {
   // turn a lockout into an error on top of a lockout.
   // CAPTURED BEFORE THE GUARD BELOW NARROWS IT AWAY.
   //
-  // The requirement write further down compared `input.key` to
+  // The requirement write further down once compared `input.key` to
   // "WHATSAPP_WELCOME" AFTER this guard had narrowed the type to
-  // ApprovedTemplateKey — so the comparison could never be true, and
-  // `tsc` said so. The branch was unreachable in the type system exactly as
-  // it is unreachable at runtime, for the same underlying reason: the welcome
-  // has no approved template yet.
+  // ApprovedTemplateKey — in the pre-approval era that comparison could never
+  // be true, and `tsc` said so. Captured here, before the narrowing, the flag
+  // is real — and since 13 Aug 2026 the welcome IS approved, so it is read on
+  // every live welcome send.
   const isWelcome = input.key === "WHATSAPP_WELCOME";
 
   if (!isApprovedTemplateKey(input.key)) {
@@ -447,10 +461,11 @@ async function deliver(input: {
   // the message has already gone.
   //
   // ONE TRANSACTION, so the record of what was said and the obligation it
-  // created cannot exist without each other. As it stands the pair is
-  // UNREACHABLE — WHATSAPP_WELCOME has no approved template, so the skip above
-  // returns before any of this — and it is written now so that registering the
-  // ContentSid is the only remaining step rather than the first of two.
+  // created cannot exist without each other. LIVE SINCE 13 Aug 2026: the pair
+  // was written in the pre-approval era so that registering the welcome's
+  // ContentSid would be the only remaining step — the SID landed
+  // (HX90da7257223b48177b95dbbb132ea182) and this now fires on every real
+  // welcome send. It is the entire mechanism behind the agreement gate.
   const participationId = input.participationId;
   if (isWelcome && result.ok && participationId !== undefined) {
     await prisma.$transaction([

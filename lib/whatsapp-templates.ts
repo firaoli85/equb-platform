@@ -1,9 +1,11 @@
 // THE META-APPROVED TEMPLATE REGISTRY.
 //
-// Five WhatsApp Content templates were approved by Meta on 7 August 2026 under
-// category UTILITY. From that moment the approved wording is CANONICAL: it is
-// the only text that may leave the platform under these ContentSids, and it
-// cannot be changed without re-submission and re-approval.
+// Seven WhatsApp Content templates, all category UTILITY: five approved by
+// Meta on 7 August 2026, of which four were superseded on 13 August 2026 by
+// the member-relative v2 set — which also brought the welcome and the group
+// announcement in. Approved wording is CANONICAL from the moment it lands: it
+// is the only text that may leave the platform under these ContentSids, and
+// it cannot be changed without re-submission and re-approval.
 //
 // WHY THIS FILE EXISTS AT ALL. The MessageTemplate rows in the database hold
 // freeform text the organizer can edit from the app (2.20 — templates are
@@ -30,21 +32,24 @@
 // Adding LOCKOUT_NOTICE to this record without an approved ContentSid would
 // make it look sendable. Do not.
 //
-// WHATSAPP_WELCOME IS DRAFTED AND ALSO ABSENT, for a different reason: it is
-// written, agreed, and simply has not been SUBMITTED yet. It lives in
-// DRAFT_TEMPLATES below, which has no contentSid field at all — see the comment
-// there for why an entry with a blank one would be the dangerous shape.
+// WHATSAPP_WELCOME WAS THE DRAFT THAT GRADUATED (13 Aug 2026): it sat in
+// DRAFT_TEMPLATES — deliberately without a contentSid field — until Meta
+// approved it, and now holds a real entry below. DRAFT_TEMPLATES itself is
+// empty but its machinery stays: the next unsubmitted template belongs there,
+// not here with a blank SID, which would be the dangerous shape.
 
 import type { MessageExtras, PlaceholderName } from "./messages";
 import { isMoneyPlaceholder, mayRenderAsNoValue, NO_VALUE } from "./placeholder-kinds";
 
-/** The five keys Meta has approved. Deliberately NOT `MessageKey`. */
+/** The seven keys Meta has approved. Deliberately NOT `MessageKey`. */
 export type ApprovedTemplateKey =
   | "PAYMENT_CONFIRMED"
   | "BEHIND_NOTICE"
   | "LATE_NOTICE"
   | "WINNER_ANNOUNCEMENT"
-  | "CYCLE_CLOSING_STATEMENT";
+  | "CYCLE_CLOSING_STATEMENT"
+  | "WHATSAPP_WELCOME"
+  | "GROUP_ANNOUNCEMENT";
 
 export type ApprovedTemplate = {
   key: ApprovedTemplateKey;
@@ -148,42 +153,83 @@ function approved(
   return { ...entry, namedBody: toNamedBody(entry.approvedBody, entry.variableOrder) };
 }
 
+// THE v2 SET (Meta, 13 Aug 2026, all UTILITY) — the member-relative rework
+// landed: statements speak the member's OWN weeks paired with dates, never
+// the group calendar. The four superseded v1 entries (SIDs HX87cb…, HX8bb8…,
+// HXc25b…, HX2774…) live in docs/WHATSAPP_TEMPLATES.md's history section and
+// remain registered in Twilio until post-deploy retirement.
 export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> = {
   PAYMENT_CONFIRMED: approved({
     key: "PAYMENT_CONFIRMED",
-    contentSid: "HX87cb0a437434f7f9bba329958c74544a",
-    // NOTE THE EM DASH after "Equb". U+2014.
+    contentSid: "HXf357ad3b5f22055d701a9e8f2b3816cc",
+    // NOTE THE EM DASH after "Equb" (U+2014); the {{3}} phrase itself carries
+    // EN dashes ("2–3 (Aug 23 – Aug 30)") from the composer.
     approvedBody:
-      "Hi {{1}}, we received {{2}} for your Equb — recorded on week(s) {{3}}. You have paid {{4}} of {{5}} weeks. Thank you.",
-    variableOrder: ["name", "amountReceived", "weeksCovered", "weeksPaid", "weeksTotal"],
+      "Hi {{1}}, we received {{2}} for your Equb — recorded on your week(s) {{3}}. You have now paid {{4}} of your {{5}} weeks. Thank you.",
+    variableOrder: ["name", "amountReceived", "myWeeksCovered", "weeksPaid", "weeksTotal"],
     requiredExtras: ["amountReceived", "weeksCovered"],
   }),
 
   BEHIND_NOTICE: approved({
     key: "BEHIND_NOTICE",
-    contentSid: "HX8bb8e24a790e8fafd81f232ecfe6e8dc",
+    contentSid: "HX5ccceab671caae1a5a496f8a58f5695e",
+    // SIX variables — one more than v1. {{3}} keeps lastPaymentWeek's
+    // sentinel rule: "—" is the honest value for a member who has never paid
+    // (lib/placeholder-kinds.ts DASHABLE).
     approvedBody:
-      "Hi {{1}}, your Equb record as of week {{2}}: last payment week {{3}}, and {{4}} weeks behind, {{5}} outstanding. Please contact Firaoli with any questions.",
-    variableOrder: ["name", "week", "lastPaymentWeek", "weeksBehind", "amountOwed"],
+      "Hi {{1}}, your Equb record as of your week {{2}}: last payment on your week {{3}}, and {{4}} of your {{5}} weeks are behind, {{6}} outstanding. Please contact Firaoli with any questions.",
+    variableOrder: ["name", "myCurrentWeek", "myLastPaymentWeek", "weeksBehind", "weeksTotal", "amountOwed"],
     requiredExtras: [],
   }),
 
   LATE_NOTICE: approved({
     key: "LATE_NOTICE",
-    contentSid: "HXc25be8d015fc1d36a6b0caf3ebf89823",
+    contentSid: "HX52a4f9c1490d5a34ef65e599fa4ace23",
     approvedBody:
-      "Hi {{1}}, your Equb week(s) {{2}} closed without a payment recorded. Your balance is {{3}} outstanding across {{4}} weeks. Please contact Firaoli if this does not match your records.",
-    variableOrder: ["name", "lateWeeks", "amountOwed", "weeksBehind"],
+      "Hi {{1}}, your week(s) {{2}} closed without a payment recorded. Your balance is {{3}} outstanding across {{4}} of your {{5}} weeks. Please contact Firaoli if this does not match your records.",
+    variableOrder: ["name", "myLateWeeks", "amountOwed", "lateWeeksCount", "weeksTotal"],
     requiredExtras: [],
   }),
 
   WINNER_ANNOUNCEMENT: approved({
     key: "WINNER_ANNOUNCEMENT",
-    contentSid: "HX2774ec28d2785140d4610ba2f947f6e5",
+    // NO DRAWN-WEEK REFERENCE, BY DESIGN (13 Aug wording): the payout is
+    // handed over in person; the message's job is what continues and until
+    // when. This supersedes D-38 — the finish DATE is carried, resolving that
+    // divergence in 2.22's favour. `drawnWeek` is therefore NOT required any
+    // more; `payoutNet` still is (caller-supplied, defect-producing).
+    contentSid: "HX02e0db4ce467224186802b64adb007a7",
     approvedBody:
-      "Hi {{1}}, your Equb payout for week {{2}} is {{3}}. Your contributions continue to week {{4}}. Firaoli will arrange the handover.",
-    variableOrder: ["name", "week", "payoutAmount", "finishWeek"],
-    requiredExtras: ["drawnWeek", "payoutNet"],
+      "Hi {{1}}, congratulations — your Equb payout is {{2}}. Your weekly contributions continue until {{3}}, with {{4}} of your weeks remaining. Firaoli will arrange the handover.",
+    variableOrder: ["name", "payoutAmount", "finishDate", "weeksLeft"],
+    requiredExtras: ["payoutNet"],
+  }),
+
+  WHATSAPP_WELCOME: approved({
+    key: "WHATSAPP_WELCOME",
+    // ARMED (13 Aug 2026). The draft-and-refuse era is over: this entry is
+    // what makes deliver() send it, and a successful send is what writes
+    // `agreementRequiredAt` and gates the member's portal — the mechanism the
+    // agreement build left waiting on exactly this SID. The two hard blocks
+    // (no portal address; the PIN sentence being false) stay in
+    // lib/welcome-send.ts and refuse BEFORE the network, as ever.
+    contentSid: "HX90da7257223b48177b95dbbb132ea182",
+    approvedBody:
+      "Hi {{1}}, welcome to the Equb. Your commitment is {{2}} every week for {{3}}, starting {{4}} and finishing {{5}}. Your first step is to sign in and sign your agreement at {{6}} — your account opens once you have.",
+    variableOrder: ["name", "weeklyAmount", "weeksCommitted", "startDate", "finishDate", "portalUrl"],
+    requiredExtras: [],
+  }),
+
+  GROUP_ANNOUNCEMENT: approved({
+    key: "GROUP_ANNOUNCEMENT",
+    // A BROADCAST SENT PER MEMBER, individually — each recipient reads their
+    // own name; there is no group-chat send on WhatsApp. The text is the
+    // organizer's free composition at send time, so it is a REQUIRED extra:
+    // an omitted text would deliver Twilio's approval sample as fact.
+    contentSid: "HX4981b5b4c3e692a489dc084d52d375ce",
+    approvedBody: "Hi {{1}}, a message from your Equb: {{2}}",
+    variableOrder: ["name", "announcementText"],
+    requiredExtras: ["announcementText"],
   }),
 
   CYCLE_CLOSING_STATEMENT: approved({
@@ -196,13 +242,13 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
   }),
 };
 
-// ————————————————— DRAFTED, NOT SUBMITTED —————————————————
+// ————————————————— THE DRAFT QUEUE (empty since 13 Aug 2026) —————————————————
 //
-// WHATSAPP_WELCOME is the sixth Content template. Its wording is agreed and it
-// has NOT been sent to Meta, so no ContentSid exists for it and nothing can
-// carry it to a member yet.
+// A template that is WRITTEN but not yet Meta-approved waits here, never in
+// APPROVED_TEMPLATES. WHATSAPP_WELCOME lived in this queue until 13 Aug 2026,
+// when Meta approved it and it moved into APPROVED_TEMPLATES above.
 //
-// WHY IT IS NOT A SIXTH ENTRY ABOVE WITH AN EMPTY ContentSid.
+// WHY A DRAFT IS NEVER AN ENTRY ABOVE WITH AN EMPTY ContentSid.
 //
 // `APPROVED_TEMPLATES` means one thing — "Meta approved this exact wording" —
 // and everything downstream reads it that way. `isApprovedTemplateKey` narrows
@@ -212,14 +258,14 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
 // would put a request on the wire with no template behind it, at the one layer
 // whose failure mode is "a real member reads Sara and $7,000.00 as fact".
 //
-// So the draft has NO `contentSid` FIELD. Not empty — absent, so the send path
+// So a draft has NO `contentSid` FIELD. Not empty — absent, so the send path
 // cannot reach it even by mistake: `DraftTemplate` has nothing to read.
 //
 // This is the same ruling as LOCKOUT_NOTICE one step earlier. That one has no
-// draft either, because it must never be submitted at all; this one has a draft
-// because it is waiting in a queue.
+// draft either, because it must never be submitted at all; a draft sits here
+// only while it waits in the submission queue.
 
-export type DraftTemplateKey = "WHATSAPP_WELCOME";
+export type DraftTemplateKey = never;
 
 export type DraftTemplate = {
   key: DraftTemplateKey;
@@ -240,33 +286,13 @@ function draft(entry: Omit<DraftTemplate, "namedBody">): DraftTemplate {
   return { ...entry, namedBody: toNamedBody(entry.draftBody, entry.variableOrder) };
 }
 
-export const DRAFT_TEMPLATES: Record<DraftTemplateKey, DraftTemplate> = {
-  WHATSAPP_WELCOME: draft({
-    key: "WHATSAPP_WELCOME",
-    // Six variables, each separated by fixed text, opening and closing on fixed
-    // text — the two shape rules in docs/WHATSAPP_TEMPLATES.md that would
-    // otherwise burn the template name on a rejection.
-    // "WHEN YOU SIGN IN", NOT "THE FIRST TIME YOU SIGN IN".
-    //
-    // The organizer may send this to a member who has been in the group for
-    // months and has signed in many times — that is the intended way to bring
-    // an existing member into signing. For them the agreement arrives on their
-    // NEXT visit, not their first, and "the first time you sign in" describes
-    // a moment that is already years behind them. The PIN sentence already
-    // covers both cases the same way; this one now does too.
-    // THE LINK IS LAST (organizer, 13 Aug 2026): the sign-in address is the
-    // one thing the member acts on, and in a WhatsApp message the last line
-    // is the tappable one. {{6}} is still FOLLOWED by fixed text — Meta
-    // refuses a body that ends on a variable, and the organizer named that
-    // rule in the same breath as the request.
-    draftBody:
-      "Hi {{1}}, welcome to your Equb. You are saving {{2}} a week for {{3}}, from {{4}} to {{5}}. " +
-      "When you sign in you will be asked to read and sign your agreement. Sign in at {{6}} with " +
-      "your phone number — if you have set your own PIN use it, otherwise your PIN is the last 4 " +
-      "digits of your phone number.",
-    variableOrder: ["name", "weeklyAmount", "weeksCommitted", "startDate", "finishDate", "portalUrl"],
-  }),
-};
+// THE QUEUE IS EMPTY (13 Aug 2026): the welcome was submitted, approved, and
+// moved into APPROVED_TEMPLATES above — the submitted wording was the
+// commitment-first form, NOT the PIN-instructions draft that waited here;
+// that draft is recorded in docs/WHATSAPP_TEMPLATES.md's history section as
+// superseded-before-submission. The machinery stays for the next template
+// that waits on Meta.
+export const DRAFT_TEMPLATES: Record<DraftTemplateKey, DraftTemplate> = {};
 
 export const DRAFT_TEMPLATE_KEYS = Object.keys(DRAFT_TEMPLATES) as DraftTemplateKey[];
 
@@ -345,13 +371,15 @@ export function checkRequiredExtras(
 /** What each template asserts, for a refusal that explains itself. */
 const FACT_DESCRIPTIONS: Record<ApprovedTemplateKey, string> = {
   PAYMENT_CONFIRMED: "which weeks a receipt landed on and how much arrived",
-  WINNER_ANNOUNCEMENT: "the week a number was drawn and what that payout is worth",
+  WINNER_ANNOUNCEMENT: "what a payout is worth",
   BEHIND_NOTICE: "a member's arrears",
   LATE_NOTICE: "which weeks closed unpaid",
   CYCLE_CLOSING_STATEMENT: "a member's final position",
+  WHATSAPP_WELCOME: "a member's commitment and where they sign in",
+  GROUP_ANNOUNCEMENT: "whatever the organizer composed at send time",
 };
 
-/** The five keys, for scripts and tests that iterate them. */
+/** The seven keys, for scripts and tests that iterate them. */
 export const APPROVED_TEMPLATE_KEYS = Object.keys(
   APPROVED_TEMPLATES,
 ) as ApprovedTemplateKey[];
@@ -366,7 +394,7 @@ export const APPROVED_TEMPLATE_KEYS = Object.keys(
  */
 export function driftMessage(key: string, where: string): string {
   return (
-    `${where} for ${key} no longer matches the wording Meta approved on 7 August 2026. ` +
+    `${where} for ${key} no longer matches the wording Meta approved (7 Aug 2026 set, reworked 13 Aug 2026). ` +
     `It needs RE-SUBMISSION and RE-APPROVAL before it can send.\n` +
     `WhatsApp sends this template by ContentSid, so editing the text here does NOT change ` +
     `what members receive — it only makes the app disagree with what is actually sent.\n` +

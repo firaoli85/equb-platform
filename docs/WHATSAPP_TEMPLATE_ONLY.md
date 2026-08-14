@@ -1,13 +1,14 @@
 # WhatsApp is template-only
 
-**Status as of 2026-08-13. Login codes work. Statements work — as Meta-approved
-templates, which is the only way they ever could.** Five templates were
-approved on 7 August 2026 (see
-[WHATSAPP_TEMPLATES.md](WHATSAPP_TEMPLATES.md) for bodies and ContentSids);
-four deliver to real members today, and the fifth — the closing statement —
-has its first real use when the cycle closes. The sender is **+13016835755**
-("Equb", WABA 1018506704190290, business verified); the approved templates
-carried over to it.
+**Status as of 2026-08-14. Login codes work. Statements work — as Meta-approved
+templates, which is the only way they ever could.** The live set is the
+**six templates approved 13 August 2026** plus the unchanged closing
+statement — seven registered keys in all (see
+[WHATSAPP_TEMPLATES.md](WHATSAPP_TEMPLATES.md) for bodies and ContentSids).
+The first five, approved 7 August 2026, proved the channel; four of them were
+superseded by the member-relative v2 rework and await retirement, and the
+closing statement carried over unchanged. The sender is **+13016835755**
+("Equb", WABA 1018506704190290, business verified).
 
 What follows is the rule that shaped this, and the history that proved it —
 kept because the rule still governs every future template, and because the
@@ -49,7 +50,8 @@ Builder, submitted to Meta, approved, and only then wired by recording its
 ContentSid in [lib/whatsapp-templates.ts](../lib/whatsapp-templates.ts) (the
 registry is the source of truth; the drift guards hold the database rows to
 it). A type with no ContentSid refuses itself at send time — WHATSAPP_WELCOME
-does exactly this until its submission is approved.
+did exactly this from its drafting until Meta approved it on 13 August 2026;
+today only LOCKOUT_NOTICE remains template-less, by design and permanently.
 
 ## What was actually observed, and the wrong conclusion it produced
 
@@ -101,15 +103,18 @@ situation. Any message whose wording changes shape conditionally needs to
 become either several templates or one template with more variables.
 
 Meta also categorises templates (utility / marketing / authentication) and
-prices them differently. All five approved templates are UTILITY — see
+prices them differently. All seven registered templates are UTILITY — see
 [WHATSAPP_TEMPLATES.md](WHATSAPP_TEMPLATES.md) for what would silently
-re-categorise one as marketing.
+re-categorise one as marketing, and for the observed limit of the category:
+Meta's runtime declined the open-composition group announcement (63049)
+despite its UTILITY approval.
 
 ## What is safe to rely on today
 
 - **WhatsApp login codes** — working through Twilio Verify, no window needed.
-- **WhatsApp statements** — working through the five approved templates,
-  addressed by ContentSid.
+- **WhatsApp statements** — working through the approved template set
+  (six of 13 August 2026 + the unchanged closing statement), addressed by
+  ContentSid; live-verified 14 August 2026 with delivered test sends.
 - **PIN** — unaffected by any of this, and still the default door.
 - **SMS** — a separate matter entirely; see the Firebase notes. Failing
   locally with `auth/invalid-app-credential` and parked.

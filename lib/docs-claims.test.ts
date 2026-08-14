@@ -396,24 +396,14 @@ describe("GUARD — no document calls a registered template unavailable", () => 
     ).toEqual([]);
   });
 
-  // The teeth for the day the welcome is registered: these lines legitimately
-  // describe WHATSAPP_WELCOME as unsubmitted TODAY, because it has no SID. The
-  // moment it gains one, `isApprovedTemplateKey` starts answering true and the
-  // scan above starts covering every one of those sentences.
-  it("the scan reaches WHATSAPP_WELCOME's pending lines the day its SID registers", async () => {
+  // THE DAY ARRIVED (13 Aug 2026): the welcome registered, the expires-by-
+  // design assertion flipped, and the scan above now covers every sentence
+  // about it. LOCKOUT_NOTICE is the one key that may legitimately be called
+  // template-less forever — asserted so the guard's exemption cannot widen.
+  it("the welcome is registered, so the scan covers its lines — LOCKOUT alone stays out", async () => {
     const { isApprovedTemplateKey } = await import("./whatsapp-templates");
-    // Today: not approved, so its "not submitted" lines are legitimate.
-    // This assertion EXPIRES BY DESIGN — when the welcome registers, flip the
-    // expectation and delete the doc lines the first test then names.
-    expect(isApprovedTemplateKey("WHATSAPP_WELCOME")).toBe(false);
-    // And the denial patterns really match the doc's own pending wording, so
-    // the future failure is real rather than hoped for (5.2). Same two-line
-    // window as the scan itself — the doc wraps the sentence.
-    const lines = readFileSync(join(ROOT, "docs", "WHATSAPP_TEMPLATES.md"), "utf8").split("\n");
-    const pending = lines.some((l, i) => {
-      const window = `${l}\n${lines[i + 1] ?? ""}`;
-      return window.includes("WHATSAPP_WELCOME") && DENIALS.some((d) => d.test(window));
-    });
-    expect(pending, "no pending line found — the future guard would never fire").toBe(true);
+    expect(isApprovedTemplateKey("WHATSAPP_WELCOME")).toBe(true);
+    expect(isApprovedTemplateKey("GROUP_ANNOUNCEMENT")).toBe(true);
+    expect(isApprovedTemplateKey("LOCKOUT_NOTICE")).toBe(false);
   });
 });

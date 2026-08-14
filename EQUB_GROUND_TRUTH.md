@@ -482,7 +482,7 @@ already working.
 
 | Channel | Status | Use |
 |---|---|---|
-| **WhatsApp Business** | **LIVE** — business verified with Meta, sender **+13016835755** (WABA 1018506704190290), display name "Equb". Login codes through Twilio Verify; statements through five Meta-approved Content templates (7 Aug 2026), carried over to this sender. | **Per-member messages** — payment confirmations, behind notices, late notices, winner announcements, closing statements |
+| **WhatsApp Business** | **LIVE** — business verified with Meta, sender **+13016835755** (WABA 1018506704190290), display name "Equb". Login codes through Twilio Verify; statements through the **six-template v2 set approved 13 Aug 2026** (payment_confirmed_v2, behind_notice_v2, late_notice_v2, winner_announcement_v2, whatsapp_welcome, group_announcement) plus the unchanged cycle_closing_statement from 7 Aug. | **Per-member messages** — confirmations, behind/late notices, winner announcements, the welcome that arms the agreement gate, per-member broadcasts, closing statements |
 | **Telegram group** | Working | Weekly group broadcast only — one bot, one chat, one message to everyone |
 | **US SMS** | **REJECTED — do not pursue** | none |
 
@@ -492,6 +492,13 @@ already working.
 > Business** — that is why it changed, not a preference. The platform moved to
 > +13016835755 under its own business-verified WABA (12 Aug 2026), and the five
 > approved templates carried over. Test fixtures use the live number.
+
+**Statements speak the member's own weeks with dates, never the group calendar**
+(principle, 13 Aug 2026): every v2 template pairs the MEMBER'S own week numbers —
+week 1 is their first week — with the stored dates ("your week(s) 2–3 (Aug 23 –
+Aug 30)"). The composer is `lib/member-week-dates.ts`, and
+`lib/member-vocabulary.test.ts` fails the build on any template body that frames
+a slot as a cycle week.
 
 **Why SMS is closed:** since February 2025 all major US carriers block unregistered A2P
 traffic from 10-digit numbers outright — no filtering, no delay, simply undelivered. The
@@ -574,7 +581,7 @@ then Claude Code implements it. Connect at the design phase, not before.
 | D-28 | Messages are statements carrying derived state (last payment, weeks behind, amount owed), not bare labels | **SETTLED** |
 | D-29 | Equb is outbound-only. Inbound SMS ("READY" for will-call) recorded as a Nexo idea, not built here | **SETTLED** |
 | D-37 | Messaging: WhatsApp Business (Meta-approved, already wired) for per-member messages; Telegram for the weekly group broadcast; US SMS is closed — TCR rejection is carrier-level and follows every provider | **SETTLED** |
-| D-38 | `WINNER_ANNOUNCEMENT` states the finish **WEEK**, not the finish **DATE** — a deliberate divergence from 2.22 ("every member sees their own finish date"). Accepted because the member portal carries the full date, the template arrived with Meta’s approval in hand, and re-submitting to add a date variable would restore the sixth variable that was cut to reduce 21656 (invalid-ContentVariables) risk. The divergence is pinned by test so it stays a decision rather than becoming a bug. | **SETTLED** |
+| D-38 | `WINNER_ANNOUNCEMENT` states the finish **WEEK**, not the finish **DATE** — a deliberate divergence from 2.22, accepted with Meta's v1 approval in hand and pinned by test so it stayed a decision rather than becoming a bug. | **RESOLVED 13 Aug 2026** — winner_announcement_v2 carries the finish **DATE** ("continue until Sunday, October 18, 2026"), restoring 2.22 in full; the pinning test flipped to assert the date. The drawn-week slot was removed entirely, which also retires the current-week-fallback defect class the v1 template carried. |
 | D-39 | Every approved template declares `requiredExtras`, and `deliver()` refuses at the **extras boundary** — before rendering — when a caller has not supplied them. Enforced at **runtime**, because `MessageExtras` fields are all optional. Making `extras` a discriminated union keyed on template would move this to compile time; it touches every call site and is its own decision, not something folded into a bug fix. | **SETTLED (runtime); compile-time enforcement OPEN** |
 | D-36 | Lucky numbers leave the wheel pool automatically when drawn or when the owner's window ends; the system must warn in advance if a window is closing undrawn | **SETTLED** |
 | D-33 | Tests accompany every change touching money, allocation, derived state, or integrity — unit tests plus behavioural verification against the live DB | **SETTLED** |
@@ -635,8 +642,8 @@ that clean up after themselves, plus import/repair/diagnostic tools and the stan
 | Audit log — paged, filtered, append-only by DB trigger | Done |
 | Design pass — IA, charts, motion, glass surfaces, portalled overlays | Substantially done |
 | WhatsApp login codes | **Working** |
-| WhatsApp statements | **Working** — five Meta-approved templates (7 Aug 2026), live send by ContentSid on sender +13016835755. Four deliver today; CYCLE_CLOSING_STATEMENT is approved and wired, first real use at cycle close. Twilio's acceptance is logged ACCEPTED; SENT only on a confirmed StatusCallback (needs a public `APP_BASE_URL`, so local sends stay ACCEPTED). |
-| WHATSAPP_WELCOME | **Drafted, not submitted** — no ContentSid, refuses itself at send time. Submitting it and registering the SID is what arms the agreement gate. |
+| WhatsApp statements | **Working** — the v2 six-template set (13 Aug 2026), member-relative wording, live send by ContentSid on sender +13016835755; cycle_closing_statement unchanged from 7 Aug. Twilio's acceptance is logged ACCEPTED; SENT only on a confirmed StatusCallback (needs a public `APP_BASE_URL`, so local sends stay ACCEPTED). The four superseded v1 templates stay registered in Twilio until the retire-after-deploy list in docs/WHATSAPP_TEMPLATES.md clears. |
+| WHATSAPP_WELCOME | **ARMED** (13 Aug 2026, HX90da…) — approved, registered, live: a successful send writes `agreementRequiredAt` in the same transaction as its log row and gates the member's portal until they sign. The portal-address and PIN-truth refusals in lib/welcome-send.ts still fire before the network. |
 | Lockout notice over WhatsApp | **No approved template, deliberately** — a security message; Twilio Verify is its channel. Skips honestly. The `notifyOnLockout` setting still has nothing behind it: disable it in the UI, or build the Verify-based channel. |
 | Member agreement + signing gate | Done — per-member generated document, SHA-256 signature record, portal gated by welcome-send or by zero payments; organizer sees state on profile + directory |
 | Message centre | Done — member list + conversation view, send within, search/filter/date, paginated |
@@ -807,14 +814,18 @@ Three real causes were found and fixed along the way (§5.14, plus `connect-src`
 `www.google.com` for the `api2/clr` call, and `frame-src` missing `recaptcha.google.com`).
 
 **Next step:** retest after deploy on the production domain. **Add that domain to Firebase
-→ Authentication → Settings → Authorized domains first.**
+→ Authentication → Settings → Authorized domains first.** Re-confirmed parked 14 Aug 2026
+— still failing locally with the same error; the deploy-day retest above is the only
+planned move, and recovery/sign-in flows treat SMS as maybe-unavailable meanwhile.
 
 Priority is low: the default PIN signs every member in directly.
 
 ### 6.2 WHATSAPP — RESOLVED 7–8 AUGUST 2026
 
-**Both halves now work.** Login codes go through Twilio Verify; statements go through five
-Meta-approved Content templates, approved 7 August 2026 under category UTILITY.
+**Both halves now work.** Login codes go through Twilio Verify; statements go through
+Meta-approved Content templates, all category UTILITY — first the five of 7 August 2026,
+now the six-template member-relative v2 set of 13 August 2026 plus the unchanged closing
+statement (§2.28 has the live set; four v1 templates await retirement per §7).
 
 **Why freeform could never have worked.** A freeform body requires the member to have
 messaged the business within 24 hours, and the account has **one inbound message in its
@@ -850,12 +861,9 @@ security message; Meta's UTILITY category covers transactional account activity,
 submitting "your account is locked" invites a rejection that risks the whole sender.
 Twilio Verify is its channel. Until then it renders and goes nowhere — see §4.1.
 
-**`WHATSAPP_WELCOME` is the OTHER template-less key, and its absence is temporary, not a
-decision.** Drafted (`DRAFT_TEMPLATES`, deliberately without a `contentSid` field so the
-send path cannot reach it by mistake), refused at send time with its own
-queued-behind-a-submission sentence. Submitting it and recording its ContentSid is what
-arms the agreement gate — until then a welcome send skips and gates nobody, which is
-honest: the agreement is owed by a member who was TOLD.
+**`WHATSAPP_WELCOME` is armed (13 Aug 2026).** The draft-and-refuse era ended when its
+ContentSid registered; the draft queue is empty. LOCKOUT_NOTICE is now the only
+template-less key, and that is a decision, not a queue.
 
 **Meta rule that reshaped every template:** a body may not begin or end with a variable.
 All originals opened with `{name},` and would have been rejected. Names *are* allowed in
@@ -887,9 +895,10 @@ written against defects that actually occurred. **The organizer runs it.**
 
 ## 7. WHAT IS NEXT
 
-1. **Submit `WHATSAPP_WELCOME` to Meta** (wording in `docs/WHATSAPP_TEMPLATES.md`) and
-   register its ContentSid — this is what arms the agreement gate. The four reworked
-   statement bodies switch over the same way, each when its new SID lands in the registry.
+1. **Post-deploy: observe one real DELIVERED send per v2 template**, then clear the
+   retire-after-deploy list in `docs/WHATSAPP_TEMPLATES.md` (the four v1 templates
+   still registered in Twilio). The switchover itself landed 13–14 Aug 2026; the
+   welcome is armed.
 2. **Run `docs/MANUAL_QA_CHECKLIST.md`** — the organizer's eyes, in short sittings.
 3. **Deploy** — Vercel, environment variables (including a public `APP_BASE_URL`, so
    Twilio's StatusCallback can confirm deliveries and ACCEPTED rows can become SENT), the

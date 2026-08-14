@@ -157,7 +157,7 @@ describe("GUARD — members read dates and their own counts, never cycle weeks",
 //   docs/WHATSAPP_TEMPLATES.md.
 // ————————————————————————————————————————————————————————————————————————
 
-import { DRAFT_TEMPLATES } from "./whatsapp-templates";
+import { APPROVED_TEMPLATES, DRAFT_TEMPLATES } from "./whatsapp-templates";
 
 describe("GUARD — message templates speak the member's frame too", () => {
   // A {{n}} slot whose neighbouring fixed text frames it as a cycle week
@@ -173,43 +173,70 @@ describe("GUARD — message templates speak the member's frame too", () => {
   // message whatever the fixed text around it says.
   const CYCLE_FRAME_PLACEHOLDERS = ["week", "finishWeek", "lastPaymentWeek", "lateWeeks", "weeksCovered"];
 
+  /**
+   * A week slot is member-framed when the fixed text OWNS it: "your week(s)
+   * {{2}}" is the member's own numbering (the v2 rule); a bare "week {{2}}"
+   * is the cycle's coordinate wearing a slot. Checked without lookbehind —
+   * the TS target predates it.
+   */
+  function cycleFramedSlots(body: string): string[] {
+    const offenders: string[] = [];
+    for (const match of body.matchAll(/week(?:\(s\))?\s+\{\{\d+\}\}/gi)) {
+      const before = body.slice(Math.max(0, match.index - 6), match.index).toLowerCase();
+      if (!before.endsWith("your ")) offenders.push(match[0]);
+    }
+    return offenders;
+  }
+
   it("no DRAFT body positions a variable as a cycle week number", () => {
-    for (const [key, draft] of Object.entries(DRAFT_TEMPLATES)) {
-      expect(draft.draftBody, `${key} frames a slot as a cycle week`).not.toMatch(CYCLE_WEEK_SLOT);
+    for (const draft of Object.values(DRAFT_TEMPLATES) as { key: string; draftBody: string }[]) {
+      expect(cycleFramedSlots(draft.draftBody), `${draft.key} frames a slot as a cycle week`).toEqual([]);
     }
   });
 
-  it("no DRAFT carries a cycle-frame placeholder", () => {
-    for (const [key, draft] of Object.entries(DRAFT_TEMPLATES)) {
+  // THE v1 EXEMPTION IS RETIRED (13 Aug 2026). The old approved bodies were
+  // Meta-frozen with week numbers inside, so the scan had to spare them. The
+  // v2 set was WRITTEN to this rule — every member-facing approved entry now
+  // speaks the member's own weeks — so the registry itself is in scope, and a
+  // future resubmission that slides a cycle coordinate back in fails here.
+  it("no APPROVED body positions a variable as a cycle week number", () => {
+    for (const entry of Object.values(APPROVED_TEMPLATES)) {
+      expect(
+        cycleFramedSlots(entry.approvedBody),
+        `${entry.key} frames a slot as a cycle week`,
+      ).toEqual([]);
+    }
+  });
+
+  it("no DRAFT or APPROVED entry carries a cycle-frame placeholder", () => {
+    const all = [
+      ...(Object.values(DRAFT_TEMPLATES) as { key: string; variableOrder: readonly string[] }[]),
+      ...Object.values(APPROVED_TEMPLATES),
+    ];
+    expect(all.length, "the scan is scanning nothing").toBeGreaterThanOrEqual(7);
+    for (const entry of all) {
       for (const name of CYCLE_FRAME_PLACEHOLDERS) {
         expect(
-          draft.variableOrder as readonly string[],
-          `${key} renders {${name}} — a cycle coordinate — to a member`,
+          entry.variableOrder as readonly string[],
+          `${entry.key} renders {${name}} — a cycle coordinate — to a member`,
         ).not.toContain(name);
       }
     }
   });
 
-  // The four reworked bodies in the doc are what the organizer submits to
-  // Meta. They are fenced "Draft" blocks; every one must already obey the
-  // rule, because approval freezes the wording — a week number approved is a
-  // week number members read for the life of the template.
-  it("every REWORK draft block in the doc is free of cycle week slots", () => {
+  // The doc's fenced bodies ABOVE the history section are the live approved
+  // wording; every one must obey the rule. History quotes the superseded v1
+  // bodies — cycle week numbers included — and is deliberately out of scope:
+  // the record of the defect is not a recurrence of it.
+  it("every live template body in the doc is free of cycle week slots", () => {
     const doc = readFileSync(join(ROOT, "docs", "WHATSAPP_TEMPLATES.md"), "utf8");
-    const rework = doc.slice(doc.indexOf("# REWORK"));
-    expect(rework.length, "the REWORK section is gone from the doc").toBeGreaterThan(100);
-    // Fenced blocks introduced by "**Draft" — the submission wording. "Now"
-    // blocks quote the live (Meta-frozen) bodies and are deliberately exempt.
-    // The marker may wrap over lines (the winner's carries a dated note), so
-    // the scan allows a short run of any text between marker and fence.
-    const drafts = [...rework.matchAll(/\*\*Draft[\s\S]{0,220}?```\n([\s\S]*?)```/g)].map(
-      (m) => m[1],
-    );
-    expect(drafts.length, "no Draft blocks found — the scan is scanning nothing").toBeGreaterThanOrEqual(4);
-    for (const body of drafts) {
-      expect(body, `a submission draft still frames a slot as a cycle week:\n${body}`).not.toMatch(
-        CYCLE_WEEK_SLOT,
-      );
+    const historyAt = doc.indexOf("## History — superseded templates");
+    expect(historyAt, "the labelled history section is gone from the doc").toBeGreaterThan(-1);
+    const live = doc.slice(0, historyAt);
+    const bodies = [...live.matchAll(/```\n([\s\S]*?)```/g)].map((m) => m[1]);
+    expect(bodies.length, "no template bodies found — the scan is scanning nothing").toBeGreaterThanOrEqual(6);
+    for (const body of bodies) {
+      expect(cycleFramedSlots(body), `a live doc body frames a slot as a cycle week:\n${body}`).toEqual([]);
     }
   });
 
