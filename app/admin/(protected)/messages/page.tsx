@@ -15,6 +15,7 @@ import { PageSizeSelect } from "@/components/ui/page-size";
 import { ChannelStatus } from "./channel-status";
 import { ComposeSend } from "./compose-send";
 import { GroupAnnouncement } from "./group-announcement";
+import { DeliveryCheck } from "./delivery-check";
 import { MessageQueue } from "./message-queue";
 import { TemplatesEditor } from "./templates-editor";
 import { telegramMissingConfig } from "@/lib/telegram";
@@ -238,6 +239,10 @@ export default async function MessagesPage({
             Every send, automatic or manual — the exact text, where it went, and what Twilio
             said back. Append-only: nothing here can be edited or removed.
           </SectionHeading>
+          {/* ACCEPTED MEANS TWILIO HAS IT AND HAS SAID NOTHING MORE. It resolves
+              when a status callback arrives, and none can while APP_BASE_URL is
+              unset — so the answer has to be ASKED for. */}
+          <DeliveryCheck />
           {/* No CardHeader: the SectionHeading above says the same thing,
               and the Pager below states the log's true extent. */}
           <Card>

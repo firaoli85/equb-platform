@@ -68,7 +68,16 @@ async function main() {
   // Only rows that CLAIM delivery and can be checked. A row with no
   // providerSid was never accepted by Twilio and has nothing to ask about.
   const rows = await prisma.messageLog.findMany({
-    where: { status: "SENT", providerSid: { not: null } },
+    // ACCEPTED ROWS TOO, since 15 Aug 2026 — and they are the ones that matter.
+    //
+    // This script was written for the 63112 incident, where rows wrongly claimed
+    // SENT, so it only ever looked at SENT. The opposite direction was never
+    // covered and is far more common: ACCEPTED is the resting state of every
+    // send whose StatusCallback never arrives, and no callback CAN arrive while
+    // APP_BASE_URL is unset. 75 rows sat at ACCEPTED, three of them actually
+    // undelivered (63049), and this script reported "0 of 6 disagree" because
+    // it was reading the six rows that could not be wrong.
+    where: { status: { in: ["SENT", "ACCEPTED"] }, providerSid: { not: null } },
     orderBy: { createdAt: "asc" },
     select: { id: true, createdAt: true, templateKey: true, providerSid: true, status: true },
   });

@@ -18,6 +18,7 @@ import {
   type MessageKey,
 } from "@/lib/messages";
 import { lateNoticeExtrasForParticipation } from "@/lib/late-notice-extras";
+import { reconcileAcceptedStatuses } from "@/lib/message-reconcile";
 import { stillDueOnWeek, weekLabelFull } from "@/lib/payment-message";
 import {
   listQueuedMessages,
@@ -922,5 +923,29 @@ export async function discardQueued(input: { id: string }) {
   } catch (e) {
     console.error("discardQueued failed:", e);
     return { ok: false as const, error: `Could not discard it. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * Ask Twilio what actually happened to the messages still sitting at ACCEPTED.
+ *
+ * WHY THE ORGANIZER NEEDS A BUTTON FOR THIS. ACCEPTED means Twilio has the
+ * message and has confirmed nothing, and it is supposed to be resolved by the
+ * StatusCallback — which is only sent when APP_BASE_URL is configured, and it
+ * is not. So every send comes to rest at ACCEPTED and stays there: on
+ * 15 Aug 2026, 75 of 81 rows disagreed with Twilio's own records, including one
+ * that Meta had dropped entirely. 2.23 says nothing may require a developer, so
+ * the reconciliation the script does lives here too.
+ */
+export async function reconcileDeliveries() {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const result = await reconcileAcceptedStatuses();
+    revalidatePath("/admin/messages");
+    return { ok: true as const, data: result };
+  } catch (e) {
+    console.error("reconcileDeliveries failed:", e);
+    return { ok: false as const, error: `Could not check with Twilio. ${errorMessage(e)}` };
   }
 }

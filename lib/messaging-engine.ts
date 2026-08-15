@@ -37,6 +37,7 @@ import {
   draftNotSubmittedRefusal,
   isApprovedTemplateKey,
   isDraftTemplateKey,
+  marketingRefusal,
 } from "./whatsapp-templates";
 import { portalUrlValue, welcomeSendCheck } from "./welcome-send";
 
@@ -456,6 +457,19 @@ async function deliver(input: {
     });
     return { status: "FAILED", body, error: variables.error };
   }
+
+  // ————— META WILL DROP THIS ONE, SO DO NOT PRETEND OTHERWISE —————
+  //
+  // A MARKETING-categorised template to a US number is accepted by Twilio and
+  // then silently discarded by Meta (error 63049, asynchronous). The platform
+  // would write an honest ACCEPTED and the member would hear nothing — which is
+  // the worst shape a message record can take, because it reads as done.
+  //
+  // AFTER the ContentVariables check, so a template with a real second problem
+  // still reports that one; and through skip(), so an automatic send leaves the
+  // row that says why nobody was told.
+  const marketing = marketingRefusal(input.key, to);
+  if (marketing) return skip(marketing, body);
 
   // ————— THE FORK: park it, or send it —————
   //

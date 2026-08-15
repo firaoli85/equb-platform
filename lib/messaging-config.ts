@@ -35,9 +35,25 @@ import type { SettingKey } from "./setting-defaults";
  *     from a one-off action the organizer takes deliberately (closing a cycle,
  *     welcoming a member); there is no timing choice to make.
  */
+// ONE TOGGLE PER MESSAGE A MEMBER CAN RECEIVE — settled 15 Aug 2026.
+//
+// The four payment types shared two switches: PAYMENT_CONFIRMED covered the
+// clean confirmation, and PARTIAL_CONFIRMED silently covered the other three.
+// The sharing was deliberate and documented, and it was still wrong, because
+// nothing on the screen said so. The organizer went looking for the
+// part-payment-completed switch, could not find it, and had no way to learn
+// that it was riding on a different one. A setting the organizer cannot SEE is
+// not a setting he has (2.10, and §3.0 rule 7: a setting answers a question
+// somebody actually has).
+//
+// So each of the four now appears by name. PAYMENT_CONFIRMED_V4 is the one
+// exception and is not a sharing: it IS the payment confirmation, and the key
+// it reads is being retired out from under it.
 export const CONFIGURABLE_MESSAGE_KEYS = [
   "PAYMENT_CONFIRMED",
+  "PAYMENT_CONFIRMED_WITH_PARTIAL",
   "PARTIAL_CONFIRMED",
+  "PARTIAL_COMPLETED",
   "LATE_NOTICE",
   "BEHIND_NOTICE",
   "WINNER_ANNOUNCEMENT",
@@ -124,7 +140,9 @@ export type MessagingConfig = {
 /** The raw setting values this config is resolved from. */
 export type MessagingSettingValues = {
   autoSendPaymentConfirmed: boolean;
+  autoSendPaymentConfirmedWithPartial: boolean;
   autoSendPartialConfirmed: boolean;
+  autoSendPartialCompleted: boolean;
   autoSendLateNotice: boolean;
   autoSendBehindNotice: boolean;
   autoSendWinnerAnnouncement: boolean;
@@ -193,7 +211,12 @@ export function resolveMessagingConfig(values: MessagingSettingValues): Messagin
     timezone: values.equbTimezone.trim() === "" ? DEFAULT_TIMEZONE : values.equbTimezone.trim(),
     message: {
       PAYMENT_CONFIRMED: { auto: values.autoSendPaymentConfirmed, schedule: null },
+      PAYMENT_CONFIRMED_WITH_PARTIAL: {
+        auto: values.autoSendPaymentConfirmedWithPartial,
+        schedule: null,
+      },
       PARTIAL_CONFIRMED: { auto: values.autoSendPartialConfirmed, schedule: null },
+      PARTIAL_COMPLETED: { auto: values.autoSendPartialCompleted, schedule: null },
       LATE_NOTICE: {
         auto: values.autoSendLateNotice,
         schedule: scheduleFrom(values.lateNoticeDay, values.lateNoticeTime),
@@ -252,7 +275,9 @@ export function isReservedMessageKey(key: ConfigurableMessageKey): boolean {
  */
 export const AUTO_SEND_SETTING = {
   PAYMENT_CONFIRMED: "autoSendPaymentConfirmed",
+  PAYMENT_CONFIRMED_WITH_PARTIAL: "autoSendPaymentConfirmedWithPartial",
   PARTIAL_CONFIRMED: "autoSendPartialConfirmed",
+  PARTIAL_COMPLETED: "autoSendPartialCompleted",
   LATE_NOTICE: "autoSendLateNotice",
   BEHIND_NOTICE: "autoSendBehindNotice",
   WINNER_ANNOUNCEMENT: "autoSendWinnerAnnouncement",

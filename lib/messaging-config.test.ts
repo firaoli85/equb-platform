@@ -26,6 +26,8 @@ import { SETTING_DEFAULTS, SETTING_LABELS, type SettingKey } from "./setting-def
 /** The config as it ships, with no stored rows at all. */
 const shipped = resolveMessagingConfig({
   autoSendPaymentConfirmed: SETTING_DEFAULTS.autoSendPaymentConfirmed,
+  autoSendPaymentConfirmedWithPartial: SETTING_DEFAULTS.autoSendPaymentConfirmedWithPartial,
+  autoSendPartialCompleted: SETTING_DEFAULTS.autoSendPartialCompleted,
   autoSendPartialConfirmed: SETTING_DEFAULTS.autoSendPartialConfirmed,
   autoSendLateNotice: SETTING_DEFAULTS.autoSendLateNotice,
   autoSendBehindNotice: SETTING_DEFAULTS.autoSendBehindNotice,
@@ -247,6 +249,8 @@ describe("the registry stays complete — the pattern's own guard", () => {
 function blank() {
   return {
     autoSendPaymentConfirmed: SETTING_DEFAULTS.autoSendPaymentConfirmed,
+  autoSendPaymentConfirmedWithPartial: SETTING_DEFAULTS.autoSendPaymentConfirmedWithPartial,
+  autoSendPartialCompleted: SETTING_DEFAULTS.autoSendPartialCompleted,
     autoSendPartialConfirmed: SETTING_DEFAULTS.autoSendPartialConfirmed,
     autoSendLateNotice: SETTING_DEFAULTS.autoSendLateNotice,
     autoSendBehindNotice: SETTING_DEFAULTS.autoSendBehindNotice,

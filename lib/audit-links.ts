@@ -42,6 +42,8 @@ const SETTING_PAGES: Record<SettingKey, string> = {
   // WHEN AND HOW MESSAGES SEND — all twelve live on one page, under
   // "When each message sends" (one-truth engine phase 1).
   autoSendPaymentConfirmed: "/admin/settings/messaging",
+  autoSendPaymentConfirmedWithPartial: "/admin/settings/messaging",
+  autoSendPartialCompleted: "/admin/settings/messaging",
   autoSendPartialConfirmed: "/admin/settings/messaging",
   autoSendLateNotice: "/admin/settings/messaging",
   autoSendBehindNotice: "/admin/settings/messaging",

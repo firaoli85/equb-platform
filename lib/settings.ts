@@ -50,7 +50,9 @@ export {
 export async function getMessagingConfig(): Promise<MessagingConfig> {
   return resolveMessagingConfig({
     autoSendPaymentConfirmed: await getSetting("autoSendPaymentConfirmed"),
+    autoSendPaymentConfirmedWithPartial: await getSetting("autoSendPaymentConfirmedWithPartial"),
     autoSendPartialConfirmed: await getSetting("autoSendPartialConfirmed"),
+    autoSendPartialCompleted: await getSetting("autoSendPartialCompleted"),
     autoSendLateNotice: await getSetting("autoSendLateNotice"),
     autoSendBehindNotice: await getSetting("autoSendBehindNotice"),
     autoSendWinnerAnnouncement: await getSetting("autoSendWinnerAnnouncement"),

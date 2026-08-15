@@ -14,8 +14,13 @@ import {
   type MessageExtras,
   type StandingFacts,
 } from "./messages";
-import { APPROVED_TEMPLATES, buildContentVariables } from "./whatsapp-templates";
-import { resolveMessagingConfig } from "./messaging-config";
+import {
+  APPROVED_TEMPLATES,
+  buildContentVariables,
+  MARKETING_TEMPLATE_KEYS,
+  marketingRefusal,
+} from "./whatsapp-templates";
+import { CONFIGURABLE_MESSAGE_KEYS, resolveMessagingConfig } from "./messaging-config";
 import { SETTING_DEFAULTS } from "./setting-defaults";
 
 // PHASE 4b-ii — THE SENTENCE A MEMBER ACTUALLY READS.
@@ -242,17 +247,37 @@ describe("THE TWO AXES, READ AT THE CALL SITE", () => {
     }
   });
 
-  it("the money-still-owed three share ONE setting, and it is manual", () => {
-    // ONE SWITCH PER DECISION HE MAKES, not one per template. All three tell a
-    // member something about a week that was not settled when the money came.
+  // THESE THREE SHARED ONE SETTING UNTIL 15 AUGUST 2026, and the sharing was
+  // deliberate, documented — and invisible. The organizer went looking for the
+  // part-payment-completed switch, could not find it, and had no way to learn
+  // it was riding on the part-payment one. A setting he cannot SEE is not a
+  // setting he has (2.10). Each now answers under its own name.
+  it("every payment message has its OWN setting, by its own name", () => {
     for (const key of [
       "PAYMENT_CONFIRMED_WITH_PARTIAL",
       "PARTIAL_CONFIRMED",
       "PARTIAL_COMPLETED",
     ] as PaymentMessageKey[]) {
-      expect(configKeyForPaymentMessage(key)).toBe("PARTIAL_CONFIRMED");
+      expect(configKeyForPaymentMessage(key)).toBe(key);
+      // And the name is on the settings screen, which iterates this list.
+      expect(CONFIGURABLE_MESSAGE_KEYS as readonly string[]).toContain(key);
     }
+    // v4 IS the payment confirmation, so it reads that setting. One message
+    // under one name is not a sharing — the legacy key is being retired.
     expect(configKeyForPaymentMessage("PAYMENT_CONFIRMED_V4")).toBe("PAYMENT_CONFIRMED");
+  });
+
+  it("all three money-still-owed types still SHIP manual", () => {
+    // The behaviour is unchanged by splitting the switch: a wrong notice about
+    // a debt is still worse than a late one. Only the visibility changed.
+    const config = resolveMessagingConfig(defaultSettingValues());
+    for (const key of [
+      "PAYMENT_CONFIRMED_WITH_PARTIAL",
+      "PARTIAL_CONFIRMED",
+      "PARTIAL_COMPLETED",
+    ] as PaymentMessageKey[]) {
+      expect(config.message[configKeyForPaymentMessage(key)].auto, key).toBe(false);
+    }
   });
 
   // THE INCIDENT, 15 AUGUST 2026. This test used to assert the opposite — that
@@ -483,6 +508,8 @@ function paidThrough(n: number): Record<number, number> {
 function defaultSettingValues() {
   return {
     autoSendPaymentConfirmed: SETTING_DEFAULTS.autoSendPaymentConfirmed,
+  autoSendPaymentConfirmedWithPartial: SETTING_DEFAULTS.autoSendPaymentConfirmedWithPartial,
+  autoSendPartialCompleted: SETTING_DEFAULTS.autoSendPartialCompleted,
     autoSendPartialConfirmed: SETTING_DEFAULTS.autoSendPartialConfirmed,
     autoSendLateNotice: SETTING_DEFAULTS.autoSendLateNotice,
     autoSendBehindNotice: SETTING_DEFAULTS.autoSendBehindNotice,
@@ -496,3 +523,83 @@ function defaultSettingValues() {
     equbTimezone: SETTING_DEFAULTS.equbTimezone,
   };
 }
+
+describe("META WILL DROP IT — a marketing template must never look sent", () => {
+  it("refuses a MARKETING template to a US number, and says why", () => {
+    const reason = marketingRefusal("PARTIAL_COMPLETED", "+13015416005");
+    expect(reason).toBeTruthy();
+    // THE ORGANIZER'S NEXT ACTION IS IN THE SENTENCE. "Undeliverable" tells him
+    // nothing he can do; the remedy is at Meta, not in this codebase.
+    expect(reason).toContain("MARKETING");
+    expect(reason).toContain("United States");
+    expect(reason).toContain("UTILITY");
+  });
+
+  it("does NOT refuse the same template to a non-US number", () => {
+    // The restriction is Meta's and it is specific. Refusing everyone would
+    // withhold messages that would have arrived.
+    expect(marketingRefusal("PARTIAL_COMPLETED", "+251911234567")).toBeNull();
+  });
+
+  it("does NOT refuse a UTILITY template to a US number", () => {
+    // partial_confirmed delivered to the same number 49 seconds before
+    // partial_completed was dropped. Only the category differed.
+    expect(marketingRefusal("PARTIAL_CONFIRMED", "+13015416005")).toBeNull();
+    expect(marketingRefusal("PAYMENT_CONFIRMED_V4", "+13015416005")).toBeNull();
+  });
+
+  it("names exactly the two templates Meta filed as MARKETING", () => {
+    // EXACT, not a minimum. This list is a claim about somebody else's system;
+    // scripts/check-template-categories.mts verifies it against Twilio, and this
+    // stops it growing or shrinking by accident in between.
+    expect([...MARKETING_TEMPLATE_KEYS].sort()).toEqual([
+      "GROUP_ANNOUNCEMENT",
+      "PARTIAL_COMPLETED",
+    ]);
+  });
+
+  it("the send path asks BEFORE handing anything to Twilio", () => {
+    const engine = readFileSync("lib/messaging-engine.ts", "utf8");
+    const deliver = engine.slice(
+      engine.indexOf("async function deliver("),
+      engine.indexOf("export async function sendStatement("),
+    );
+    const refusal = deliver.indexOf("marketingRefusal(");
+    expect(refusal).toBeGreaterThan(-1);
+    // Before the provider call, so no SID and no ACCEPTED row is ever created
+    // for a message Meta has already decided not to deliver.
+    expect(refusal).toBeLessThan(deliver.indexOf("sendWhatsAppMessage("));
+    // And it routes through skip(), so an automatic send still leaves the row
+    // that explains why nobody was told.
+    expect(deliver.slice(refusal, refusal + 200)).toContain("skip(");
+  });
+});
+
+describe("ACCEPTED MUST NOT MEAN DELIVERED FOREVER", () => {
+  it("the reconciliation looks at ACCEPTED rows, which are the ones that go stale", () => {
+    const script = readFileSync("scripts/reconcile-message-status.mts", "utf8");
+    // IT ONLY LOOKED AT SENT UNTIL 15 AUG 2026 — the six rows that could not be
+    // wrong — and reported "0 of 6 disagree" while 75 rows were stale.
+    expect(script).toContain('status: { in: ["SENT", "ACCEPTED"] }');
+  });
+
+  it("the organizer can run it himself, without a terminal (2.23)", () => {
+    const actions = readFileSync("app/actions/messages.ts", "utf8");
+    const page = readFileSync("app/admin/(protected)/messages/page.tsx", "utf8");
+    expect(actions).toContain("export async function reconcileDeliveries()");
+    expect(page).toContain("<DeliveryCheck />");
+  });
+
+  it("it corrects ONLY the status and the reason, never what was said", () => {
+    const lib = readFileSync("lib/message-reconcile.ts", "utf8");
+    const update = lib.slice(lib.indexOf("await prisma.messageLog.update("));
+    const data = update.slice(update.indexOf("data:"), update.indexOf("});"));
+    // The body, the recipient and the template are the record of what was said
+    // and are append-only. Touching them here would be editing history.
+    for (const field of ["body", "toPhone", "templateKey", "personId", "trigger"]) {
+      expect(data, `${field} must never be rewritten by reconciliation`).not.toContain(field);
+    }
+    expect(data).toContain("status");
+    expect(data).toContain("error");
+  });
+});

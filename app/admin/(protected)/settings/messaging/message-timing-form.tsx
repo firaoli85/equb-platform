@@ -29,7 +29,9 @@ import {
 /** What each type is called on this screen — the organizer's words, not Meta's. */
 const MESSAGE_LABEL: Record<ConfigurableMessageKey, string> = {
   PAYMENT_CONFIRMED: "Payment confirmation",
+  PAYMENT_CONFIRMED_WITH_PARTIAL: "Payment confirmation, with an amount still owed",
   PARTIAL_CONFIRMED: "Part-payment confirmation",
+  PARTIAL_COMPLETED: "Part-paid week now complete",
   LATE_NOTICE: "Late notice",
   BEHIND_NOTICE: "Behind notice",
   WINNER_ANNOUNCEMENT: "Winner announcement",
@@ -40,8 +42,12 @@ const MESSAGE_LABEL: Record<ConfigurableMessageKey, string> = {
 /** What the message IS, so the switch is not the only thing explaining itself. */
 const MESSAGE_DESCRIPTION: Record<ConfigurableMessageKey, string> = {
   PAYMENT_CONFIRMED: "Tells a member what arrived and which weeks it covered.",
+  PAYMENT_CONFIRMED_WITH_PARTIAL:
+    "Tells a member which weeks their payment settled, and how much is still due on the next one.",
   PARTIAL_CONFIRMED:
-    "Will tell a member a week was only part paid, and how much is still due on it.",
+    "Tells a member a week was only part paid, and how much is still due on it.",
+  PARTIAL_COMPLETED:
+    "Tells a member the week they had part paid is now paid in full, and what they had already put toward it.",
   LATE_NOTICE: "Names the weeks that closed without a payment.",
   BEHIND_NOTICE: "Tells a member how far behind they are and what it takes to catch up.",
   WINNER_ANNOUNCEMENT: "Tells a member their number was drawn and what they will receive.",

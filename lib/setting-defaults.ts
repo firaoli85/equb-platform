@@ -101,8 +101,10 @@ export type SettingDefaults = {
 
   /** Automatic today — the one message that sends itself on its own event. */
   autoSendPaymentConfirmed: boolean;
+  autoSendPaymentConfirmedWithPartial: boolean;
   /** RESERVED — the partial-aware confirmation has no template yet (§3.7). */
   autoSendPartialConfirmed: boolean;
+  autoSendPartialCompleted: boolean;
   autoSendLateNotice: boolean;
   autoSendBehindNotice: boolean;
   autoSendWinnerAnnouncement: boolean;
@@ -149,7 +151,15 @@ export const SETTING_DEFAULTS: SettingDefaults = {
   // exactly one of the seven configurable types is automatic, and the lockout
   // notice is not configurable here (see CONFIGURABLE_MESSAGE_KEYS).
   autoSendPaymentConfirmed: true,
+  // THE THREE MONEY-STILL-OWED TYPES SHIP OFF, unchanged from when they shared
+  // one switch: a wrong notice about a debt is worse than a late one. What is
+  // new is that each is now switchable BY NAME. An install that had already
+  // turned the shared switch on keeps its behaviour — scripts/seed-partial-
+  // settings.mts copies the stored value across, so nothing goes quiet on
+  // deploy.
+  autoSendPaymentConfirmedWithPartial: false,
   autoSendPartialConfirmed: false,
+  autoSendPartialCompleted: false,
   autoSendLateNotice: false,
   autoSendBehindNotice: false,
   autoSendWinnerAnnouncement: false,
@@ -218,7 +228,10 @@ export const SETTING_LABELS: Record<SettingKey, string> = {
   closingWaitDays: "Wait before a cycle can be closed (days)",
   portalUrl: "Member sign-in address",
   autoSendPaymentConfirmed: "Payment confirmation — sends itself",
+  autoSendPaymentConfirmedWithPartial:
+    "Payment confirmation with an amount still owed — sends itself",
   autoSendPartialConfirmed: "Part-payment confirmation — sends itself",
+  autoSendPartialCompleted: "Part-paid week now complete — sends itself",
   autoSendLateNotice: "Late notice — sends itself",
   autoSendBehindNotice: "Behind notice — sends itself",
   autoSendWinnerAnnouncement: "Winner announcement — sends itself",

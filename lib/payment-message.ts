@@ -170,7 +170,15 @@ export function lateNoticeExtras(input: {
  * member can check against their own memory.
  */
 export function configKeyForPaymentMessage(key: PaymentMessageKey): ConfigurableMessageKey {
-  return key === "PAYMENT_CONFIRMED_V4" ? "PAYMENT_CONFIRMED" : "PARTIAL_CONFIRMED";
+  // EACH BY ITS OWN NAME since 15 Aug 2026. Three of these used to return
+  // PARTIAL_CONFIRMED, which meant one switch quietly governed three messages
+  // and the screen listed only one of them. It worked, and the organizer could
+  // not see that it worked, which is the same as it not working (2.10).
+  //
+  // v4 IS the payment confirmation, so it reads the payment-confirmation
+  // setting. That is one message under one name, not a sharing — the legacy key
+  // is being retired out from under it.
+  return key === "PAYMENT_CONFIRMED_V4" ? "PAYMENT_CONFIRMED" : key;
 }
 
 export type PaymentExtrasResult =

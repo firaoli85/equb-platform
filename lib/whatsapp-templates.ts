@@ -165,11 +165,57 @@ function approved(
   return { ...entry, namedBody: toNamedBody(entry.approvedBody, entry.variableOrder) };
 }
 
-// THE LIVE SET (all UTILITY): payment confirmation, welcome and group
-// announcement from the 13 Aug 2026 v2 approval; behind, late and winner
-// from the 14 Aug 2026 v3 rework; the closing statement unchanged since
-// 7 Aug 2026. Superseded bodies live in docs/WHATSAPP_TEMPLATES.md's history
-// section — the v1 AND v2 predecessors are already deleted from Twilio.
+/**
+ * Templates Meta filed as MARKETING rather than UTILITY.
+ *
+ * A MARKETING TEMPLATE CANNOT REACH A UNITED STATES NUMBER. Meta stopped
+ * delivering them there, and Twilio reports the result as error 63049, "Meta
+ * chose not to deliver this WhatsApp marketing message" — asynchronously, after
+ * accepting the send. So the platform gets a 201, writes an honest ACCEPTED,
+ * bills nothing, and the member simply never hears anything.
+ *
+ * MEASURED, NOT ASSUMED. Every one of the three 63049 failures in this
+ * account's history is one of these two keys, and every other template has
+ * delivered every time. `scripts/check-template-categories.mts` reads the
+ * category back from Twilio and fails if this list and Meta disagree, so it
+ * cannot quietly rot the way a comment would.
+ *
+ * THIS IS NOT FIXABLE IN CODE. Category is set by Meta at approval — the
+ * approval payload carries `allow_category_change: true`, which is how a
+ * template submitted as UTILITY comes back MARKETING. The remedy is to
+ * resubmit at Meta and update this list when it comes back UTILITY. Until
+ * then the send path REFUSES rather than producing a message that looks sent
+ * and reaches nobody.
+ */
+export const MARKETING_TEMPLATE_KEYS = ["PARTIAL_COMPLETED", "GROUP_ANNOUNCEMENT"] as const;
+
+/**
+ * Why this template cannot be delivered to this number, or null if it can.
+ *
+ * ONLY US NUMBERS. The restriction is Meta's, and it is specific: the same
+ * MARKETING template still delivers elsewhere, so refusing every recipient
+ * would withhold messages that would have arrived.
+ */
+export function marketingRefusal(key: string, toE164Phone: string): string | null {
+  if (!(MARKETING_TEMPLATE_KEYS as readonly string[]).includes(key)) return null;
+  if (!toE164Phone.startsWith("+1")) return null;
+  return (
+    `${key} is filed with Meta as a MARKETING template, and Meta no longer delivers ` +
+    `marketing messages to United States numbers. Sending it would be accepted by Twilio ` +
+    `and silently dropped, so nothing was sent. Resubmit the template to Meta as UTILITY ` +
+    `to make it deliverable again.`
+  );
+}
+
+// THE LIVE SET: payment confirmation, welcome and group announcement from the
+// 13 Aug 2026 v2 approval; behind, late and winner from the 14 Aug 2026 v3
+// rework; the closing statement unchanged since 7 Aug 2026. Superseded bodies
+// live in docs/WHATSAPP_TEMPLATES.md's history section — the v1 AND v2
+// predecessors are already deleted from Twilio.
+//
+// THIS ONCE SAID "all UTILITY" AND IT WAS NOT TRUE. Two of them are MARKETING
+// at Meta — see MARKETING_TEMPLATE_KEYS above, and the script that checks the
+// claim against Twilio rather than trusting this sentence.
 //
 // v3 STANDING RULES (organizer, 14 Aug 2026), for ALL member-facing text:
 //   - NO DASHES, em or en, in fixed template text (guarded in
