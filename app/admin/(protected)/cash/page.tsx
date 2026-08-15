@@ -59,8 +59,21 @@ export default async function CashPage({
   const d = result.data;
   if (d.presentation) return <PresentationHidden what="Cash position" />;
 
-  const expectedTotal = d.series.reduce((s, w) => s + w.expected, 0);
-  const shortfall = Math.max(0, expectedTotal - d.position.totalReceived);
+  // ELAPSED WEEKS ONLY, which is what the card beneath already claims
+  // ("across the weeks that have elapsed"). Summing every week in the series
+  // counted weeks that have not happened yet into a figure labelled "by now".
+  const elapsedWeeks = d.series.filter((w) => w.elapsed);
+  const expectedTotal = elapsedWeeks.reduce((s, w) => s + w.expected, 0);
+  // THE SAME DEFECT AS THE PER-WEEK ONE, AT CYCLE SCALE. This was
+  // `max(0, expectedTotal − position.totalReceived)`, and `totalReceived` is
+  // every cent ever received — including money for weeks that have not
+  // happened. One member paying ahead therefore reduced the shortfall the
+  // organizer was shown for weeks already closed.
+  //
+  // It is now the sum of the per-week shortfalls, each of which is already the
+  // engine's per-member rule (lib/engine.ts `weekShortfallOf`), so this total
+  // and the members it is made of cannot disagree.
+  const shortfall = elapsedWeeks.reduce((s, w) => s + w.shortfall, 0);
 
   return (
     <main className="space-y-6">
