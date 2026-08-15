@@ -502,34 +502,38 @@ describe("D-42 — exactly what moves, and for whom", () => {
     expect(after.amountDeferred).toBe(0);
   });
 
-  it("a member WITH a deferred week moves — deliberately, and by exactly its money", () => {
-    const before = computeStanding({ ...shared, cycleWeek: 0 });
-    const after = memberTruth({
-      ...shared,
-      participationId: "p1",
-      feePercent: FEE_PERCENT,
-    });
-    // OLD: the deferred week counted as owed and as behind.
-    expect(before.amountOutstanding).toBe(2 * WEEKLY); // weeks 7 AND 8
-    expect(before.weeksBehind).toBe(2);
-    // NEW: it leaves the current expectation, and its money is held separately.
-    expect(after.amountOutstanding).toBe(WEEKLY); // week 8 only
-    expect(after.weeksBehind).toBe(1);
-    expect(after.amountDeferred).toBe(WEEKLY);
-    // NOTHING IS LOST. What left `amountOutstanding` is exactly what arrived
-    // in `amountDeferred` — the money is paused, never forgiven.
-    expect(after.amountOutstanding + after.amountDeferred).toBe(before.amountOutstanding);
+  it("the engine and the nucleus now AGREE — one answer, not two (phase 3)", () => {
+    // In phase 2 these differed: the engine held D-42 and `computeStanding`
+    // still held the old reading. Phase 3 moved the rule INTO the nucleus, so
+    // the two must now be identical — a difference here would mean the engine
+    // had quietly become a second implementation again (§5.10).
+    const nucleus = computeStanding({ ...shared, cycleWeek: 0 });
+    const engine = memberTruth({ ...shared, participationId: "p1", feePercent: FEE_PERCENT });
+    expect(engine.amountOutstanding).toBe(nucleus.amountOutstanding);
+    expect(engine.amountDeferred).toBe(nucleus.amountDeferred);
+    expect(engine.weeksBehind).toBe(nucleus.weeksBehind);
   });
 
-  it("the superseded primitives still hold the OLD rule — untouched this phase", () => {
-    // Recorded, not fixed: §6.4's three gap sites keep the pre-D-42 reading
-    // until their last reader moves in phase 3. A test that asserted they were
-    // already correct would be a lie about the tree.
+  it("the deferred week is out of what is owed, and its money is held", () => {
+    const t = memberTruth({ ...shared, participationId: "p1", feePercent: FEE_PERCENT });
+    // Week 8 alone is owed; week 7 is paused. Before D-42 both counted:
+    // outstanding was 2 x $2,000 and behind was 2.
+    expect(t.amountOutstanding).toBe(WEEKLY);
+    expect(t.weeksBehind).toBe(1);
+    expect(t.amountDeferred).toBe(WEEKLY);
+    // NOTHING IS LOST — the partition is exact, which is what makes "paused"
+    // safe to say. The whole debt is still $4,000.
+    expect(t.amountOutstanding + t.amountDeferred).toBe(2 * WEEKLY);
+  });
+
+  it("THE PRIMITIVES NOW HOLD D-42 — §6.4's three gap sites are closed", () => {
+    // The inverse of the phase-2 assertion, which recorded that they still held
+    // the OLD rule. Every reader has moved, so the rule moved with them.
     expect(
       weekCountsAsDue({ weekDate: weekDate(7), today: shared.today, isDeferred: true }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       amountOutstanding([{ amountDue: WEEKLY, amountAlreadyPaid: 0, isDeferred: true }]),
-    ).toBe(WEEKLY);
+    ).toBe(0);
   });
 });

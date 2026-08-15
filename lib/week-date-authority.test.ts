@@ -214,11 +214,16 @@ describe("no MONEY path derives its clock from cycle.startDate", () => {
   // And the wrapper must not have quietly become a second clock: the only
   // thing it may add is the stored mark, and deferral takes even that away
   // (ruling, Aug 2026). Everything else still falls through to the calendar.
-  it("weekCountsAsDue adds the organizer's mark and nothing else", () => {
+  it("weekCountsAsDue drops deferral, adds the mark, and reads no cycle clock", () => {
     const source = readFileSync("lib/derived.ts", "utf8");
+    // D-42 (§2.29a): a paused week leaves the current expectation FIRST, before
+    // the mark or the calendar is consulted. The shape asserted here changed on
+    // 15 Aug 2026 — it previously required `markedLate && !isDeferred`.
     expect(source).toMatch(
-      /if \(args\.markedLate && !args\.isDeferred\) return true;\s*\n\s*return weekHasElapsed\(args\);/,
+      /if \(args\.isDeferred\) return false;\s*\n\s*if \(args\.markedLate\) return true;\s*\n\s*return weekHasElapsed\(args\);/,
     );
+    // THE POINT OF THIS FILE, unchanged: no money path takes its clock from
+    // the cycle's start date.
     expect(source).not.toMatch(/\bcurrentWeekNumber\b/);
   });
 });

@@ -232,32 +232,18 @@ export function memberTruth(input: MemberTruthInput): MemberTruth {
 
   // ——— D-42: what is owed NOW, and what is merely paused ———
   //
-  // Two sums over the same weeks, split by one rule (`weekCountsNow`). Keeping
-  // them separate is what stops "paused" ever being read as "paid" or as
-  // "owed right now".
-  let amountOutstanding = 0;
-  let amountDeferred = 0;
-  let dueNowCount = 0;
-  for (const w of weeks) {
-    if (w.skipped) continue;
-    if (w.deferred) {
-      // Not in the current expectation, and NOT forgiven — rule 4 resolves it.
-      amountDeferred += w.remainder;
-      continue;
-    }
-    if (weekCountsNow(w)) {
-      dueNowCount++;
-      // ROLLED FORWARD (rule 2): every week that counts contributes its own
-      // remainder, so a $300 shortfall from week 4 is still owed in week 5.
-      amountOutstanding += w.remainder;
-    }
-  }
+  // READ FROM THE NUCLEUS, NOT RECOMPUTED. Phase 2 derived these here because
+  // `computeStanding` still held the pre-D-42 reading; phase 3 moved that rule
+  // into the nucleus itself, so deriving them a second time here would be the
+  // exact duplication this engine exists to remove (§5.10). One question, one
+  // answer, one place.
+  const amountOutstanding = standing.amountOutstanding;
+  const amountDeferred = standing.amountDeferred;
+  const dueNowCount = weeks.filter((w) => weekCountsNow(w) && !w.skipped).length;
 
-  const credited = weeksCredited(input.totalPaid, input.weeklyAmount);
+  const credited = standing.weeksCredited;
   const weeksPaid = Math.min(credited, input.weeksCommitted);
-  // Elapsed here already excludes skipped AND deferred, so the subtraction is
-  // just the credited weeks (D-42; the old shape subtracted skipped only).
-  const behind = Math.max(0, dueNowCount - credited);
+  const behind = standing.weeksBehind;
   const expectedByNow = input.weeklyAmount * dueNowCount;
 
   // The contiguous fully-paid prefix. A gap ends it: "paid up to week 11"

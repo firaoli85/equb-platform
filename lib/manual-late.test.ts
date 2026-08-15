@@ -165,14 +165,21 @@ describe("counting as due — the calendar's route and the organizer's", () => {
     ).toBe(false);
   });
 
-  // …but a deferred week whose window HAS closed still counts. Deferral has
-  // never excused the money (rule 5) — it only stops the chasing.
-  it("an elapsed deferred week still counts as due, with or without a mark", () => {
+  // AMENDED BY D-42 (§2.29a, 15 Aug 2026). This asserted the opposite until
+  // then — "an elapsed deferred week still counts as due" — which was the
+  // pre-D-42 law. A paused week leaves the CURRENT expectation whatever the
+  // calendar says; its money is held in `amountDeferred` and resolves at close,
+  // so nothing is forgiven by this.
+  it("a deferred week never counts as due — elapsed or not, marked or not", () => {
     for (const markedLate of [false, true]) {
       expect(
         weekCountsAsDue({ weekDate: LONG_PAST, today: MONDAY, markedLate, isDeferred: true }),
-        `markedLate=${markedLate}`,
-      ).toBe(true);
+        `elapsed, markedLate=${markedLate}`,
+      ).toBe(false);
+      expect(
+        weekCountsAsDue({ weekDate: MONDAY, today: MONDAY, markedLate, isDeferred: true }),
+        `open, markedLate=${markedLate}`,
+      ).toBe(false);
     }
   });
 });

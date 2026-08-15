@@ -104,7 +104,15 @@ function memberFinals(cycle: LoadedCycle, today: Date): MemberFinal[] {
       weeklyAmount: p.weeklyAmount,
       weeksCommitted: p.weeksCommitted,
       weeksPaid: Math.min(standing.weeksCredited, p.weeksCommitted),
-      outstanding: standing.amountOutstanding,
+      // CLOSE IS WHERE A DEFERRED WEEK RESOLVES (D-42 / §2.29a, §3.5).
+      //
+      // `amountOutstanding` stops at what is owed RIGHT NOW, and a paused week
+      // is deliberately not in it. At close that pause ends: the money either
+      // was paid or carries into the person's balance, so the closing figure
+      // has to be BOTH halves. Writing only the first would forgive every
+      // deferred week the moment the cycle closed — the one thing §2.29a says
+      // deferral never does.
+      outstanding: standing.amountOutstanding + standing.amountDeferred,
       lastPaymentWeek: standing.lastPaymentWeek,
       drawnWeek: draw?.week.weekNumber ?? null,
       // COLLECTED only — this is money that actually left the group. A

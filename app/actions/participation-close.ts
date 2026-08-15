@@ -146,7 +146,11 @@ function describe(p: Loaded, closingAtWeek: number) {
     weeksCommitted: p.weeksCommitted,
     weeklyAmount: p.weeklyAmount,
     closingAtWeek,
-    outstandingToDate: standing.amountOutstanding,
+    // BOTH HALVES AT CLOSE (D-42 / §2.29a, §3.5) — this feeds `balanceToRecord`,
+    // the ledger DEBT. A paused week is out of `amountOutstanding` while the
+    // participation is open; closing it is exactly the moment that pause ends,
+    // so its money must carry rather than disappear.
+    outstandingToDate: standing.amountOutstanding + standing.amountDeferred,
     undrawnNumbers,
     alreadyPaidOut,
   });

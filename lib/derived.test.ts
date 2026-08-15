@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  amountDeferred,
   amountOutstanding,
   PAYMENT_WINDOW_DAYS,
   paymentStatus,
@@ -45,10 +46,12 @@ describe("weeksBehind (never below zero; only SKIPPED weeks are excused)", () =>
     expect(weeksBehind(4, 0, 4)).toBe(0);
   });
 
-  // Organizer ruling (Aug 2026): a deferred week is still owed, so it is NOT
-  // subtracted. Six elapsed weeks with two of them deferred and three covered
-  // leaves the member three behind, not one.
-  it("DEFERRED weeks still count as behind — the money is still owed", () => {
+  // THIS FUNCTION NEVER SEES DEFERRAL, and after D-42 that matters more, not
+  // less. Its caller decides which weeks are elapsed; `weekCountsAsDue` now
+  // drops deferred weeks before they reach here (§2.29a), so a deferred week
+  // is excluded by never being counted, not by being subtracted. Six weeks
+  // that DO count as due, three covered, leaves three behind.
+  it("subtracts only what it is given — deferral is handled by the caller", () => {
     expect(weeksBehind(6, 3, 0)).toBe(3);
   });
 
@@ -156,15 +159,33 @@ describe("amountOutstanding", () => {
     ).toBe(25_000);
   });
 
-  // Organizer ruling (Aug 2026): deferral suppresses the CHASING, not the
-  // debt, so a deferred week contributes its full amountDue to what is owed.
-  it("DEFERRED weeks are still owed — they count toward outstanding in full", () => {
+  // AMENDED BY D-42 (§2.29a, 15 Aug 2026). Until then a deferred week counted
+  // here in full, and this test asserted 50_000. It is paused now, not
+  // forgiven: its money moves to `amountDeferred`, and the two together are
+  // still the whole debt.
+  it("DEFERRED weeks are NOT owed right now — they leave outstanding (D-42)", () => {
+    const weeks = [
+      { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: true },
+      { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: false },
+    ];
+    expect(amountOutstanding(weeks)).toBe(25_000);
+    expect(amountDeferred(weeks)).toBe(25_000);
+    // NOTHING IS LOST — the partition is exact.
+    expect(amountOutstanding(weeks) + amountDeferred(weeks)).toBe(50_000);
+  });
+
+  it("a part-paid deferred week keeps its receipt with it, not in what is owed", () => {
+    const weeks = [{ amountDue: 25_000, amountAlreadyPaid: 10_000, isDeferred: true }];
+    expect(amountOutstanding(weeks)).toBe(0);
+    expect(amountDeferred(weeks)).toBe(15_000);
+  });
+
+  it("a SKIPPED week holds nothing, deferred or not — nobody ever owed it", () => {
     expect(
-      amountOutstanding([
-        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: true },
-        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: false },
+      amountDeferred([
+        { amountDue: 25_000, amountAlreadyPaid: 0, isDeferred: true, isSkipped: true },
       ]),
-    ).toBe(50_000);
+    ).toBe(0);
   });
 
   it("SKIPPED weeks are still fully excused — they contribute nothing", () => {

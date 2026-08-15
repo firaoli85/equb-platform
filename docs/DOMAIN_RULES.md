@@ -260,9 +260,13 @@ chase them* — and whichever won, one of his own decisions would be silently di
 So the mark does not apply to a deferred week at all:
 
 - **Status:** the week reads `DEFERRED`, never `LATE`.
-- **Arithmetic:** the mark cannot pull a not-yet-due deferred week forward. (An *elapsed*
-  deferred week still counts as owed, exactly as it always has — deferral has never
-  excused the money.)
+- **Arithmetic:** the mark cannot pull a not-yet-due deferred week forward — and, since
+  **D-42 (§2.29a, 15 Aug 2026)**, a deferred week does not count as due at all. It leaves
+  the CURRENT expectation, out of `amountOutstanding` and out of `weeksBehind`, and its
+  money is returned by `amountDeferred` instead. Until that date this read *"an elapsed
+  deferred week still counts as owed… deferral has never excused the money"*, which was the
+  law then. It is still never excused: it is **paused**, and it resolves at close either by
+  being paid or by carrying into the person's balance (2.18).
 - **Messages:** the week never enters `lateWeeks`, so `LATE_NOTICE` cannot name it.
 - **The control:** disabled, with the reason on screen — *"This week is deferred — remove
   the deferral first if you want to chase it."* Disabled rather than hidden, because a
@@ -276,7 +280,7 @@ are excused)"*, *"paymentStatus (derived from money and the calendar only)"*;
 `lib/messages.test.ts` → *"deferral leaves a member out of the chasing, not out of the
 books"*; `lib/manual-late.test.ts` → *"DEFERRED beats the mark"*, *"refuses a deferred
 week, and names the way out"*, *"a mark on a deferred week does not pull it forward"*,
-*"an elapsed deferred week still counts as due, with or without a mark"*, *"a mark on a
+*"a deferred week never counts as due — elapsed or not, marked or not"*, *"a mark on a
 deferred week keeps them off the attention list"*, *"deferring a week clears any mark on
 it"*, *"a deferred week disables the control and shows why, in words"*.
 

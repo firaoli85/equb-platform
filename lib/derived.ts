@@ -101,16 +101,26 @@ export function weekCountsAsDue(args: {
   /** This member's week is not chased. DEFERRAL BEATS THE MARK — see below. */
   isDeferred?: boolean;
 }): boolean {
-  // DEFERRAL WINS (organizer ruling, Aug 2026). Deferred means "not chased,
-  // still owed", and it exists precisely to stop a chase reaching someone the
-  // organizer has decided not to pursue. A mark on a deferred week says two
-  // opposite things about the same week, so the mark simply does not apply —
-  // not to the status, and not here either.
+  // A DEFERRED WEEK IS NOT IN THE CURRENT EXPECTATION (D-42, §2.29a).
   //
-  // NOTE what this does NOT change: a deferred week that has ELAPSED still
-  // counts as due, exactly as it always has. The money is owed either way.
-  // What the mark cannot do is pull a not-yet-due deferred week forward.
-  if (args.markedLate && !args.isDeferred) return true;
+  // Deferring is the organizer saying "I have agreed not to chase this week".
+  // It is a PAUSE, not a write-off: the week leaves what is owed right now —
+  // not expected, not chased, not in "N of M paid" — and its money is kept in
+  // `amountDeferred`, resolving at close either by being paid or by carrying
+  // into the person's balance (2.18).
+  //
+  // AMENDED 15 Aug 2026. Until then this returned true for an elapsed deferred
+  // week, and the comment here said so in terms: "a deferred week that has
+  // ELAPSED still counts as due… the money is owed either way". That was the
+  // pre-D-42 law; §2.29a supersedes it, and keeping the old sentence beside
+  // the new behaviour would be the §5.5 defect — a comment as the bug's best
+  // camouflage.
+  //
+  // The mark still cannot pull a not-yet-due deferred week forward: deferral
+  // outranks the mark across all five effects (2.29), so the check below is
+  // reached only for weeks he has NOT paused.
+  if (args.isDeferred) return false;
+  if (args.markedLate) return true;
   return weekHasElapsed(args);
 }
 
@@ -277,11 +287,20 @@ export function manualLateAdvice(args: {
  * that surplus and overstate debt after a rate decrease.
  *
  * SKIPPED weeks contribute nothing to the amount due — nobody owed them.
- * DEFERRED weeks DO count: the money is still owed, the member is simply not
- * chased for it. Money recorded on either still counts — it is money. Never
- * negative. The CALLER chooses the window semantics — pass elapsed weeks for
- * "owed now" (the 2.19 profile number), or the whole commitment for a
- * cycle-end balance (2.18).
+ *
+ * DEFERRED WEEKS ARE EXCLUDED (D-42, §2.29a, 15 Aug 2026). They are paused,
+ * not forgiven: their money is returned by {@link amountDeferred} instead, and
+ * resolves at close (2.18). Until this date they counted here, and the
+ * docblock said "DEFERRED weeks DO count" — that was the pre-D-42 law.
+ *
+ * THE TWO ARE A PARTITION, and that is the point: nothing can fall between
+ * them, so "paused" can never be read as "paid". Anything totalling what a
+ * member owes ALTOGETHER — a cycle-end balance, a carried debt — must add
+ * both, and the close paths do.
+ *
+ * Money recorded on any week still counts — it is money. Never negative. The
+ * CALLER chooses the window semantics: pass the weeks that count as due now
+ * for "owed now", or the whole commitment for a cycle-end balance.
  */
 export function amountOutstanding(
   weeks: readonly {
@@ -296,8 +315,44 @@ export function amountOutstanding(
   for (const [i, week] of weeks.entries()) {
     assertCents(`week[${i}] amountDue`, week.amountDue);
     assertCents(`week[${i}] amountAlreadyPaid`, week.amountAlreadyPaid);
+    // A deferred week's money is not owed RIGHT NOW, and its receipts belong
+    // with it — counting the payment here while dropping the charge would
+    // understate the debt of everyone who part-paid a week before it was
+    // paused.
+    if (week.isDeferred) continue;
     if (!week.isSkipped) due += week.amountDue;
     paid += week.amountAlreadyPaid;
   }
   return Math.max(0, due - paid);
+}
+
+/**
+ * What a member's DEFERRED weeks still hold — owed, but not expected now.
+ *
+ * The other half of the partition with {@link amountOutstanding} (D-42). Not a
+ * write-off and not a separate state: it is the money attached to weeks the
+ * organizer paused, and §2.29a gives it exactly two endings — filled when they
+ * pay (oldest-first, 2.15), or carried into the person's balance at close.
+ *
+ * PER-WEEK, NOT NETTED. Surplus on a deferred week cannot offset a debt on
+ * another deferred week: they are paused independently and resolve
+ * independently, so netting them would invent a figure that answers no
+ * question anyone asks.
+ */
+export function amountDeferred(
+  weeks: readonly {
+    amountDue: number;
+    amountAlreadyPaid: number;
+    isDeferred: boolean;
+    isSkipped?: boolean;
+  }[],
+): number {
+  let held = 0;
+  for (const [i, week] of weeks.entries()) {
+    if (!week.isDeferred || week.isSkipped) continue;
+    assertCents(`week[${i}] amountDue`, week.amountDue);
+    assertCents(`week[${i}] amountAlreadyPaid`, week.amountAlreadyPaid);
+    held += Math.max(0, week.amountDue - week.amountAlreadyPaid);
+  }
+  return held;
 }

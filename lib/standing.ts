@@ -17,6 +17,7 @@
 
 import { allocatePayment, type AllocationResult, type AllocationWeek } from "./allocation";
 import {
+  amountDeferred,
   amountOutstanding,
   paymentStatus,
   weekCountsAsDue,
@@ -35,9 +36,15 @@ export type StandingWeekInput = {
   /** Receipts recorded on this week's row, in cents. */
   storedPaid: number;
   /**
-   * THIS MEMBER's week is not chased — the money is STILL OWED (organizer
-   * ruling, Aug 2026). It counts toward outstanding and weeks-behind, and
-   * money allocates to it normally; it simply never reads LATE.
+   * THIS MEMBER's week is PAUSED (D-42, §2.29a, 15 Aug 2026).
+   *
+   * It leaves the CURRENT expectation — out of `amountOutstanding`, out of
+   * `weeksBehind`, never chased, never LATE — and its money is returned in
+   * `amountDeferred` instead. It is not forgiven: it resolves at close, either
+   * by being paid or by carrying into the person's balance (2.18).
+   *
+   * Money still allocates to it normally, oldest-first: deferral pauses the
+   * chase, never the money.
    */
   isDeferred: boolean;
   /**
@@ -82,6 +89,13 @@ export type Standing = {
   weeksCredited: number;
   weeksBehind: number;
   amountOutstanding: number;
+  /**
+   * What their DEFERRED weeks hold — owed, but not expected now (D-42,
+   * §2.29a). Paused, never forgiven: it resolves at close, either by being
+   * paid (oldest-first) or by carrying into the person's balance (2.18).
+   * Kept apart from `amountOutstanding` so "paused" is never read as "paid".
+   */
+  amountDeferred: number;
   /** Money beyond the member's entire window at the current rate. */
   surplus: number;
   lastPaymentWeek: number | null;
@@ -171,13 +185,26 @@ export function computeStanding(input: {
       isDeferred: w.isDeferred,
     }),
   );
-  // Only SKIPPED weeks are taken off the behind-count. A deferred week the
-  // member has not paid makes them behind exactly like any other.
+  // DEFERRED WEEKS ARE ALREADY OUT of `elapsed` — `weekCountsAsDue` drops them
+  // (D-42, §2.29a) — so the behind-count needs no second deferral test here.
+  // Skipped weeks still have to be subtracted, because a skipped week IS due by
+  // the calendar and simply owed by nobody.
   const skippedElapsed = elapsed.filter((w) => w.isSkipped).length;
   const credited = weeksCredited(totalPaid, input.weeklyAmount);
   const behind = weeksBehind(elapsed.length, credited, skippedElapsed);
   const outstanding = amountOutstanding(
     elapsed.map((w) => ({
+      amountDue: w.amountDue,
+      amountAlreadyPaid: coveredByWeek.get(w.weekNumber) ?? 0,
+      isDeferred: w.isDeferred,
+      isSkipped: w.isSkipped ?? false,
+    })),
+  );
+
+  // OVER THE WHOLE WINDOW, not only the elapsed weeks: a week paused before
+  // its window closed is still paused, and its money still has to be somewhere.
+  const deferredHeld = amountDeferred(
+    windowWeeks.map((w) => ({
       amountDue: w.amountDue,
       amountAlreadyPaid: coveredByWeek.get(w.weekNumber) ?? 0,
       isDeferred: w.isDeferred,
@@ -195,6 +222,7 @@ export function computeStanding(input: {
     weeksCredited: credited,
     weeksBehind: behind,
     amountOutstanding: outstanding,
+    amountDeferred: deferredHeld,
     surplus: effective.unallocated,
     lastPaymentWeek: paidRows.length > 0 ? paidRows[paidRows.length - 1].weekNumber : null,
     weeks: windowWeeks.map((w) => ({

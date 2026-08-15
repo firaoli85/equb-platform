@@ -258,10 +258,15 @@ describe("memberAttention — worst first, deferred excluded", () => {
     expect(list).toEqual([]);
   });
 
-  it("DEFERRED weeks DO count as behind — not chased, still owed (Aug 2026)", () => {
+  // AMENDED BY D-42 (§2.29a, 15 Aug 2026). This asserted the opposite until
+  // then — one week behind, on the attention list. A paused week is one the
+  // organizer has agreed not to chase, and the attention list is the chase, so
+  // a member whose only gap is deferred does not belong on it. The money is not
+  // forgiven: it sits in `amountDeferred` and resolves at close.
+  it("a member whose only gap is DEFERRED is not on the attention list (D-42)", () => {
     const payments = [
       pay("a", 1, 25_000),
-      pay("a", 2, 0, true), // deferred: the debt is real, the chasing is not
+      pay("a", 2, 0, true), // deferred: paused, not chased
       pay("a", 3, 25_000),
     ];
     const list = memberAttention({
@@ -269,8 +274,20 @@ describe("memberAttention — worst first, deferred excluded", () => {
       payments,
       elapsedThroughWeek: 3,
     });
+    expect(list).toEqual([]);
+  });
+
+  it("but an UNPAID week beside a deferred one still brings them onto it", () => {
+    // The deferred week leaves the count; the genuinely unpaid one does not.
+    const payments = [pay("a", 1, 25_000), pay("a", 2, 0, true), pay("a", 3, 0)];
+    const list = memberAttention({
+      participations: [participations[0]],
+      payments,
+      elapsedThroughWeek: 3,
+    });
     expect(list).toHaveLength(1);
     expect(list[0].weeksBehind).toBe(1);
+    expect(list[0].amountOwed).toBe(25_000);
   });
 
   it("weeks with no stored row still count as owed", () => {

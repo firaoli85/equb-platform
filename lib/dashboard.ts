@@ -557,6 +557,17 @@ export function memberAttention(input: {
         dueWeeks.add(r.weekNumber);
       }
     }
+    // A DEFERRED WEEK LEAVES THE CURRENT EXPECTATION (D-42, §2.29a).
+    //
+    // AFTER the range and the marks, not inside them, because both routes can
+    // put the week in: the calendar range adds every week up to the boundary,
+    // and a mark adds one by hand. Removing it here catches both, and keeps
+    // this list agreeing with `computeStanding`, which drops deferred weeks in
+    // `weekCountsAsDue`. The two answering differently about who is behind is
+    // the defect this whole build exists to remove.
+    for (const r of rows) {
+      if (r.isDeferred) dueWeeks.delete(r.weekNumber);
+    }
 
     const elapsedCount = dueWeeks.size;
     const totalPaid = rows.reduce((sum, r) => sum + r.amountPaid, 0);
