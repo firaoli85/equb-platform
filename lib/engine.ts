@@ -310,7 +310,69 @@ export type PaymentEventTruth = {
   /** Caught up after this payment. */
   nowCurrent: boolean;
   weeksBehindAfter: number;
+  /**
+   * What THIS payment put on each week it touched.
+   *
+   * EXPOSED FOR `priorPaidOnWeek`, and the reason is a trap worth naming. The
+   * completed-week message states what the member had already paid, and that
+   * figure is `amountDue − applied` — NEVER the event's total `amount`. An
+   * event with `unallocated > 0`, or one spanning several weeks, makes
+   * `amount > applied` and the subtraction wrong by exactly the difference.
+   *
+   * The subtraction is EXACT, not an approximation: `allocatePayment` sets
+   * `applied = min(owed, remaining)` with `owed = amountDue − amountAlreadyPaid`,
+   * so on a week that FILLS, `applied === owed` and `amountDue − applied` is the
+   * prior coverage to the cent.
+   */
+  appliedByWeek: { weekNumber: number; applied: number; amountDue: number; fillsWeek: boolean }[];
 };
+
+/** Which of the five approved templates documents this payment. */
+export type PaymentMessageKey =
+  | "PAYMENT_CONFIRMED"
+  | "PAYMENT_CONFIRMED_WITH_PARTIAL"
+  | "PARTIAL_CONFIRMED"
+  | "PARTIAL_COMPLETED";
+
+/**
+ * THE ROUTING — total, and mutually exclusive (ONE_TRUTH_ENGINE §3.7).
+ *
+ * Every payment lands on exactly one branch, and `null` is a real answer: a
+ * payment that allocated nothing has nothing to confirm.
+ *
+ * The two cases the four-rule statement did not cover are handled here:
+ *   - completed AND fully-paid weeks with no remainder → v4, whose breakdown
+ *     lists both. It is neither "only fullWeeks" nor the single-week
+ *     PARTIAL_COMPLETED shape.
+ *   - nothing allocated at all → no message.
+ */
+export function paymentMessageFor(event: PaymentEventTruth): PaymentMessageKey | null {
+  const full = event.fullWeeks.length > 0;
+  const completed = event.completedWeeks.length > 0;
+  if (event.remainder > 0) {
+    return full || completed ? "PAYMENT_CONFIRMED_WITH_PARTIAL" : "PARTIAL_CONFIRMED";
+  }
+  if (!full && !completed) return null;
+  if (completed && !full) return "PARTIAL_COMPLETED";
+  return "PAYMENT_CONFIRMED";
+}
+
+/**
+ * What the member had already paid toward the week this payment completed.
+ *
+ * `amountDue − applied`, never the receipt sum: the sum reads
+ * `PaymentAllocation`, which `rebuild.ts` deletes and re-creates on every edit,
+ * while these two are facts about this payment alone.
+ *
+ * Returns null when no week was completed — the caller must not invent a figure.
+ */
+export function priorPaidOnCompletedWeek(event: PaymentEventTruth): number | null {
+  const weekNumber = event.completedWeeks[0];
+  if (weekNumber === undefined) return null;
+  const row = event.appliedByWeek.find((a) => a.weekNumber === weekNumber);
+  if (!row) return null;
+  return Math.max(0, row.amountDue - row.applied);
+}
 
 export type DescribePaymentInput = {
   amount: number;
@@ -355,6 +417,7 @@ export function describePayment(input: DescribePaymentInput): PaymentEventTruth 
   const fullWeeks: number[] = [];
   const completedWeeks: number[] = [];
   const aheadWeeks: number[] = [];
+  const appliedByWeek: PaymentEventTruth["appliedByWeek"] = [];
   let partialWeek: number | null = null;
   let remainder = 0;
 
@@ -365,6 +428,12 @@ export function describePayment(input: DescribePaymentInput): PaymentEventTruth 
       weekDate: before.date,
       today: input.today,
       windowClosesDays: input.windowClosesDays,
+    });
+    appliedByWeek.push({
+      weekNumber: a.weekNumber,
+      applied: a.applied,
+      amountDue: before.amountDue,
+      fillsWeek: a.fillsWeek,
     });
     if (a.fillsWeek) {
       // FINISHED vs SETTLED OUTRIGHT — the member's sentence differs. "That
@@ -389,6 +458,7 @@ export function describePayment(input: DescribePaymentInput): PaymentEventTruth 
     unallocated: result.unallocated,
     nowCurrent: input.weeksBehindAfter === 0,
     weeksBehindAfter: input.weeksBehindAfter,
+    appliedByWeek,
   };
 }
 

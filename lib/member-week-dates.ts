@@ -39,7 +39,7 @@ export function ownWeekNumber(cycleWeek: number, startWeek: number): number {
 }
 
 /** "Aug 23" — the short form the approved bodies carry inline. UTC, no year. */
-function shortDate(date: Date): string {
+export function shortDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
