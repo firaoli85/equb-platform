@@ -54,7 +54,7 @@ type SetupState = {
   slots: { id: string; position: number; drawn: boolean; members: NumberInfo[]; total: number | null }[];
   unassigned: NumberInfo[];
   plans: { id: string; mode: WinnerPlanMode; weekNumber: number | null; numbers: number[] }[];
-  weeks: { id: string; weekNumber: number; hasDraw: boolean; planned: boolean }[];
+  weeks: { id: string; weekNumber: number; hasDraw: boolean; plannedWinners: number }[];
   warnings: { participationId: string; name: string; finishWeek: number; weeksLeft: number; numbers: number[] }[];
 };
 
@@ -833,9 +833,32 @@ export function WheelSetup({ state }: { state: SetupState }) {
             className="w-40"
             options={[
               { value: "", label: "No week yet" },
-              ...state.weeks
-                .filter((w) => !w.hasDraw && !w.planned)
-                .map((w) => ({ value: w.id, label: `Week ${w.weekNumber}` })),
+              // EVERY WEEK IS OFFERED (§3.8: the draw is chosen, not gated).
+              //
+              // This list used to be `.filter((w) => !w.hasDraw && !w.planned)`,
+              // which quietly removed the two cases that happen most: a week
+              // already drawn, and a week that already has a winner. Money is
+              // held across weeks when members are late, so an earlier week's
+              // payout is routinely settled later — and several winners on one
+              // week is how a held-cash draw works. Both were being treated as
+              // impossible by their absence from a dropdown, which is the worst
+              // way to refuse something: there is nothing to read.
+              //
+              // THE LABEL CARRIES THE TRUTH INSTEAD. "Week 1 (drawn)" and
+              // "Week 5 (1 winner)" let him choose a drawn week deliberately
+              // rather than wonder where it went.
+              ...state.weeks.map((w) => {
+                const notes = [
+                  w.hasDraw ? "drawn" : null,
+                  w.plannedWinners > 0
+                    ? `${w.plannedWinners} winner${w.plannedWinners === 1 ? "" : "s"}`
+                    : null,
+                ].filter((n): n is string => n !== null);
+                return {
+                  value: w.id,
+                  label: `Week ${w.weekNumber}${notes.length > 0 ? ` (${notes.join(", ")})` : ""}`,
+                };
+              }),
             ]}
           />
           <button

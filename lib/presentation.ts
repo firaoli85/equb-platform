@@ -230,7 +230,7 @@ type WheelStateInput = {
   currentWeek: number;
   slots: { id: string; position: number; drawn: boolean; members: WheelNumberShape[] }[];
   unassigned: WheelNumberShape[];
-  weeks: { id: string; weekNumber: number; hasDraw: boolean; planned: boolean }[];
+  weeks: { id: string; weekNumber: number; hasDraw: boolean; plannedWinners: number }[];
   warnings: {
     participationId: string;
     name: string;
@@ -293,7 +293,11 @@ export function redactWheelState<T extends WheelStateInput>(data: T) {
       id: w.id,
       weekNumber: w.weekNumber,
       hasDraw: w.hasDraw,
-      planned: false,
+      // ZERO, NOT THE REAL COUNT (2.4). Plans are redacted entirely on a shared
+      // screen, and "Week 5 (2 winners)" in a dropdown label would leak exactly
+      // what `plans: []` above is removing — how many winners are lined up, to
+      // anyone watching. `hasDraw` stays because a drawn week is already public.
+      plannedWinners: 0,
     })),
     warnings: data.warnings.map((w) => ({
       participationId: w.participationId,

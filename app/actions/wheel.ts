@@ -206,11 +206,16 @@ export async function getWheelState() {
         weekNumber: p.week?.weekNumber ?? null,
         numbers: p.numbers.map((n) => n.luckyNumber.number).sort((a, b) => a - b),
       })),
+      // EVERY WEEK, WITH WHAT IS ALREADY TRUE OF IT (§3.8: the draw is CHOSEN,
+      // not gated). `plannedWinners` is a COUNT rather than a flag because
+      // several winners on one week is ordinary here — Oli holds cash across
+      // weeks and draws four at once — so "planned" as a yes/no could not
+      // describe the normal case.
       weeks: cycle.weeks.map((w) => ({
         id: w.id,
         weekNumber: w.weekNumber,
         hasDraw: w.draws.length > 0,
-        planned: cycle.winnerPlans.some((p) => p.week?.id === w.id),
+        plannedWinners: cycle.winnerPlans.filter((p) => p.week?.id === w.id).length,
       })),
       warnings: undrawnWindowWarnings({
         luckyNumbers: loaded.wheelNumbers,
@@ -489,13 +494,34 @@ export async function createWinnerPlan(input: {
           return { error: `Number ${n.number} is not in the pool (window closed or not started).` };
         }
       }
+      // ————— THE WEEK IS CHOSEN, NOT GATED (§3.8) —————
+      //
+      // TWO REFUSALS LIVED HERE AND BOTH WERE WRONG ABOUT THIS EQUB. They
+      // refused an already-drawn week, and refused a week that already had a
+      // planned winner. Neither describes how the draw actually runs:
+      //
+      //   ANY WEEK, INCLUDING ONE ALREADY OUT. Money is held across weeks when
+      //   members are late or deferred, and a slot is awarded when enough has
+      //   accumulated — so an earlier week's payout is routinely settled later.
+      //   Oli: "week 1 already out, I can still select it; week 20, jump back
+      //   and forth."
+      //
+      //   SEVERAL WINNERS ON ONE WEEK IS ORDINARY, not an edge case. He holds
+      //   cash and draws four at once. "Already has a planned winner" treated
+      //   the normal case as an error.
+      //
+      // The week must still EXIST and belong to this cycle — that is not a
+      // gate on his judgement, it is the difference between a choice and a
+      // typo. The closed-cycle refusal above stands for the same reason: a
+      // finished cycle's books are final (2.9).
+      //
+      // WHAT THE ORGANIZER IS TOLD INSTEAD: `getWheelState` returns `hasDraw`
+      // and `plannedWinners` per week and the dropdown says so in the option
+      // label, so he chooses a drawn week knowing it is drawn. Truth informs;
+      // it does not decide.
       if (input.weekId) {
         const week = cycle.weeks.find((w) => w.id === input.weekId);
         if (!week) return { error: "Unknown week." };
-        if (week.draws.length > 0) return { error: `Week ${week.weekNumber} has already been drawn.` };
-        if (cycle.winnerPlans.some((p) => p.week?.id === input.weekId)) {
-          return { error: `Week ${week.weekNumber} already has a planned winner.` };
-        }
       }
 
       // Moving the planned numbers into their own slot must not disturb any

@@ -240,7 +240,7 @@ describe("redactWheelState", () => {
       num({ id: "f1" }),
     ],
     plans: [{ id: "plan1", mode: "TOGETHER", weekNumber: 4, numbers: [5, 13] }],
-    weeks: [{ id: "w4", weekNumber: 4, hasDraw: false, planned: true }],
+    weeks: [{ id: "w4", weekNumber: 4, hasDraw: false, plannedWinners: 1 }],
     warnings: [
       { participationId: "p1", name: NAME, finishWeek: 12, weeksLeft: 3, numbers: [7] },
     ],
@@ -260,8 +260,11 @@ describe("redactWheelState", () => {
     expect(anchored.lockReason).toBeNull();
     const free = redacted.unassigned.find((n) => n.id === "f1")!;
     expect(free.lock).toBeNull();
-    // "planned" week markers are a plan indicator — gone.
-    expect(redacted.weeks[0].planned).toBe(false);
+    // Planned-winner markers are a plan indicator — gone. The count went from a
+    // flag to a number when the week dropdown started offering every week
+    // (§3.8); redacting it to 0 rather than the truth matters MORE as a count,
+    // because "2 winners" in an option label would say how many are lined up.
+    expect(redacted.weeks[0].plannedWinners).toBe(0);
     expect(redacted.unitAmount).toBeNull();
     expect(redacted.slots[0].total).toBeNull();
     expect(redacted.warnings[0].name).toBe("#7");
