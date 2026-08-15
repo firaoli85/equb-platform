@@ -219,7 +219,8 @@ that can be computed is ever stored, because stored values drift and computed va
 cannot.
 
 **Stored:** the money received (amount, date, method), and the organizer's own two
-decisions about a week — `deferred` (excuse the chase; the money is still owed) and the
+decisions about a week — `deferred` (pause it: the week leaves the CURRENT expectation
+and is never chased, and it is never forgiven — it always resolves at close, §2.29) and the
 **manual late mark** (`markedLateAt` with an optional note, added 12 Aug 2026 — §2.29).
 A decision is not computable, so storing one breaks no rule here; everything that CAN be
 computed still is. One further stored figure is named in §2.30: once a payout exists, the
@@ -230,7 +231,9 @@ fee it actually charged is kept on that payout as historical fact.
 | Derived value | How |
 |---|---|
 | Weeks credited | total money paid ÷ current weekly amount |
-| Weeks behind | weeks elapsed in their window − weeks credited |
+| Weeks behind | weeks elapsed in their window − skipped − **deferred** − weeks credited (§2.29, D-42) |
+| Amount owed now | each week's remainder, summed over the weeks that count as due — **deferred weeks excluded** (§2.29, D-42) |
+| Deferred amount | each week's remainder on **deferred** weeks — owed, but not expected now; resolves at close (§2.29, D-42) |
 | Status (paid / partial / not paid) | from the amount against the weekly amount |
 | Late | unpaid **and** either the window has closed **or** the organizer marked it late himself (§2.29). Deferral outranks both. |
 | Current week | cycle start date + today — never hardcoded, never stored |
@@ -571,7 +574,7 @@ effects**, the same five `docs/DOMAIN_RULES.md` §5 lists:
 | # | Effect | What deferral does to the mark |
 |---|---|---|
 | 1 | **Status** | The week reads `DEFERRED`, never `LATE`. |
-| 2 | **Arithmetic** | A mark cannot pull a not-yet-due deferred week forward, and the attention list applies the same test — so the list and the standing derivation cannot disagree. An *elapsed* deferred week still counts as owed: deferral has never excused the money. |
+| 2 | **Arithmetic** | A mark cannot pull a not-yet-due deferred week forward, and the attention list applies the same test — so the list and the standing derivation cannot disagree. What an elapsed deferred week counts toward is **amended by D-42 below** (15 Aug 2026). |
 | 3 | **Messages** | The week never enters the late-week list, so no chasing statement can name it. The chasing gate reads only the derived status; it never looks at the mark. |
 | 4 | **The control** | Disabled, with the reason on screen: *"This week is deferred — remove the deferral first if you want to chase it."* Disabled rather than hidden, because a control that vanishes leaves him hunting for something he used yesterday. Refused **server-side** too — a stale page is exactly the caller that would send it. |
 | 5 | **Clearing** | **Deferring a week clears an existing mark**, so removing the deferral months later cannot spring a forgotten mark back. |
@@ -584,8 +587,66 @@ unhelpful.
 deferred week, so a mark that got stranded can always be lifted by hand. Every set and
 every clear is audited, with the note, before and after.
 
-**Two implementation gaps are open against this rule** — §6.4. The rule above is the law;
-the code does not yet meet it in two places, and neither is a reason to soften it.
+**Three implementation gaps are open against this rule** — §6.4. The rule above is the law;
+the code does not yet meet it in three places, and none is a reason to soften it.
+
+#### 2.29a DEFERRAL IS A PAUSE, AND IT ALWAYS RESOLVES
+
+**Amendment, 15 August 2026 — recorded as D-42. Narrows this section and §2.14.**
+
+A deferred week is **not counted in the CURRENT expectation**: not expected this week, not
+chased, and not in "N of M paid". **It is never forgiven.** It always resolves, one of two
+ways:
+
+| Resolution | When |
+|---|---|
+| **Filled** | The member returns and pays. Money lands **oldest-first** (2.15), so it fills the deferred week before anything newer. |
+| **Carried** | The participation closes. The still-deferred and still-owed weeks settle into the person's **carried balance** for the next cycle (2.18). |
+
+**"Counts toward nothing" scopes to the current expectation, never to the permanent
+record.** The money is remembered until one of those two things happens to it.
+
+**SUPERSEDED WORDING, kept as history.** Until 15 Aug 2026 effect 2 above ended:
+
+> *"An elapsed deferred week still counts as owed: deferral has never excused the money."*
+
+That sentence stated one true thing — the money is not forgiven — and one thing this
+amendment reverses: that the week sits in what is owed **right now**. It read as
+present-tense law until this date and no longer does.
+
+**Why the narrower rule.** A deferred week is the organizer saying *"I have agreed not to
+chase this."* Counting it in this week's expectation makes his own screens chase him for it
+— the group reads short, the member reads behind, and the one decision he actually made is
+the only thing not represented.
+
+**Nothing here weakens 2.18.** *"Unpaid means owed. A week stops being owed only when it is
+marked paid. Nothing else clears it"* — still true. Deferral clears nothing; it moves a week
+out of **this week's** expectation and into a balance that resolves at close.
+
+**What the code does today, honestly stated.** One part already satisfies this rule; the
+rest does not, and that is the third gap in §6.4 — not a claim that it is built:
+
+- **Already correct:** `allocatePayment` skips only `isSkipped` weeks
+  (`lib/allocation.ts:90`), so money has always filled deferred weeks oldest-first. The
+  "filled" resolution needs no change.
+- **Already correct in shape:** closing carries what is outstanding into the ledger —
+  `lib/participation-close.ts:331` (`balanceToRecord`) and `lib/cycle-close.ts:147` (the
+  DEBT entries). The "carried" resolution needs the deferred amount **included** in that
+  figure.
+- **Does NOT yet meet this rule:** the three sites listed in §6.4.
+
+The engine build closes them — `docs/ONE_TRUTH_ENGINE.md` §3.0 rule 4 and §3.4, which add
+`amountDeferred` beside `amountOutstanding` so a deferred week's money is never silently
+read as paid or as owed-now.
+
+**This does not touch D-40 (the manual late mark).** All five effects stand: a deferred week
+still never reads LATE, still cannot be marked, and deferring still clears an existing mark.
+Effect 2's first clause — a mark cannot pull a not-yet-due deferred week forward — is
+unchanged. Only what an **elapsed** deferred week counts toward is amended.
+
+**This does not touch §2.30 (the fee).** The fee is `feePercent × weeklyAmount × weeks
+COMMITTED`. Deferral changes neither the commitment nor the rate, so the fee and the payout
+are identical before and after this amendment.
 
 ### 2.30 THE FEE IS FIXED BY THE COMMITMENT, NOT BY ATTENDANCE
 
@@ -716,6 +777,7 @@ then Claude Code implements it. Connect at the design phase, not before.
 | D-30 | Add-member flow: system knows the active cycle; existing person = set cycle fields only; new person = created in directory AND added to cycle in one step; guided step-by-step with live computed consequences | **SETTLED** |
 | D-40 | **The organizer may mark a week LATE by hand before its window closes** — a stored decision (`markedLateAt`, a timestamp, plus an optional note), because he learns on Monday what the calendar cannot say until Thursday (2.2). Amends §2.14's "everything else is derived" and D-16 with one named carve-out. Money still beats the mark, and **deferral outranks it across all five effects** — status, arithmetic, messages, the control, and clearing an existing mark. Full rule in §2.29. | **SETTLED 12 Aug 2026** — two implementation gaps open against it, listed in §6.4. |
 | D-41 | **The fee is fixed by what a member COMMITTED to, not by how much of it they attended.** gross = weekly × weeks committed; fee = the cycle's percent of that, per lucky number. Stopping early never shrinks it — the place was held either way — though what is recoverable is floored at what they paid in, and a shortfall is reported as settled rather than chased. Either term (rate or weeks) moves the fee, and when money has already gone out the organizer must settle rather than save past it. Projected fees derive at read time; a drawn payout's fee is stored as historical fact. The member's signed agreement §4 says the same. Full rule in §2.30. | **SETTLED Aug 2026** — a correction to what was built first. One narrow divergence from the agreement's §4 wording is recorded in §6.4. |
+| D-42 | **A deferred week is a PAUSE, not a write-off** — it leaves the CURRENT expectation (not expected, not chased, not in the headcount) but is never forgiven, and always resolves: filled oldest-first if the member pays, or carried into the person's balance at close. Narrows §2.29 effect 2 and §2.14; supersedes *"an elapsed deferred week still counts as owed."* Full rule in §2.29a. | **SETTLED 15 Aug 2026** — three code sites do not yet meet it (§6.4); closed by the engine build (`docs/ONE_TRUTH_ENGINE.md` §3.0 rule 4). |
 
 **Flexibility rule (Oli, Aug 2026):** rules are judged by their *reasons*, not applied blindly.
 Nexo's "open source first" doctrine exists for PHI, BAA, MCO review, and scale — none of
@@ -1030,6 +1092,17 @@ written against defects that actually occurred. **The organizer runs it.**
   member in the state gap 1 allows is under-counted. Reachable only through gap 1; worth
   fixing with it, and worth a test that puts BOTH conditions on ONE member — no current
   fixture does.
+- **Three sites still count a deferred week in what is owed right now** (D-42 gap, found
+  15 Aug 2026). D-42 narrowed deferral to a pause that leaves the CURRENT expectation
+  (§2.29a); the derivation has not caught up. `weekCountsAsDue` returns `weekHasElapsed`
+  for a deferred week and its comment still states the superseded reading verbatim
+  (`lib/derived.ts:113-114`); `amountOutstanding` takes `isDeferred` as a required field
+  and never reads it, so every non-skipped week counts (`lib/derived.ts:286-302`); and
+  `computeStanding` subtracts skipped weeks only (`lib/standing.ts:176-186`). Until these
+  move, a member the organizer agreed not to chase still reads as behind, and the group
+  still reads short by their weeks. All three close with the engine build
+  (`docs/ONE_TRUTH_ENGINE.md` §3.0 rule 4 and §3.4, which add `amountDeferred` beside
+  `amountOutstanding`).
 - **Agreement §4 is narrower than D-41** — it says the fee changes only with the weekly
   amount, while the platform also moves it with the weeks committed. Members who stop
   early are unaffected. Fixing it by re-wording is a **re-signing event** for everyone who
