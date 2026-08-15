@@ -356,7 +356,10 @@ describe("message keys", () => {
     expect(MANUAL_MESSAGE_KEYS).not.toContain<MessageKey>("LOCKOUT_NOTICE");
     // …and the broadcast has its own card, never a per-member batch entry.
     expect(MANUAL_MESSAGE_KEYS).not.toContain<MessageKey>("GROUP_ANNOUNCEMENT");
-    expect(MANUAL_MESSAGE_KEYS).toHaveLength(MESSAGE_KEYS.length - 3);
+    // MINUS SEVEN since the phase-4 set landed: LOCKOUT_NOTICE and
+    // GROUP_ANNOUNCEMENT as before, plus the five EVENT_TRIGGERED_KEYS a
+    // payment originates (PAYMENT_CONFIRMED was already one of the three).
+    expect(MANUAL_MESSAGE_KEYS).toHaveLength(MESSAGE_KEYS.length - 7);
   });
 });
 
@@ -680,11 +683,15 @@ describe("which message types apply to one member", () => {
     expect(all.every((t) => (t.reason ?? "").includes("no messages"))).toBe(true);
   });
 
-  it("marks the two chasing types, and only those", () => {
+  // THREE SINCE 15 AUG 2026: late_notice_v4 supersedes v3 and chases the same
+  // money, so deferral must suppress it identically. If it were absent from
+  // CHASING_MESSAGE_KEYS, a paused week would be chased by the new notice and
+  // spared by the old — the two disagreeing about one member.
+  it("marks the chasing types, and only those", () => {
     const chasing = applicableTypes(base)
       .filter((t) => t.chasing)
       .map((t) => t.key);
-    expect(chasing.sort()).toEqual(["BEHIND_NOTICE", "LATE_NOTICE"]);
+    expect(chasing.sort()).toEqual(["BEHIND_NOTICE", "LATE_NOTICE", "LATE_NOTICE_V4"]);
   });
 
   // THE FIXTURE ITSELF CHANGED, AND THAT IS THE POINT (lesson 5.1). It used to

@@ -43,6 +43,9 @@ export const MONEY_PLACEHOLDERS = [
   "totalPaid",
   "amountReceived",
   "payoutAmount",
+  // The prior paid on a completed week (phase 4) — a figure a member checks
+  // against their own records, so it may never render as the dash.
+  "priorPaidOnWeek",
 ] as const satisfies readonly PlaceholderName[];
 
 export function isMoneyPlaceholder(name: string): boolean {

@@ -145,11 +145,12 @@ describe("the money classification is complete and honest", () => {
     }
   });
 
-  it("classifies exactly the five, and nothing that is not money", () => {
+  it("classifies exactly the six, and nothing that is not money", () => {
     expect([...MONEY_PLACEHOLDERS].sort()).toEqual([
       "amountOwed",
       "amountReceived",
       "payoutAmount",
+      "priorPaidOnWeek",
       "totalPaid",
       "weeklyAmount",
     ]);
@@ -167,7 +168,11 @@ describe("the money classification is complete and honest", () => {
       "BEHIND_NOTICE",
       "CYCLE_CLOSING_STATEMENT",
       "LATE_NOTICE",
+      "PARTIAL_COMPLETED",
+      "PARTIAL_CONFIRMED",
       "PAYMENT_CONFIRMED",
+      "PAYMENT_CONFIRMED_V4",
+      "PAYMENT_CONFIRMED_WITH_PARTIAL",
       "WHATSAPP_WELCOME",
       "WINNER_ANNOUNCEMENT",
     ]);
@@ -293,7 +298,19 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
       // Dated weeks throughout — the my* tokens need each named week's stored
       // day — with week 7 late so the late notice has something to name.
       { ...STANDING, weeks: datedWeeks((w) => (w === 7 ? "LATE" : "PAID")) },
-      { amountReceived: 75_000, weeksCovered: [4, 5, 6], payoutNet: 980_000, announcementText: "Draw moves to Saturday." },
+      {
+        amountReceived: 75_000,
+        weeksCovered: [4, 5, 6],
+        payoutNet: 980_000,
+        announcementText: "Draw moves to Saturday.",
+        // The phase-4 composed values (lib/payment-message.ts). Supplied for
+        // the same reason the others are: this test proves the guard is not
+        // over-eager, so every template must get what a real caller gives it.
+        paymentBreakdown: "week 4 (Jun 7), week 5 (Jun 14) and week 6 (Jun 21)",
+        stillDueOnWeek: "$1,800 is still due for your week 7 (Jun 28)",
+        partialWeekLabel: "week 7 (Sunday, June 28)",
+        priorPaidOnWeek: 20_000,
+      },
     );
     for (const key of APPROVED_TEMPLATE_KEYS) {
       expect(buildContentVariables(key, values).ok, key).toBe(true);
@@ -315,8 +332,20 @@ describe("AUDIT — every placeholder that can reach the sentinel", () => {
     expect(offenders.sort()).toEqual([
       "GROUP_ANNOUNCEMENT.announcementText",
       "LATE_NOTICE.myLateWeeks",
+      "LATE_NOTICE_V4.stillDueOnWeek",
+      "PARTIAL_COMPLETED.amountReceived",
+      "PARTIAL_COMPLETED.partialWeekLabel",
+      "PARTIAL_COMPLETED.priorPaidOnWeek",
+      "PARTIAL_CONFIRMED.amountReceived",
+      "PARTIAL_CONFIRMED.partialWeekLabel",
+      "PARTIAL_CONFIRMED.stillDueOnWeek",
       "PAYMENT_CONFIRMED.amountReceived",
       "PAYMENT_CONFIRMED.myWeeksCovered",
+      "PAYMENT_CONFIRMED_V4.amountReceived",
+      "PAYMENT_CONFIRMED_V4.paymentBreakdown",
+      "PAYMENT_CONFIRMED_WITH_PARTIAL.amountReceived",
+      "PAYMENT_CONFIRMED_WITH_PARTIAL.paymentBreakdown",
+      "PAYMENT_CONFIRMED_WITH_PARTIAL.stillDueOnWeek",
       "WINNER_ANNOUNCEMENT.payoutAmount",
     ]);
     for (const key of APPROVED_TEMPLATE_KEYS) {

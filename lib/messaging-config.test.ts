@@ -96,9 +96,13 @@ describe("THE NO-OP PROOF — resolved defaults equal today's hard-coded behavio
 });
 
 describe("the reserved keys — a setting may exist before its template does", () => {
-  it("reserves PARTIAL_CONFIRMED and the weekly reminder, and says so", () => {
-    expect(RESERVED_MESSAGE_KEYS).toContain<ConfigurableMessageKey>("PARTIAL_CONFIRMED");
+  // PARTIAL_CONFIRMED LEFT THE LIST ON 15 AUG 2026, which is this test working
+  // rather than failing: phase 1 reserved the key before the template existed
+  // and asserted the reservation would stay HONEST. Phase 4b-i added the
+  // template, so the reservation stopped being true and had to go.
+  it("reserves the weekly reminder, and says so", () => {
     expect(RESERVED_MESSAGE_KEYS).toContain<ConfigurableMessageKey>("WEEKLY_REMINDER");
+    expect(RESERVED_MESSAGE_KEYS).not.toContain<ConfigurableMessageKey>("PARTIAL_CONFIRMED");
   });
 
   it("those two genuinely have no message type behind them yet", () => {

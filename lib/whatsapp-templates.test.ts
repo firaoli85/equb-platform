@@ -155,7 +155,11 @@ describe("LOCKOUT_NOTICE is undeliverable BY DESIGN", () => {
   // notice is a security message; Twilio Verify is the channel for it.
   it("has NO approved template, and must not gain one by accident", () => {
     expect(APPROVED_TEMPLATE_KEYS).not.toContain("LOCKOUT_NOTICE" as ApprovedTemplateKey);
-    expect(Object.keys(APPROVED_TEMPLATES)).toHaveLength(7);
+    // 12 since the phase-4 payment set landed (15 Aug 2026): the seven of the
+    // 13/14 Aug sets plus payment_confirmed_v4, payment_confirmed_with_partial,
+    // partial_confirmed, partial_completed and late_notice_v4. EXACT, not a
+    // minimum — a registry that grew by accident must fail here.
+    expect(Object.keys(APPROVED_TEMPLATES)).toHaveLength(12);
   });
 });
 

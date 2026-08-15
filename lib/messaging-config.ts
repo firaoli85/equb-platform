@@ -62,7 +62,11 @@ export type ConfigurableMessageKey = (typeof CONFIGURABLE_MESSAGE_KEYS)[number];
  * `MESSAGE_KEYS` (so the reservation stays honest) and that resolving them
  * produces a real value rather than a hole.
  */
-export const RESERVED_MESSAGE_KEYS = ["PARTIAL_CONFIRMED", "WEEKLY_REMINDER"] as const;
+// PARTIAL_CONFIRMED LEFT THIS LIST ON 15 AUG 2026, exactly as the phase-1
+// test demanded it would: the template now exists, so the reservation stopped
+// being honest. WEEKLY_REMINDER is still reserved — no type, no template, and
+// the setting waits for both.
+export const RESERVED_MESSAGE_KEYS = ["WEEKLY_REMINDER"] as const;
 
 /**
  * The types that fire on a CLOCK rather than on an event, so they are the only

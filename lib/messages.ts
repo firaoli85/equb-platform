@@ -30,6 +30,13 @@ import {
 
 export const MESSAGE_KEYS = [
   "PAYMENT_CONFIRMED",
+  // THE PHASE 4 PAYMENT SET. Which one documents a payment is decided by
+  // paymentMessageFor() in lib/engine.ts, never by a caller picking a name.
+  "PAYMENT_CONFIRMED_V4",
+  "PAYMENT_CONFIRMED_WITH_PARTIAL",
+  "PARTIAL_CONFIRMED",
+  "PARTIAL_COMPLETED",
+  "LATE_NOTICE_V4",
   "BEHIND_NOTICE",
   "LATE_NOTICE",
   "WINNER_ANNOUNCEMENT",
@@ -61,7 +68,46 @@ export const AUTOMATIC_MESSAGE_KEYS = ["PAYMENT_CONFIRMED", "LOCKOUT_NOTICE"] as
  * confirmation, the winner announcement, the closing statement — are NOT
  * chasing, so they always state the true amount owed, deferral included.
  */
-export const CHASING_MESSAGE_KEYS = ["BEHIND_NOTICE", "LATE_NOTICE"] as const;
+export const CHASING_MESSAGE_KEYS = [
+  "BEHIND_NOTICE",
+  "LATE_NOTICE",
+  // The v4 replacement chases the same money by the same rule, so deferral
+  // must suppress it identically. Absent, a paused week would be chased by
+  // the new notice and not the old — the two disagreeing about one member.
+  "LATE_NOTICE_V4",
+] as const;
+
+/**
+ * WHO ORIGINATES THE MESSAGE — a payment, or the organizer.
+ *
+ * EVENT-TRIGGERED IS NOT THE SAME QUESTION AS AUTO-SEND, and conflating them
+ * is what this constant exists to stop. Two different questions were wearing
+ * one name (`AUTOMATIC_MESSAGE_KEYS`), which is §5.10 in the message layer:
+ *
+ *   1. WHO ORIGINATES IT?  ← this constant
+ *      A payment landing does. The organizer cannot CHOOSE to send a
+ *      part-payment confirmation to someone who has not part paid, so these
+ *      never belong in the per-member picker (`applicableTypes`).
+ *
+ *   2. DOES IT SEND ITSELF, or wait for him?  ← the phase-1 config gate
+ *      (lib/messaging-config.ts, Settings → Messaging). PAYMENT_CONFIRMED
+ *      auto-sends; the four new payment types QUEUE for review by default,
+ *      because a wrong partial notice is worse than a missed one.
+ *
+ * An event-triggered type can therefore be queued rather than automatic —
+ * which is exactly what the four new ones are, and what no single flag could
+ * express. `AUTOMATIC_MESSAGE_KEYS` keeps answering question 2 only.
+ *
+ * LATE_NOTICE_V4 is deliberately ABSENT: a reminder is the organizer's
+ * judgement about a member, so it stays in the picker where he chooses it.
+ */
+export const EVENT_TRIGGERED_KEYS = [
+  "PAYMENT_CONFIRMED",
+  "PAYMENT_CONFIRMED_V4",
+  "PAYMENT_CONFIRMED_WITH_PARTIAL",
+  "PARTIAL_CONFIRMED",
+  "PARTIAL_COMPLETED",
+] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
 
@@ -86,6 +132,10 @@ export const BROADCAST_MESSAGE_KEYS = ["GROUP_ANNOUNCEMENT"] as const;
 export const MANUAL_MESSAGE_KEYS = MESSAGE_KEYS.filter(
   (k): k is MessageKey =>
     !(AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(k) &&
+    // A PAYMENT ORIGINATES THESE, not the organizer (EVENT_TRIGGERED_KEYS).
+    // Excluded on that axis rather than by being called "automatic", because
+    // the four new ones are event-triggered AND queued — see the constant.
+    !(EVENT_TRIGGERED_KEYS as readonly string[]).includes(k) &&
     // A broadcast is sent by hand, but never PER MEMBER by hand: it has its
     // own card, its own extras, and no per-member judgement to make. Listing
     // it here would put it on every profile with a preview it cannot render.
@@ -162,6 +212,30 @@ export type MessageExtras = {
   lockMinutes?: number;
   /** GROUP_ANNOUNCEMENT: the organizer's text, composed at send time. */
   announcementText?: string;
+
+  // ————— THE PAYMENT EVENT (phase 4) —————
+  //
+  // COMPOSED BY THE CALLER, in lib/payment-message.ts, from the engine's
+  // PaymentEventTruth. They arrive as finished phrases for the same reason
+  // `announcementText` does: the sentence is domain logic, and re-deriving it
+  // here would be a second implementation of what the engine already worked out.
+  //
+  // All four are NON-DASHABLE. Absent means the send is REFUSED at the
+  // ContentVariables boundary, rather than Twilio filling the slot from its
+  // approval sample and delivering an invented figure as fact.
+
+  /** "week 14 (Aug 2), week 15 (Aug 9) and week 16 (Aug 16)" — never a range. */
+  paymentBreakdown?: string;
+  /** "$1,800 is still due for your week 14 (Aug 2)" — a whole sentence. */
+  stillDueOnWeek?: string;
+  /** "week 14 (Sunday, August 2)" — one week, full date. */
+  partialWeekLabel?: string;
+  /**
+   * What the member had ALREADY paid toward the week this payment completed,
+   * in cents. `amountDue − appliedToThatWeek`, never the receipt sum and never
+   * the event total — see `priorPaidOnCompletedWeek` in lib/engine.ts.
+   */
+  priorPaidOnWeek?: number;
 };
 
 /**
@@ -373,6 +447,18 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
     /** The count beside the phrase — always the SAME set myLateWeeks names. */
     lateWeeksCount: String(lateWeeks.length),
     /** GROUP_ANNOUNCEMENT: the organizer's own words, required at the boundary. */
+    // ————— the payment event (phase 4) —————
+    //
+    // SURFACED, NOT DERIVED. The caller composed these from the engine's event
+    // (lib/payment-message.ts); this file hands them to the template, exactly
+    // as it does the organizer's announcement text. Each renders the sentinel
+    // when absent and none is dashable, so a missing one refuses the send
+    // instead of inventing a week list or a remainder.
+    paymentBreakdown: extras.paymentBreakdown ?? NO_VALUE,
+    stillDueOnWeek: extras.stillDueOnWeek ?? NO_VALUE,
+    partialWeekLabel: extras.partialWeekLabel ?? NO_VALUE,
+    priorPaidOnWeek:
+      extras.priorPaidOnWeek === undefined ? NO_VALUE : formatMoney(extras.priorPaidOnWeek),
     announcementText:
       extras.announcementText === undefined || extras.announcementText.trim() === ""
         ? NO_VALUE
@@ -476,6 +562,11 @@ export function unknownPlaceholders(body: string): string[] {
  */
 const TEMPLATE_NAMES: Record<ApprovedTemplateKey, string> = {
   PAYMENT_CONFIRMED: "Payment confirmation",
+  PAYMENT_CONFIRMED_V4: "Payment confirmation",
+  PAYMENT_CONFIRMED_WITH_PARTIAL: "Payment confirmation, with a part-paid week",
+  PARTIAL_CONFIRMED: "Part-payment confirmation",
+  PARTIAL_COMPLETED: "Week completed confirmation",
+  LATE_NOTICE_V4: "Late notice",
   BEHIND_NOTICE: "Behind notice",
   LATE_NOTICE: "Late notice",
   WINNER_ANNOUNCEMENT: "Winner announcement",
@@ -759,7 +850,10 @@ export function applicableTypes(state: {
               note: null,
               chasing: true,
             };
+      // ONE RULE FOR BOTH. v4 supersedes v3 and is offered on exactly the
+      // same condition; giving it its own branch is how the two would drift.
       case "LATE_NOTICE":
+      case "LATE_NOTICE_V4":
         return state.amountOutstanding > 0
           ? { key, applicable: true, reason: null, note: neverPaidNote, chasing: true }
           : {

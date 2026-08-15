@@ -69,7 +69,12 @@ if (missing.length > 0) {
   // same transaction as the updates — announced here, proven in AFTER.
   console.log(`\nNew key(s) with no MessageTemplate row yet — will CREATE: ${missing.join(", ")}`);
 }
-if (APPROVED_TEMPLATE_KEYS.length !== 7) {
+// A DELIBERATE COUNT, RAISED DELIBERATELY. 7 was the 13 Aug 2026 set; the
+// phase-4 payment set (15 Aug 2026) adds five. The guard exists so a registry
+// that grew by ACCIDENT cannot write rows to the live database, so it is
+// bumped when the growth is intended — never widened to a range.
+const EXPECTED_APPROVED = 12;
+if (APPROVED_TEMPLATE_KEYS.length !== EXPECTED_APPROVED) {
   console.error(`\nREFUSING: the registry holds ${APPROVED_TEMPLATE_KEYS.length} templates, not the 7 of the 13 Aug 2026 set.`);
   await prisma.$disconnect();
   process.exit(1);
@@ -157,8 +162,13 @@ try {
         }
         touched += result.count;
       }
-      if (touched !== 7) {
-        throw new SyncError(`Expected to touch exactly 7 rows, touched ${touched}. Rolling back.`);
+      // ONE ROW PER APPROVED TEMPLATE, asserted rather than trusted: a
+      // transaction touching more rows than the registry has keys is writing
+      // something nobody described. Raised with the pre-write guard above.
+      if (touched !== EXPECTED_APPROVED) {
+        throw new SyncError(
+          `Expected to touch exactly ${EXPECTED_APPROVED} rows, touched ${touched}. Rolling back.`,
+        );
       }
 
       // Belt and braces INSIDE the transaction: LOCKOUT_NOTICE must be byte

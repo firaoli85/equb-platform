@@ -44,6 +44,18 @@ import { isMoneyPlaceholder, mayRenderAsNoValue, NO_VALUE } from "./placeholder-
 /** The seven keys Meta has approved. Deliberately NOT `MessageKey`. */
 export type ApprovedTemplateKey =
   | "PAYMENT_CONFIRMED"
+  // ————— THE PHASE 4 PAYMENT SET (approved by Meta, 15 Aug 2026) —————
+  //
+  // WHICH of these documents a payment is decided by `paymentMessageFor()` in
+  // lib/engine.ts, from what the payment actually did — never by a caller
+  // choosing a name. The two v4s supersede PAYMENT_CONFIRMED and LATE_NOTICE
+  // and are NOT deleted: the practice is one observed DELIVERED send on the
+  // replacement before its predecessor is retired.
+  | "PAYMENT_CONFIRMED_V4"
+  | "PAYMENT_CONFIRMED_WITH_PARTIAL"
+  | "PARTIAL_CONFIRMED"
+  | "PARTIAL_COMPLETED"
+  | "LATE_NOTICE_V4"
   | "BEHIND_NOTICE"
   | "LATE_NOTICE"
   | "WINNER_ANNOUNCEMENT"
@@ -176,6 +188,89 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
       "Hi {{1}}, we received {{2}} for your Equb — recorded on your week(s) {{3}}. You have now paid {{4}} of your {{5}} weeks. Thank you.",
     variableOrder: ["name", "amountReceived", "myWeeksCovered", "weeksPaid", "weeksTotal"],
     requiredExtras: ["amountReceived", "weeksCovered"],
+  }),
+
+  // ————— THE PHASE 4 PAYMENT SET (approved 15 Aug 2026) —————
+  //
+  // Bodies and the rulings behind them: docs/ONE_TRUTH_ENGINE.md §3.7 and
+  // docs/WHATSAPP_TEMPLATES.md. NO RECEIPT DATES anywhere — every reference is
+  // the member's own week number plus that week's SCHEDULED date, both stable
+  // cycle facts, because a message states what stays true.
+  //
+  // NOTHING CALLS THESE YET. The router that picks between them
+  // (paymentMessageFor, lib/engine.ts) is not wired to the payment site until
+  // 4b-ii, so landing them here changes no message any member receives.
+
+  PAYMENT_CONFIRMED_V4: approved({
+    key: "PAYMENT_CONFIRMED_V4",
+    contentSid: "HX04d881604b2900ca7a3756e7ef8b4369",
+    approvedBody:
+      "Hi {{1}}, we received {{2}} for your Equb. That paid {{3}}. You have now paid {{4}} of your {{5}} weeks. Thank you.",
+    variableOrder: ["name", "amountReceived", "paymentBreakdown", "weeksPaid", "weeksTotal"],
+    requiredExtras: ["amountReceived", "paymentBreakdown"],
+  }),
+
+  PAYMENT_CONFIRMED_WITH_PARTIAL: approved({
+    key: "PAYMENT_CONFIRMED_WITH_PARTIAL",
+    contentSid: "HX42c594237ebb137ffe74f441dfce9ae7",
+    approvedBody:
+      "Hi {{1}}, we received {{2}} for your Equb. That paid {{3}}. {{4}}. You have now paid {{5}} of your {{6}} weeks. Thank you.",
+    variableOrder: [
+      "name",
+      "amountReceived",
+      "paymentBreakdown",
+      "stillDueOnWeek",
+      "weeksPaid",
+      "weeksTotal",
+    ],
+    requiredExtras: ["amountReceived", "paymentBreakdown", "stillDueOnWeek"],
+  }),
+
+  PARTIAL_CONFIRMED: approved({
+    key: "PARTIAL_CONFIRMED",
+    contentSid: "HX594e2d89ff6ef2d43cf4e5fd23ddd44a",
+    approvedBody:
+      "Hi {{1}}, we received {{2}} for your Equb. That paid part of your {{3}}. {{4}}. You have now paid {{5}} of your {{6}} weeks. Thank you.",
+    variableOrder: [
+      "name",
+      "amountReceived",
+      "partialWeekLabel",
+      "stillDueOnWeek",
+      "weeksPaid",
+      "weeksTotal",
+    ],
+    requiredExtras: ["amountReceived", "partialWeekLabel", "stillDueOnWeek"],
+  }),
+
+  PARTIAL_COMPLETED: approved({
+    key: "PARTIAL_COMPLETED",
+    contentSid: "HX1efe217e6afed58c5a2f3671351eaf7f",
+    // {{3}} is the EXACT prior amount: amountDue minus what THIS payment
+    // applied to that week — never the receipt sum, which reads a table
+    // rebuild.ts deletes and re-creates on every edit.
+    approvedBody:
+      "Hi {{1}}, we received {{2}} for your Equb. You had already paid {{3}} toward your {{4}}, and it is now paid in full. You have now paid {{5}} of your {{6}} weeks. Thank you.",
+    variableOrder: [
+      "name",
+      "amountReceived",
+      "priorPaidOnWeek",
+      "partialWeekLabel",
+      "weeksPaid",
+      "weeksTotal",
+    ],
+    requiredExtras: ["amountReceived", "priorPaidOnWeek", "partialWeekLabel"],
+  }),
+
+  LATE_NOTICE_V4: approved({
+    key: "LATE_NOTICE_V4",
+    contentSid: "HX946bc247a7e1b1bbf697e376bc9b0b63",
+    // THE TRUST-LAW FIX. late_notice_v3 says "we did not receive your payment",
+    // FALSE for anyone who part paid, and quoted the member's TOTAL where the
+    // sentence named one week. Both are gone.
+    approvedBody:
+      "Hi {{1}}, this is a reminder about your Equb. {{2}}. You are paid up to your {{3}}, and the current week is {{4}}. Please contact Firaoli if this does not match your records.",
+    variableOrder: ["name", "stillDueOnWeek", "myPaidUpToWeek", "myCurrentWeek"],
+    requiredExtras: ["stillDueOnWeek"],
   }),
 
   BEHIND_NOTICE: approved({
@@ -383,6 +478,12 @@ export function checkRequiredExtras(
 /** What each template asserts, for a refusal that explains itself. */
 const FACT_DESCRIPTIONS: Record<ApprovedTemplateKey, string> = {
   PAYMENT_CONFIRMED: "which weeks a receipt landed on and how much arrived",
+  PAYMENT_CONFIRMED_V4: "which weeks a receipt paid, itemised, and how much arrived",
+  PAYMENT_CONFIRMED_WITH_PARTIAL:
+    "which weeks a receipt paid and what is still due on the one it part paid",
+  PARTIAL_CONFIRMED: "how much of a week a receipt paid and what is still due on it",
+  PARTIAL_COMPLETED: "what a member had already paid toward a week the receipt completed",
+  LATE_NOTICE_V4: "what is still due on a specific week",
   WINNER_ANNOUNCEMENT: "what a payout is worth",
   BEHIND_NOTICE: "a member's arrears",
   LATE_NOTICE: "which weeks closed unpaid",
