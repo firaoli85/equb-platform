@@ -526,7 +526,7 @@ function defaultSettingValues() {
 
 describe("META WILL DROP IT — a marketing template must never look sent", () => {
   it("refuses a MARKETING template to a US number, and says why", () => {
-    const reason = marketingRefusal("PARTIAL_COMPLETED", "+13015416005");
+    const reason = marketingRefusal("GROUP_ANNOUNCEMENT", "+13015416005");
     expect(reason).toBeTruthy();
     // THE ORGANIZER'S NEXT ACTION IS IN THE SENTENCE. "Undeliverable" tells him
     // nothing he can do; the remedy is at Meta, not in this codebase.
@@ -538,7 +538,14 @@ describe("META WILL DROP IT — a marketing template must never look sent", () =
   it("does NOT refuse the same template to a non-US number", () => {
     // The restriction is Meta's and it is specific. Refusing everyone would
     // withhold messages that would have arrived.
-    expect(marketingRefusal("PARTIAL_COMPLETED", "+251911234567")).toBeNull();
+    expect(marketingRefusal("GROUP_ANNOUNCEMENT", "+251911234567")).toBeNull();
+  });
+
+  it("PARTIAL_COMPLETED is deliverable again — resubmitted and confirmed UTILITY", () => {
+    // 16 Aug 2026. It was refused while Meta had it filed as MARKETING; the
+    // resubmission came back UTILITY and the refusal was lifted ON THAT READ,
+    // not on the resubmission. A US member receives it again.
+    expect(marketingRefusal("PARTIAL_COMPLETED", "+13015416005")).toBeNull();
   });
 
   it("does NOT refuse a UTILITY template to a US number", () => {
@@ -548,14 +555,16 @@ describe("META WILL DROP IT — a marketing template must never look sent", () =
     expect(marketingRefusal("PAYMENT_CONFIRMED_V4", "+13015416005")).toBeNull();
   });
 
-  it("names exactly the two templates Meta filed as MARKETING", () => {
+  it("names exactly the templates Meta currently files as MARKETING", () => {
     // EXACT, not a minimum. This list is a claim about somebody else's system;
     // scripts/check-template-categories.mts verifies it against Twilio, and this
     // stops it growing or shrinking by accident in between.
-    expect([...MARKETING_TEMPLATE_KEYS].sort()).toEqual([
-      "GROUP_ANNOUNCEMENT",
-      "PARTIAL_COMPLETED",
-    ]);
+    //
+    // IT SHRANK BY ONE ON 16 AUG 2026, and only by one. Both templates were
+    // resubmitted together; partial_completed came back UTILITY and left,
+    // group_announcement came back MARKETING again and stayed. Membership is
+    // decided by the category read, never by the fact of a resubmission.
+    expect([...MARKETING_TEMPLATE_KEYS]).toEqual(["GROUP_ANNOUNCEMENT"]);
   });
 
   it("the send path asks BEFORE handing anything to Twilio", () => {

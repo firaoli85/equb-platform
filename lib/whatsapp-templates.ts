@@ -187,7 +187,17 @@ function approved(
  * then the send path REFUSES rather than producing a message that looks sent
  * and reaches nobody.
  */
-export const MARKETING_TEMPLATE_KEYS = ["PARTIAL_COMPLETED", "GROUP_ANNOUNCEMENT"] as const;
+// PARTIAL_COMPLETED LEFT THIS LIST ON 16 AUG 2026, on the confirmed category
+// read and not on the resubmission alone: Twilio reports the new SID as
+// UTILITY/approved, so Meta will deliver it to a US number and the refusal
+// would now be withholding a message that would arrive.
+//
+// GROUP_ANNOUNCEMENT STAYS. It was resubmitted in the same round and came back
+// MARKETING again — approved, and still undeliverable to a +1 number. Removing
+// it because it was resubmitted would have restored the silent-drop this guard
+// exists to prevent, which is exactly why membership is decided by reading the
+// category rather than by trusting the submission.
+export const MARKETING_TEMPLATE_KEYS = ["GROUP_ANNOUNCEMENT"] as const;
 
 /**
  * Why this template cannot be delivered to this number, or null if it can.
@@ -290,7 +300,10 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
 
   PARTIAL_COMPLETED: approved({
     key: "PARTIAL_COMPLETED",
-    contentSid: "HX1efe217e6afed58c5a2f3671351eaf7f",
+    // RESUBMITTED AND RE-APPROVED AS UTILITY, 16 Aug 2026. The old SID
+    // (HX1efe217e...) is deleted at Twilio and now 404s, so this is not an
+    // optional update — the previous value would fail every send.
+    contentSid: "HXd5b9ff3736bf85b5ee7d179af684d88b",
     // {{3}} is the EXACT prior amount: amountDue minus what THIS payment
     // applied to that week — never the receipt sum, which reads a table
     // rebuild.ts deletes and re-creates on every edit.
@@ -379,7 +392,11 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
     // own name; there is no group-chat send on WhatsApp. The text is the
     // organizer's free composition at send time, so it is a REQUIRED extra:
     // an omitted text would deliver Twilio's approval sample as fact.
-    contentSid: "HX4981b5b4c3e692a489dc084d52d375ce",
+    // RESUBMITTED 16 Aug 2026 and STILL FILED AS MARKETING at Meta — see the
+    // category read in MARKETING_TEMPLATE_KEYS below. The SID is updated
+    // because the old one is deleted and 404s; the refusal stays because the
+    // category did not change.
+    contentSid: "HXb2e2342d5e7c8cb0452c0fbcb66f03a1",
     approvedBody: "Hi {{1}}, a message from your Equb: {{2}}",
     variableOrder: ["name", "announcementText"],
     requiredExtras: ["announcementText"],
