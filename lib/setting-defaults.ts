@@ -1,4 +1,5 @@
 import { CLOSING_WAIT_DAYS_DEFAULT } from "./cycle-lock";
+import { DEFAULT_TIMEZONE } from "./messaging-config";
 import { SESSION_LIMIT_DEFAULTS } from "./session-policy";
 
 // The SHAPE of platform settings, with no database attached.
@@ -86,6 +87,47 @@ export type SettingDefaults = {
    * decides once.
    */
   portalUrl: string;
+
+  // ————— WHEN AND HOW MESSAGES SEND (one-truth engine phase 1, §3.0 rule 7) —————
+  //
+  // The shapes and the resolver live in lib/messaging-config.ts; these are the
+  // stored values it resolves. EVERY DEFAULT BELOW REPRODUCES TODAY'S
+  // BEHAVIOUR EXACTLY, so this layer is a no-op until Oli changes one
+  // (proven in lib/messaging-config.test.ts).
+  //
+  // Primitives, not an object, because that is what this registry is: the
+  // audit summary renders values with `settingValueLabel`, and an object would
+  // record "[object Object] → [object Object]" for a money-adjacent change.
+
+  /** Automatic today — the one message that sends itself on its own event. */
+  autoSendPaymentConfirmed: boolean;
+  /** RESERVED — the partial-aware confirmation has no template yet (§3.7). */
+  autoSendPartialConfirmed: boolean;
+  autoSendLateNotice: boolean;
+  autoSendBehindNotice: boolean;
+  autoSendWinnerAnnouncement: boolean;
+  /** RESERVED — there is no weekly reminder message type yet. */
+  autoSendWeeklyReminder: boolean;
+  autoSendGroupAnnouncement: boolean;
+
+  /**
+   * When the two CLOCK-driven types may fire — "" on both means unscheduled,
+   * which is what ships, because the platform has no scheduler at all today.
+   * Day is a `Weekday` code (MON…SUN); time is 24-hour "HH:MM".
+   */
+  lateNoticeDay: string;
+  lateNoticeTime: string;
+  weeklyReminderDay: string;
+  weeklyReminderTime: string;
+
+  /**
+   * The clock this equb runs on — the answer to "whose midnight" (R8).
+   *
+   * Defaults to UTC because every date function already uses UTC
+   * (lib/money.ts). STORED ONLY IN THIS PHASE: no deadline reads it yet, and
+   * repointing them is a later phase that rides on the §5.5 view decision.
+   */
+  equbTimezone: string;
 };
 
 export const SETTING_DEFAULTS: SettingDefaults = {
@@ -102,6 +144,26 @@ export const SETTING_DEFAULTS: SettingDefaults = {
   adminSessionMaxHours: SESSION_LIMIT_DEFAULTS.adminMaxHours,
   closingWaitDays: CLOSING_WAIT_DAYS_DEFAULT,
   portalUrl: "",
+  // TODAY'S BEHAVIOUR, SETTING BY SETTING. lib/messages.ts:
+  // `AUTOMATIC_MESSAGE_KEYS = ["PAYMENT_CONFIRMED", "LOCKOUT_NOTICE"]` — so
+  // exactly one of the seven configurable types is automatic, and the lockout
+  // notice is not configurable here (see CONFIGURABLE_MESSAGE_KEYS).
+  autoSendPaymentConfirmed: true,
+  autoSendPartialConfirmed: false,
+  autoSendLateNotice: false,
+  autoSendBehindNotice: false,
+  autoSendWinnerAnnouncement: false,
+  autoSendWeeklyReminder: false,
+  autoSendGroupAnnouncement: false,
+  // NOTHING IS SCHEDULED, because nothing can be: there is no cron, no queue
+  // and no scheduled route in this codebase. "" is "not set", the same state
+  // portalUrl ships in and for the same reason — a guessed value here would be
+  // a send time nobody chose.
+  lateNoticeDay: "",
+  lateNoticeTime: "",
+  weeklyReminderDay: "",
+  weeklyReminderTime: "",
+  equbTimezone: DEFAULT_TIMEZONE,
 };
 
 /**
@@ -155,6 +217,18 @@ export const SETTING_LABELS: Record<SettingKey, string> = {
   adminSessionMaxHours: "Organizer session — maximum hours",
   closingWaitDays: "Wait before a cycle can be closed (days)",
   portalUrl: "Member sign-in address",
+  autoSendPaymentConfirmed: "Payment confirmation — sends itself",
+  autoSendPartialConfirmed: "Part-payment confirmation — sends itself",
+  autoSendLateNotice: "Late notice — sends itself",
+  autoSendBehindNotice: "Behind notice — sends itself",
+  autoSendWinnerAnnouncement: "Winner announcement — sends itself",
+  autoSendWeeklyReminder: "Weekly reminder — sends itself",
+  autoSendGroupAnnouncement: "Group announcement — sends itself",
+  lateNoticeDay: "Late notice — day it may send",
+  lateNoticeTime: "Late notice — time it may send",
+  weeklyReminderDay: "Weekly reminder — day it may send",
+  weeklyReminderTime: "Weekly reminder — time it may send",
+  equbTimezone: "The clock this equb runs on",
 };
 
 /** A setting's value as a person reads it — never `true`/`false`. */

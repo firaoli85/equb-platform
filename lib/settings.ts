@@ -1,4 +1,8 @@
 import { logAudit } from "./audit";
+import {
+  resolveMessagingConfig,
+  type MessagingConfig,
+} from "./messaging-config";
 import { prisma } from "./prisma";
 import {
   SETTING_DEFAULTS,
@@ -27,6 +31,38 @@ export {
   type SettingKey,
   type SettingValue,
 } from "./setting-defaults";
+
+/**
+ * THE ONE READER FOR MESSAGE TIMING — phase 1 of the one-truth engine.
+ *
+ * Every downstream phase asks THIS function when and how a message may send;
+ * none of them reads `getSetting("autoSend…")` for itself. That is the config
+ * analogue of the engine's own rule (§2): derive once, read everywhere. Twelve
+ * scattered `getSetting` calls in the send path would be the same defect as
+ * the twelve scattered derivations the engine exists to remove.
+ *
+ * Returns the RESOLVED config — defaults applied, stored junk rejected — so a
+ * caller can never see a half-set schedule or an unknown weekday.
+ *
+ * NOTHING CALLS THIS YET, deliberately: phase 1 stores and exposes the config
+ * and wires no message and no deadline to it.
+ */
+export async function getMessagingConfig(): Promise<MessagingConfig> {
+  return resolveMessagingConfig({
+    autoSendPaymentConfirmed: await getSetting("autoSendPaymentConfirmed"),
+    autoSendPartialConfirmed: await getSetting("autoSendPartialConfirmed"),
+    autoSendLateNotice: await getSetting("autoSendLateNotice"),
+    autoSendBehindNotice: await getSetting("autoSendBehindNotice"),
+    autoSendWinnerAnnouncement: await getSetting("autoSendWinnerAnnouncement"),
+    autoSendWeeklyReminder: await getSetting("autoSendWeeklyReminder"),
+    autoSendGroupAnnouncement: await getSetting("autoSendGroupAnnouncement"),
+    lateNoticeDay: await getSetting("lateNoticeDay"),
+    lateNoticeTime: await getSetting("lateNoticeTime"),
+    weeklyReminderDay: await getSetting("weeklyReminderDay"),
+    weeklyReminderTime: await getSetting("weeklyReminderTime"),
+    equbTimezone: await getSetting("equbTimezone"),
+  });
+}
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
   const row = await prisma.setting.findUnique({ where: { key } });

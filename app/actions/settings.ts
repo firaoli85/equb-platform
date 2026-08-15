@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { requireAdmin } from "@/lib/auth";
-import { getSetting, setSetting } from "@/lib/settings";
+import {
+  AUTO_SEND_SETTING,
+  CONFIGURABLE_MESSAGE_KEYS,
+  SCHEDULE_SETTINGS,
+  scheduleProblem,
+  TIME_TRIGGERED_MESSAGE_KEYS,
+  type ConfigurableMessageKey,
+} from "@/lib/messaging-config";
+import { getMessagingConfig, getSetting, setSetting } from "@/lib/settings";
 import { portalUrlProblem } from "@/lib/welcome-send";
 
 /** ADMIN: the current platform settings for /admin/settings. */
@@ -305,5 +313,122 @@ export async function updatePinLoginEnabled(input: { enabled: boolean }) {
   } catch (e) {
     console.error("updatePinLoginEnabled failed:", e);
     return { ok: false as const, error: `Could not save the setting. ${errorMessage(e)}` };
+  }
+}
+
+// ————————————————— WHEN AND HOW MESSAGES SEND —————————————————
+//
+// Phase 1 of the one-truth engine (docs/ONE_TRUTH_ENGINE.md §3.0 rule 7).
+// These WRITE the config; nothing reads it yet. Shapes, defaults and the
+// resolver live in lib/messaging-config.ts.
+
+/**
+ * ADMIN: the resolved message-timing config for the settings screen.
+ *
+ * Reads through `getMessagingConfig` rather than twelve `getSetting` calls, so
+ * the screen and every later phase see the SAME resolved value — including the
+ * same treatment of a half-set schedule.
+ */
+export async function getMessagingTiming() {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    return { ok: true as const, data: await getMessagingConfig() };
+  } catch (e) {
+    console.error("getMessagingTiming failed:", e);
+    return { ok: false as const, error: `Could not load message timing. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * ADMIN: whether one message type sends itself, or waits for the organizer.
+ *
+ * ONE ACTION FOR ALL SEVEN rather than seven near-identical ones. The key is
+ * validated against the registry, so an unknown key is refused rather than
+ * writing a settings row nothing will ever read — which is the failure mode a
+ * per-type action set would hide behind a copy-paste mistake.
+ */
+export async function updateMessageAutoSend(input: {
+  key: ConfigurableMessageKey;
+  auto: boolean;
+}) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (!(CONFIGURABLE_MESSAGE_KEYS as readonly string[]).includes(input.key)) {
+      return { ok: false as const, error: "Unknown message type." };
+    }
+    if (typeof input.auto !== "boolean") {
+      return { ok: false as const, error: "Invalid value." };
+    }
+    await setSetting(AUTO_SEND_SETTING[input.key], input.auto);
+    revalidatePath("/admin/settings/messaging");
+    return { ok: true as const, data: { key: input.key, auto: input.auto } };
+  } catch (e) {
+    console.error("updateMessageAutoSend failed:", e);
+    return { ok: false as const, error: `Could not save the setting. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * ADMIN: the day and time a clock-driven message may fire.
+ *
+ * BOTH EMPTY IS A VALID SAVE and means "unscheduled" — the state everything
+ * ships in. `scheduleProblem` is the same pure rule the form validates with,
+ * asked again here, so a stale page cannot write a half-set schedule the form
+ * would have refused.
+ */
+export async function updateMessageSchedule(input: {
+  key: (typeof TIME_TRIGGERED_MESSAGE_KEYS)[number];
+  day: string;
+  time: string;
+}) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (!(TIME_TRIGGERED_MESSAGE_KEYS as readonly string[]).includes(input.key)) {
+      return { ok: false as const, error: "That message type is not time-triggered." };
+    }
+    const problem = scheduleProblem(input.day, input.time);
+    if (problem) return { ok: false as const, error: problem };
+    const [dayKey, timeKey] = SCHEDULE_SETTINGS[input.key];
+    await setSetting(dayKey, input.day.trim());
+    await setSetting(timeKey, input.time.trim());
+    revalidatePath("/admin/settings/messaging");
+    return { ok: true as const, data: { key: input.key, day: input.day, time: input.time } };
+  } catch (e) {
+    console.error("updateMessageSchedule failed:", e);
+    return { ok: false as const, error: `Could not save the schedule. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * ADMIN: the clock this equb runs on (R8's answer — §3.0 rule 7).
+ *
+ * STORED ONLY. No deadline reads it in this phase, and the form says so on
+ * screen: promising that a save moves the late boundary today would be a lie
+ * the organizer would act on.
+ *
+ * Validated against the runtime's own timezone database rather than a list we
+ * would have to maintain — an unknown zone here would silently become UTC at
+ * the first date calculation that trusted it.
+ */
+export async function updateEqubTimezone(input: { timezone: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const zone = String(input.timezone ?? "").trim();
+    if (zone === "") return { ok: false as const, error: "Pick a clock." };
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    } catch {
+      return { ok: false as const, error: `"${zone}" is not a timezone this system knows.` };
+    }
+    await setSetting("equbTimezone", zone);
+    revalidatePath("/admin/settings/messaging");
+    return { ok: true as const, data: { equbTimezone: zone } };
+  } catch (e) {
+    console.error("updateEqubTimezone failed:", e);
+    return { ok: false as const, error: `Could not save the clock. ${errorMessage(e)}` };
   }
 }

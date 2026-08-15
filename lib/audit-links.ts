@@ -39,6 +39,20 @@ const SETTING_PAGES: Record<SettingKey, string> = {
   // Presentation mode has no settings row of its own — it is the pill in the
   // header, on every page. The index is the honest destination.
   presentationMode: "/admin/settings",
+  // WHEN AND HOW MESSAGES SEND — all twelve live on one page, under
+  // "When each message sends" (one-truth engine phase 1).
+  autoSendPaymentConfirmed: "/admin/settings/messaging",
+  autoSendPartialConfirmed: "/admin/settings/messaging",
+  autoSendLateNotice: "/admin/settings/messaging",
+  autoSendBehindNotice: "/admin/settings/messaging",
+  autoSendWinnerAnnouncement: "/admin/settings/messaging",
+  autoSendWeeklyReminder: "/admin/settings/messaging",
+  autoSendGroupAnnouncement: "/admin/settings/messaging",
+  lateNoticeDay: "/admin/settings/messaging",
+  lateNoticeTime: "/admin/settings/messaging",
+  weeklyReminderDay: "/admin/settings/messaging",
+  weeklyReminderTime: "/admin/settings/messaging",
+  equbTimezone: "/admin/settings/messaging",
 };
 
 /**

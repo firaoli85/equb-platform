@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { getPlatformSettings } from "@/app/actions/settings";
+import { getMessagingTiming, getPlatformSettings } from "@/app/actions/settings";
 import { Alert } from "@/components/ui/primitives";
 import { telegramMissingConfig } from "@/lib/telegram";
+import { MessageTimingForm } from "./message-timing-form";
 import { MessagingForm } from "./messaging-form";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function MessagingSettingsPage() {
   const result = await getPlatformSettings();
   if (!result.ok) return <Alert kind="err">{result.error}</Alert>;
+  const timing = await getMessagingTiming();
 
   return (
     <div className="space-y-6">
@@ -21,6 +23,30 @@ export default async function MessagingSettingsPage() {
       </section>
 
       <MessagingForm initial={result.data} />
+
+      <section>
+        <h2 className="text-base font-bold text-gray-900 dark:text-white">
+          When each message sends
+        </h2>
+        <p className="mt-1 max-w-prose text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+          Whether a message goes out on its own or waits for you, and — for the two that run on
+          a clock — which day and time. These are yours to change: the platform works out what
+          is true, you decide when a member hears it.
+        </p>
+        {/* WHAT IS AND IS NOT LIVE, SAID ONCE AND UP FRONT. These settings are
+            stored before anything reads them (the engine's phase order), and a
+            switch that looks armed but is not would be worse than no switch. */}
+        <p className="mt-2 max-w-prose text-sm font-semibold text-amber-800 dark:text-amber-300">
+          Saved and kept, but not yet acted on. Message sending still behaves exactly as it
+          does today; these choices take effect when the message work lands.
+        </p>
+      </section>
+
+      {timing.ok ? (
+        <MessageTimingForm initial={timing.data} />
+      ) : (
+        <Alert kind="err">{timing.error}</Alert>
+      )}
 
       {/* The factual state of each channel, stated once. It is not a
           preference — SMS is closed at the carrier level and re-proposing it
