@@ -745,7 +745,115 @@ The existing `myWeeksCovered` composer produces `"2–3 (Aug 23 – Aug 30)"` an
 retired from the confirmation: it is the "week(s) 14-16" form Oli rejected, and it
 carries the en dashes v3 bans.
 
-#### Three things to settle before submission
+#### THE FIVE TEMPLATES — the final submission set, ruled 15 August 2026
+
+All five are **new Meta submissions**, all UTILITY, none carries a dash. Two
+supersede live templates; three are new types.
+
+| # | Template | Status |
+|---|---|---|
+| 1 | `PAYMENT_CONFIRMED` v4 | **supersedes** `HXf357ad3b5f22055d701a9e8f2b3816cc` |
+| 2 | `PAYMENT_CONFIRMED_WITH_PARTIAL` | new type |
+| 3 | `PARTIAL_CONFIRMED` | new type |
+| 4 | `PARTIAL_COMPLETED` | new type |
+| 5 | `LATE_NOTICE` v4 | **supersedes** `HX5888a36a63291feccee719a37dcaff64` |
+
+**1. PAYMENT_CONFIRMED v4** — a clean payment, nothing left part paid.
+
+> Hi {{1}}, we received {{2}} for your Equb. That paid {{3}}. You have now paid {{4}} of your {{5}} weeks. Thank you.
+
+`1 name · 2 amountReceived · 3 paymentBreakdown · 4 weeksPaid · 5 weeksTotal`
+
+**2. PAYMENT_CONFIRMED_WITH_PARTIAL** — the mixed case: one payment finishes
+earlier week(s) **and** leaves a remainder on the next.
+
+> Hi {{1}}, we received {{2}} for your Equb. That paid {{3}}. {{4}}. You have now paid {{5}} of your {{6}} weeks. Thank you.
+
+`1 name · 2 amountReceived · 3 paymentBreakdown · 4 stillDueOnWeek · 5 weeksPaid · 6 weeksTotal`
+
+**3. PARTIAL_CONFIRMED** — a pure part payment; nothing was completed.
+
+> Hi {{1}}, we received {{2}} for your Equb. That paid part of your {{3}}. {{4}}. You have now paid {{5}} of your {{6}} weeks. Thank you.
+
+`1 name · 2 amountReceived · 3 partialWeekLabel · 4 stillDueOnWeek · 5 weeksPaid · 6 weeksTotal`
+
+**4. PARTIAL_COMPLETED** — a payment finishes a week that was already part paid.
+
+> Hi {{1}}, we received {{2}} for your Equb. You had already paid part of your {{3}}, and it is now paid in full. You have now paid {{4}} of your {{5}} weeks. Thank you.
+
+`1 name · 2 amountReceived · 3 partialWeekLabel · 4 weeksPaid · 5 weeksTotal`
+
+> **The "already paid part" clause is STABLE and that is why it is allowed.** It
+> carries no date and no split, so no later edit can falsify it — a week that was
+> part paid was part paid. It exists to stop the *"but I only sent $1,800"*
+> reading of a message that would otherwise look like a full week's payment.
+
+**5. LATE_NOTICE v4** — the trust-law fix.
+
+> Hi {{1}}, this is a reminder about your Equb. {{2}}. You are paid up to your {{3}}, and the current week is {{4}}. Please contact Firaoli if this does not match your records.
+
+`1 name · 2 stillDueOnWeek (or the multi-week list form) · 3 myPaidUpToWeek · 4 myCurrentWeek`
+
+Kills *"we did not receive your payment for your week(s) {{2}}"*, which is **false
+for anyone who part paid**, and replaces the member's TOTAL with **that week's own
+remainder** (§3.0 rule 1). This is the gap Group 2 recorded and deliberately left.
+
+##### The routing — total, and mutually exclusive
+
+From `describePayment` (§3.7). Let **F** = `fullWeeks.length > 0`, **C** =
+`completedWeeks.length > 0`, **R** = `remainder > 0`:
+
+```
+if (R)            → (F || C) ? PAYMENT_CONFIRMED_WITH_PARTIAL : PARTIAL_CONFIRMED
+else if (!F && !C) → NO MESSAGE            (nothing was allocated)
+else if (C && !F)  → PARTIAL_COMPLETED
+else               → PAYMENT_CONFIRMED v4  (F, with or without C)
+```
+
+**Two cases the four-rule statement did not cover, resolved here:**
+
+- **`!R && F && C`** — one payment finishes a part-paid week *and* fully pays a
+  later one, with nothing left over. It matches neither "only fullWeeks" nor the
+  PARTIAL_COMPLETED shape. It routes to **v4**, with `paymentBreakdown` listing
+  **both** weeks: *"That paid week 13 (Aug 9) and week 14 (Aug 16)."* True and
+  complete; the only thing dropped is the "already paid part" nicety, which v4 has
+  no slot for.
+- **`!R && !F && !C`** — nothing allocated at all (the money fit nowhere).
+  **No message.** There is nothing to confirm, and the entry screen already
+  refuses a commit with `unallocated > 0`.
+
+**`completedWeeks.length ≤ 1`, always** — which is what makes *"your {{3}}"*
+singular safe in templates 3 and 4. Coverage is re-derived oldest-first (2.15), so
+at most one week can be part covered before a payment; a later week either fills
+outright or is the one left partial. `describePayment` only pushes to
+`completedWeeks` when `before.covered > 0 && fillsWeek`.
+
+##### The three placeholders — final
+
+| Placeholder | Renders | Notes |
+|---|---|---|
+| `paymentBreakdown` | "week 14 (Aug 16), week 15 (Aug 23) and week 16 (Aug 30)" | member-relative numbering, `shortDate`, comma-separated with "and" before the last. **Never a range.** |
+| `stillDueOnWeek` | "$1,800 is still due for your week 14 (Aug 16)" | a whole sentence, so no template glue |
+| `partialWeekLabel` | "week 14 (Sunday, August 16)" | one week, full date |
+
+**None is added to `DASHABLE_PLACEHOLDERS`.** Empty means refused at the
+ContentVariables boundary, so no confirmation can send unable to say which weeks
+the money reached.
+
+**Cap and fallback.** `paymentBreakdown` caps at **8 weeks**, then appends
+*"and N more weeks"* — truthful, never a silent truncation, and it holds the body
+well under 1024 characters even for a long catch-up.
+
+**Meta shape rule.** All three are single-line, comma-separated prose with single
+spaces: no newlines, no tabs, no four-space runs. Compliant by construction —
+**and to be confirmed by one sandbox send before submission**, because it is the
+one constraint that would force a redesign rather than a re-word.
+
+#### Three things to settle before submission — CLOSED
+
+Recorded as history. The template-shape question is answered by the five above; the
+week-numbering and tail questions are answered by the v3 voice rules the bodies
+already follow.
 
 1. **Meta template bodies are fixed.** A WhatsApp Content template cannot omit a
    sentence, and our own boundary refuses a variable that renders empty (the default-deny

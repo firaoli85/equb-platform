@@ -150,6 +150,113 @@ broadcasts, is the organizer's decision.
 
 ---
 
+## PENDING SUBMISSION — the Phase 4 payment set (drafted 15 Aug 2026)
+
+**Not submitted. Not built. Awaiting Oli's review, then submission.**
+
+Five bodies, all UTILITY, none carrying a dash. Two supersede live templates; three
+are new types. The rulings behind them are in
+[docs/ONE_TRUTH_ENGINE.md](ONE_TRUTH_ENGINE.md) §3.7 and are law:
+
+- **No receipt dates, anywhere.** A recorded date is not the date the money moved,
+  and `PaymentAllocation` is a REPLAY that `rebuild.ts` re-derives on every edit —
+  so a dated split can silently change while the member holds a message asserting
+  the old one. Messages state facts that stay true.
+- **Anchor to the week**: the member's own week number plus that week's SCHEDULED
+  date, both stable cycle facts.
+- **One message per payment event**, documenting that payment and the standing it
+  produced. Three payments on one week send three messages, each true forever.
+
+### P1. payment_confirmed_v4 — SUPERSEDES payment_confirmed_v2 (HXf357ad…)
+
+```
+Hi {{1}}, we received {{2}} for your Equb. That paid {{3}}. You have now paid {{4}} of your {{5}} weeks. Thank you.
+```
+
+Variables: 1 `name` · 2 `amountReceived` · 3 `paymentBreakdown` · 4 `weeksPaid` ·
+5 `weeksTotal`.
+Samples: Henok · $6,000 · week 14 (Aug 16), week 15 (Aug 23) and week 16 (Aug 30) · 16 · 20.
+Replaces v2's `{{3}} myWeeksCovered`, the RANGE composer — "2–3 (Aug 23 – Aug 30)"
+— which is both the form the organizer rejected and a carrier of two EN dashes v3
+bans. "recorded on your week(s)" is dropped: it asserted coverage a payment may not
+have delivered.
+
+### P2. payment_confirmed_with_partial — NEW TYPE
+
+```
+Hi {{1}}, we received {{2}} for your Equb. That paid {{3}}. {{4}}. You have now paid {{5}} of your {{6}} weeks. Thank you.
+```
+
+Variables: 1 `name` · 2 `amountReceived` · 3 `paymentBreakdown` · 4 `stillDueOnWeek`
+· 5 `weeksPaid` · 6 `weeksTotal`.
+Samples: Henok · $2,500 · week 13 (Aug 9) · $1,500 is still due for your week 14 (Aug 16) · 13 · 20.
+The mixed case: one payment finishes earlier week(s) AND leaves a remainder on the
+next. `{{4}}` is a whole sentence and mandatory.
+
+### P3. partial_confirmed — NEW TYPE
+
+```
+Hi {{1}}, we received {{2}} for your Equb. That paid part of your {{3}}. {{4}}. You have now paid {{5}} of your {{6}} weeks. Thank you.
+```
+
+Variables: 1 `name` · 2 `amountReceived` · 3 `partialWeekLabel` · 4 `stillDueOnWeek`
+· 5 `weeksPaid` · 6 `weeksTotal`.
+Samples: Henok · $200 · week 14 (Sunday, August 16) · $1,800 is still due for your week 14 (Aug 16) · 13 · 20.
+The week is named twice deliberately: v3 says repetition of facts is good, and this
+is the fact the member most needs.
+
+### P4. partial_completed — NEW TYPE
+
+```
+Hi {{1}}, we received {{2}} for your Equb. You had already paid part of your {{3}}, and it is now paid in full. You have now paid {{4}} of your {{5}} weeks. Thank you.
+```
+
+Variables: 1 `name` · 2 `amountReceived` · 3 `partialWeekLabel` · 4 `weeksPaid` ·
+5 `weeksTotal`.
+Samples: Henok · $1,800 · week 14 (Sunday, August 16) · 14 · 20.
+The "already paid part" clause carries NO date and NO split, so no later edit can
+falsify it. It exists to stop the "but I only sent $1,800" reading of a message
+that would otherwise look like a full week's payment.
+
+### P5. late_notice_v4 — SUPERSEDES late_notice_v3 (HX5888a3…)
+
+```
+Hi {{1}}, this is a reminder about your Equb. {{2}}. You are paid up to your {{3}}, and the current week is {{4}}. Please contact Firaoli if this does not match your records.
+```
+
+Variables: 1 `name` · 2 `stillDueOnWeek` (or the multi-week list form) ·
+3 `myPaidUpToWeek` · 4 `myCurrentWeek`.
+Samples: Henok · $1,800 is still due for your week 14 (Aug 16) · week 13 (Sunday, August 9) · week 15 (Sunday, August 23).
+**The trust-law fix.** v3 says "we did not receive your payment for your week(s)
+{{2}}", which is FALSE for anyone who part paid, and its `{{3}}` was the member's
+TOTAL where the sentence named one week. Both are gone.
+
+### The three placeholders these need
+
+| Placeholder | Renders | Rule |
+|---|---|---|
+| `paymentBreakdown` | week 14 (Aug 16), week 15 (Aug 23) and week 16 (Aug 30) | never a range; caps at 8 weeks then "and N more weeks" |
+| `stillDueOnWeek` | $1,800 is still due for your week 14 (Aug 16) | a whole sentence |
+| `partialWeekLabel` | week 14 (Sunday, August 16) | one week, full date |
+
+**None is dashable.** Empty is refused at the ContentVariables boundary, so a
+confirmation can never send unable to say which weeks the money reached.
+
+All three are single-line, comma-separated prose with single spaces — no newlines,
+no tabs, no four-space runs, per the shape rules below.
+
+### Before submitting — two tasks, off the critical path
+
+1. **Verify Meta's parameter rule with ONE sandbox send.** The newline / tab /
+   four-consecutive-space prohibition is the single constraint that would force a
+   redesign rather than a re-word. Designed to comply; not yet confirmed against
+   the live API.
+2. **Submit all five as UTILITY.** Predecessors (`payment_confirmed_v2`,
+   `late_notice_v3`) are retired only after one observed DELIVERED send on their
+   replacement, the practice already used for the v2 and v3 sets.
+
+---
+
 ## Shape rules (Meta), unchanged
 
 A body may not begin or end with a variable; sequential `{{n}}` numbering
