@@ -679,6 +679,72 @@ one-source rule — it is the point of it: one place holds everything, each surf
 its reader needs. A surface that showed everything would be as unusable as one that
 recomputed its own.
 
+#### THE MESSAGE DECISIONS — ruled 15 August 2026, and they are law
+
+Four rulings that fix the shape of every member-facing payment message. They
+supersede the "three things to settle" list below, which is kept as the record of
+what was open before them.
+
+##### 1. NO RECEIPT DATES, anywhere, ever
+
+**A recorded date is not the date the money moved.** Oli records payments when he
+can get to them, around a full-time job and a network; a member reads their bank
+or Zelle statement and sees a different day. Near a week boundary the two land on
+opposite sides of it, and the message then argues with the member's own bank.
+
+**The code says the same thing, harder.** `PaymentAllocation` is not a ledger — it
+is a REPLAY. `rebuild.ts` deletes every allocation and re-creates it by replaying
+events oldest-first at the CURRENT weekly amount, on every receipt edit, deletion,
+commitment change, settlement and un-defer. So *"you paid $900 on Aug 12 and $900
+on Aug 19"* can silently become a different split, while the member is holding a
+WhatsApp message asserting the old one.
+
+> **A message states facts that STAY TRUE.** Anything that a later edit can
+> rewrite has no business in a message that cannot be recalled.
+
+##### 2. ANCHOR TO THE WEEK, NEVER THE DATE OF A PAYMENT
+
+Every reference is **the member's own week number plus that week's SCHEDULED
+date**, in brackets. Both are stable cycle facts: the week's date is stored on the
+week row and does not move when money moves.
+
+##### 3. ONE MESSAGE PER PAYMENT EVENT — the history is the thread, not the message
+
+Each message documents **that payment and the standing it produced**, and nothing
+about earlier payments. Three payments on one $2,000 week send three messages:
+
+> "You paid $900 for your week 14 (Sunday, August 16). $1,100 is still due for
+> that week."
+> "You paid $900 for your week 14 (Sunday, August 16). $200 is still due for that
+> week."
+> "You paid $200 for your week 14 (Sunday, August 16). Your week 14 is now paid in
+> full."
+
+**Every one of those is true when sent and stays true forever.** The member's
+message history becomes the record, and no single message has to reconstruct a
+split that a later edit could rewrite. This is §3.7's per-payment shape already,
+and Phase 1's settings are already per-message.
+
+##### 4. NO {weekHistory} PLACEHOLDER — dropped, not deferred
+
+The receipt-date/prior-split placeholder proposed in the Phase 4 diagnostic is
+**deleted from the design**. It cannot be composed from anything that stays true
+(ruling 1). Two placeholders survive, and only two:
+
+| Placeholder | Renders | Composed from |
+|---|---|---|
+| `{paymentBreakdown}` | "week 14 (Aug 16), week 15 (Aug 23), week 16 (Aug 30)" | the cycle's stored week dates — stable |
+| `{stillDueOnWeek}` | "$1,800 is still due for your week 14 (Aug 16)" | the engine's per-week `remainder` |
+
+**Both are NON-DASHABLE.** No list, no send — the default-deny sentinel guard
+(`lib/placeholder-kinds.ts`) refuses them empty, so a confirmation can never go out
+unable to say which weeks the money reached.
+
+**No ranges, ever.** `{paymentBreakdown}` enumerates every week with its own date.
+The existing `myWeeksCovered` composer produces `"2–3 (Aug 23 – Aug 30)"` and is
+retired from the confirmation: it is the "week(s) 14-16" form Oli rejected, and it
+carries the en dashes v3 bans.
+
 #### Three things to settle before submission
 
 1. **Meta template bodies are fixed.** A WhatsApp Content template cannot omit a
