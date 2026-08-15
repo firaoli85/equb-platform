@@ -1,0 +1,32 @@
+-- RETIRE member_progress — the last surface that was not reading the engine.
+--
+-- WHAT IT WAS. A Postgres view that re-implemented the behind-count in SQL so
+-- /me/group could read it directly under the caller's own Supabase session.
+--
+-- WHY IT GOES. It was a SECOND implementation of a rule the engine owns, and it
+-- had already drifted. Its own comment states the old law: "ONLY a cycle-wide
+-- skip is excused. A personal deferral is still owed" — true when it was
+-- written, and overturned by D-42 (§2.29a, 15 Aug 2026), which took deferred
+-- weeks out of the CURRENT expectation everywhere else. So a deferred member
+-- read "2 weeks behind" on /me/group and "up to date" on /me, ten seconds
+-- apart, both from this platform. It also had no way to express PARTIAL_LATE,
+-- and hard-coded the five-day elapsed rule the engine takes as a parameter.
+--
+-- WHY RETIRE RATHER THAN REGENERATE. One reader, and the engine already
+-- computes every figure the view returned — `weeksPaid` is
+-- `min(weeksCredited, weeksCommitted)`, character for character the view's
+-- `least(floor(total / weekly), weeksCommitted)`. Rewriting D-42 and the
+-- part-paid state into SQL would have restored two answers to one question plus
+-- a mirror test to maintain forever, which is the §5.10 defect this whole build
+-- exists to remove.
+--
+-- WHAT IS LOST, SAID PLAINLY. The view granted SELECT on six columns and scoped
+-- rows to the caller's own cycles, so the DATABASE refused to disclose more even
+-- if the application asked. That 2.8 guarantee now lives in getGroupProgress's
+-- projection and is held by lib/member-group-disclosure.test.ts, which fails if
+-- a seventh field or another cycle's member appears. A guarantee that moves
+-- quietly is a guarantee that gets lost, so it is named in both places.
+--
+-- REVERSIBLE. The full definition is in
+-- 20260806020000_member_progress_stored_date_elapsed if it is ever wanted back.
+DROP VIEW IF EXISTS public.member_progress;

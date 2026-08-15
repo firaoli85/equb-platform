@@ -24,7 +24,6 @@ import { computeStanding, pinnedMapFromEvents } from "@/lib/standing";
 import { calculatePayout } from "@/lib/wheel";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
-import { createClient } from "@/lib/supabase/server";
 
 // ————————————————— The member's own world (/me) —————————————————
 //
@@ -395,9 +394,28 @@ export async function getMyPortal() {
 
 // ————————————————— The group (/me/group) —————————————————
 //
-// Reads the member_progress VIEW through the caller's own Supabase session,
-// so the database enforces 2.8: name + weeks paid + behind count, nothing
-// else, scoped to cycles the caller is in.
+// THE LAST SURFACE READING SOMETHING OTHER THAN THE ENGINE, until 15 Aug 2026.
+//
+// This read the `member_progress` Postgres VIEW, which re-implemented the
+// behind-count in SQL. That second implementation is exactly the disease this
+// build exists to remove, and it had already drifted: the view excused only
+// CYCLE-WIDE skipped weeks and counted a personal deferral as behind — the
+// pre-D-42 ruling, written into SQL and left there. So a deferred member read
+// "2 weeks behind" here and "up to date" on their own page, ten seconds apart,
+// and both came from this platform.
+//
+// The view is DROPPED in 20260815234500_retire_member_progress_view. Retiring
+// beat regenerating because there was exactly ONE reader and the engine already
+// computes every figure it returned; rewriting the rules in SQL would have kept
+// two answers to one question and a mirror test to maintain forever.
+//
+// 2.8 MOVED FROM THE DATABASE INTO THIS FUNCTION, and that is the one real cost
+// of retiring. The view granted SELECT on six columns only and scoped rows to
+// the caller's own cycles, so the database refused to disclose anything more
+// even if this code asked. That guarantee now lives in the projection below and
+// in member-group-disclosure.test.ts, which fails if a seventh field or another
+// cycle's member ever appears. Named here because a guarantee that moves
+// quietly is a guarantee that gets lost.
 
 export async function getGroupProgress() {
   try {
@@ -405,65 +423,97 @@ export async function getGroupProgress() {
     if (!linked.ok) return { ok: false as const, error: "signed-out" };
     const person = linked.data;
 
+    // ONE QUERY FOR THE WHOLE GROUP, then a pure derivation per member — the
+    // same shape /admin/cash already runs over this same member set. The view
+    // cost one round trip; so does this.
     const cycle = await prisma.cycle.findFirst({
       where: { status: "ACTIVE" },
-      select: { id: true, name: true, startDate: true, plannedWeeks: true },
+      include: {
+        weeks: { orderBy: { weekNumber: "asc" } },
+        participations: {
+          where: { status: "ACTIVE" },
+          include: {
+            person: { select: { nameAmharic: true, nameEnglishFirst: true } },
+            payments: true,
+            paymentEvents: {
+              where: { pinnedWeekId: { not: null } },
+              select: { amount: true, pinnedWeek: { select: { weekNumber: true } } },
+            },
+          },
+        },
+      },
     });
     if (!cycle) return { ok: false as const, error: "No active cycle." };
 
-    const mine = await prisma.participation.findFirst({
-      where: { personId: person.id, cycleId: cycle.id, status: "ACTIVE" },
-      select: { id: true, weeksCommitted: true },
+    // THE CALLER MUST BE IN THIS CYCLE. The view enforced this in SQL through
+    // auth.uid(); with the view gone it is enforced here, and refusing outright
+    // is the honest answer — a member of no active cycle has no group to read.
+    const mine = cycle.participations.find((p) => p.personId === person.id) ?? null;
+    if (!mine) return { ok: false as const, error: "No active cycle." };
+
+    const today = new Date();
+    const currentWeek = currentWeekNumber(cycle.startDate, today);
+
+    const rows = cycle.participations.map((p) => {
+      const finishWeek = calculateFinishWeek(p.startWeek, p.weeksCommitted);
+      const paymentByWeekId = new Map(p.payments.map((pm) => [pm.weekId, pm]));
+      const standing = computeStanding({
+        weeklyAmount: p.weeklyAmount,
+        startWeek: p.startWeek,
+        weeksCommitted: p.weeksCommitted,
+        cycleWeek: currentWeek,
+        today,
+        windowWeeks: cycle.weeks
+          .filter((w) => w.weekNumber >= p.startWeek && w.weekNumber <= finishWeek)
+          .map((w) => {
+            const payment = paymentByWeekId.get(w.id) ?? null;
+            return {
+              weekNumber: w.weekNumber,
+              date: w.date,
+              amountDue: p.weeklyAmount,
+              storedPaid: payment?.amountPaid ?? 0,
+              isDeferred: payment?.isDeferred ?? false,
+              markedLate: payment?.markedLateAt != null,
+              isSkipped: w.isSkipped,
+            };
+          }),
+        totalPaid: p.payments.reduce((sum, pm) => sum + pm.amountPaid, 0),
+        pinnedByWeek: pinnedMapFromEvents(
+          p.paymentEvents.map((e) => ({
+            amount: e.amount,
+            weekNumber: e.pinnedWeek?.weekNumber ?? null,
+          })),
+        ),
+      });
+      return {
+        participationId: p.id,
+        nameAmharic: p.person.nameAmharic,
+        nameEnglishFirst: p.person.nameEnglishFirst,
+        // THE VIEW'S OWN ARITHMETIC, from the engine instead of from SQL:
+        // `least(floor(total / weekly), weeksCommitted)`.
+        weeksPaid: Math.min(standing.weeksCredited, p.weeksCommitted),
+        // AND THE FIGURE THAT DISAGREED. The engine excludes deferred weeks
+        // (D-42, §2.29a); the view counted them as behind.
+        weeksBehind: standing.weeksBehind,
+      };
     });
 
-    const supabase = await createClient();
-    const { data: rows, error } = await supabase
-      .from("member_progress")
-      .select("cycle_id, participation_id, name_amharic, name_english_first, weeks_paid, weeks_behind")
-      .eq("cycle_id", cycle.id);
-    if (error) {
-      console.error("member_progress query failed:", error);
-      return { ok: false as const, error: "Could not load the group." };
-    }
-
-    type Row = {
-      participation_id: string;
-      name_amharic: string;
-      name_english_first: string;
-      weeks_paid: number;
-      weeks_behind: number;
-    };
-    const all = (rows ?? []) as Row[];
-    const viewer = all.find((r) => r.participation_id === mine?.id) ?? null;
-    const peers = all
-      .filter((r) => r.participation_id !== mine?.id)
-      .sort((a, b) => a.name_english_first.localeCompare(b.name_english_first));
+    const viewer = rows.find((r) => r.participationId === mine.id) ?? null;
+    const peers = rows
+      .filter((r) => r.participationId !== mine.id)
+      .sort((a, b) => a.nameEnglishFirst.localeCompare(b.nameEnglishFirst));
 
     return {
       ok: true as const,
       data: {
         cycleName: cycle.name,
-        currentWeek: currentWeekNumber(cycle.startDate, new Date()),
+        currentWeek,
         plannedWeeks: cycle.plannedWeeks,
-        viewer: viewer
-          ? {
-              participationId: viewer.participation_id,
-              nameAmharic: viewer.name_amharic,
-              nameEnglishFirst: viewer.name_english_first,
-              weeksPaid: viewer.weeks_paid,
-              weeksBehind: viewer.weeks_behind,
-              weeksCommitted: mine?.weeksCommitted ?? null,
-            }
-          : null,
-        peers: peers.map((r) => ({
-          participationId: r.participation_id,
-          nameAmharic: r.name_amharic,
-          nameEnglishFirst: r.name_english_first,
-          weeksPaid: r.weeks_paid,
-          weeksBehind: r.weeks_behind,
-        })),
-        totalMembers: all.length,
-        currentCount: all.filter((r) => r.weeks_behind === 0).length,
+        viewer: viewer ? { ...viewer, weeksCommitted: mine.weeksCommitted } : null,
+        // 2.8: name, weeks paid, behind count. Nothing else about anybody else.
+        peers,
+        totalMembers: rows.length,
+        currentCount: rows.filter((r) => r.weeksBehind === 0).length,
       },
     };
   } catch (e) {
