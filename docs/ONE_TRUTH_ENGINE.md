@@ -802,6 +802,29 @@ retire, so a ruling translates directly into §5 work.
 
 ---
 
+### R0. THE GOVERNING PRINCIPLE — ruled 15 August 2026
+
+> **The member's status is the single source.** Active or stopped; weeks paid; and per
+> week, current / late / partial. **Every total — cash on hand, cash expected, paid-ahead,
+> "N of M paid" — is arithmetic ON that status, never a separate computation.**
+
+This is not a new idea in this document; it is §2's goal stated as a rule with a date, and
+it is now binding rather than aspirational. Two consequences worth stating plainly:
+
+1. **It settles a whole class of rulings without further judgment.** Wherever a ruling asks
+   "which of these two computations of a total is correct", the answer under R0 is
+   **neither** — the total is arithmetic over per-member status, and the only remaining
+   question is what the per-member status says. Several of R3–R19 dissolve on this alone.
+2. **It makes the §1(a) defect unrepresentable rather than fixed.** A group total that is a
+   sum over per-member statuses has no group subtraction to get wrong, so one member's
+   surplus cannot mask another's debt. That is the structural cure §2 promised.
+
+R0 governs R1 through R19: where a ruling's options differ only in *how a total is
+computed*, R0 has already answered it. Where they differ in *what the status itself means*,
+it has not.
+
+---
+
 ### R1. Does a DEFERRED member belong in a week's "N of M paid" headcount?
 
 *headline* · **TIME-CRITICAL — decide before any deferral change ships** · Pass 2 ruling 3
@@ -819,9 +842,58 @@ retire, so a ruling translates directly into §5 work.
 **c) Fix only the money** — The `continue` is split so it guards the two counters but not `expected`: money figures become correct and self-consistent while the headcount stays deliberately chase-shaped. Cost: the tile permanently says '$3,500 expected · 5 of 6 paid' where $3,500 is seven members' money and 6 is six members, and the week-date panel's footnote has to stay forever explaining it.
   - *Retires:* `lib/dashboard.ts:253`
 
-> **OLI'S RULING:** ______________________________________________
+> **OLI'S RULING — RULED.** A deferred week is **excused**. Not expected, not chased,
+> counts toward nothing. *"We're not getting that money by agreement."*
 >
-> **Recorded date:** ______________
+> So a deferred week leaves the group's expectation, leaves what the member owes, leaves
+> the chase, and leaves every count — headcount included. This settles the headcount
+> question above and, going further than it was asked, the money question with it.
+>
+> **Recorded date:** 15 August 2026
+
+> ### ⚠ THIS RULING REVERSES WRITTEN LAW — the law must be amended before the build reads this
+>
+> Recorded as ruled; the conflict is recorded beside it because this document's own
+> preamble says that where it and the ground truth disagree, **the ground truth wins and
+> this document is wrong**. So the ground truth has to move first.
+>
+> **What it contradicts, verbatim:**
+>
+> - `EQUB_GROUND_TRUTH.md` §2.29, the five-effects table, row 2 — a **12 August 2026
+>   ruling recorded as D-40**: *"An **elapsed** deferred week still counts as owed:
+>   **deferral has never excused the money.**"*
+> - `docs/DOMAIN_RULES.md` §5, which separates the two states on exactly this axis:
+>   Deferred — *Chased? No · Counts toward what they owe? **Yes***; Skipped — *No · **No***.
+>   The sentence above that table reads: *"Two different facts that a single 'excused' flag
+>   would destroy."*
+> - The same rule is written into the code and the database: `lib/derived.ts:141-142`
+>   *"Deferred weeks are NOT subtracted: the money is still owed"*, and the SQL view at
+>   `…20260806020000…/migration.sql:55-56` *"ONLY a cycle-wide skip is excused. A personal
+>   deferral is still owed (Aug 2026 ruling) — it only stops the chasing, never the debt."*
+> - Pass 2 **RESOLVED** the money half the other way on that authority (row C1, canonical
+>   `lib/payments-view.ts:225`, which keeps deferred weeks in `expected`). That row is now
+>   overturned by this ruling, not by an error in it.
+>
+> **What the ruling makes true.** DEFERRED and SKIPPED become arithmetically identical;
+> the only surviving difference is that one is per-member and the other whole-group. The
+> worked example in `DOMAIN_RULES.md` §5 changes: a 20-week member with week 11 deferred
+> and week 14 skipped, paid 18 weeks at $500, currently owes **$9,500** — under this
+> ruling they owe **$9,000**, and the deferred week is gone from the figure.
+>
+> **Money that moves.** Every member currently shown as behind on a deferred week becomes
+> square; the group's outstanding falls by the same amount; and the DEBT written to a
+> person's ledger at cycle close (§2.18) drops by every deferred week they never paid.
+> That last one is the consequential part — it changes what a person still owes after the
+> cycle ends.
+>
+> **Three things must change before the build reads this ruling**, and they are Oli's to
+> confirm, not mine to assume:
+> 1. Amend §2.29 row 2 and record the reversal as a new D-number, keeping D-40 visible as
+>    superseded history in the document's own style.
+> 2. Amend the `DOMAIN_RULES.md` §5 table and its worked example.
+> 3. Decide whether DEFERRED and SKIPPED remain two states at all, now that they differ
+>    only in scope. If they stay separate, the reason must be written down; if they merge,
+>    that is a schema question, not a display one.
 
 ---
 
@@ -851,9 +923,34 @@ sentence, and it stays chaseable. Every consumer keyed on `status === "LATE"` mu
 taught the new state.
   - *Retires:* the six LATE consumers — `lib/messages.ts:177`, `lib/messages.ts:224`, `app/actions/messages.ts:435`, `app/actions/member.ts:300`, `components/member/equb-calendar.tsx:164`, `components/member/week-stamp-list.tsx:183`
 
-> **OLI'S RULING:** ______________________________________________
+> **OLI'S RULING — RULED: option (c), a sixth state.** A partial payment is money received
+> with **the rest still expected**. A partly-paid week keeps the money it got **and** keeps
+> owing the remainder. It shows as "still owed $X", and it **stays in the chase until it is
+> paid in full**. It is not late/give-up, and it is not done. It gets its own state — the
+> blue *part-paid, still owed* state — and the remainder stays chaseable.
 >
-> **Recorded date:** ______________
+> **Recorded date:** 15 August 2026
+
+> **This unblocks build step 1** (§3.3 said the engine ships the ladder it is given and
+> cannot invent one). Consequences, carried forward to §5:
+>
+> - The status ladder gains a sixth state. `PARTIAL` stops being window-open-only, and the
+>   window-closed test stops swallowing part-paid weeks into LATE.
+> - **The six consumers keyed on `status === "LATE"` must each be taught the new state** —
+>   `lib/messages.ts:177` (`hasChaseableWeeks`), `:224` (`lateWeeks`, feeding `{myLateWeeks}`
+>   and LATE_NOTICE), `app/actions/messages.ts:435` (the chasing gate),
+>   `app/actions/member.ts:300` (the portal's late count),
+>   `components/member/equb-calendar.tsx:164`, `components/member/week-stamp-list.tsx:183`.
+>   "Stays chaseable" means each of these must include the new state, not exclude it — the
+>   opposite of what option (b) would have done, which was the money-visibility trap §3.3
+>   warned about.
+> - Markos's week 13 is the worked case: $500 of $1,000 paid, window closed. Under this
+>   ruling it reads *part-paid, still owed $500*, and the chase still names it.
+> - **A test may now be written** for a part-paid week whose window has closed. §5.7 held
+>   that test back pending this ruling; it is released.
+> - The partial-aware confirmation template (§3.7) is now specified: the message must be
+>   able to say a week was part-paid with a remainder, which is the Meta submission §5.8
+>   already flags as not on the critical path.
 
 ---
 
