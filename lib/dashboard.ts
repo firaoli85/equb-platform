@@ -3,6 +3,7 @@
 // time from stored money facts (2.14) — no cached totals, nothing stored.
 // Pure functions, cents as integers, window-aware everywhere (2.7).
 
+import { weekShortfallOf, type WeekMemberFacts } from "./engine";
 import {
   amountOutstanding,
   paymentStatus,
@@ -238,20 +239,30 @@ export function weekReceipts(input: {
   let received = 0;
   let membersPaid = 0;
   let membersExpected = 0;
+  const facts: WeekMemberFacts[] = [];
 
   for (const participation of input.participations) {
     // Weeks they were AWAY are not theirs (2.18). A member who stopped at
     // week 12 owes nothing for week 13, so week 13 must not expect it.
     const inWindow = inMemberWindow(participation, weekNumber);
     const payment = paymentFor.get(participation.id);
-    // Received money always counts, even outside a window (edited data).
+    // RECEIVED IS A CASH FIGURE, and stays uncapped on purpose: it answers
+    // "how much money came in against this week", which is what the cash chart
+    // draws. What it must never again do is decide the SHORTFALL — see below.
     if (payment) {
       assertCents(`week ${weekNumber} amountPaid`, payment.amountPaid);
       received += payment.amountPaid;
     }
+    assertCents("weeklyAmount", participation.weeklyAmount);
+    facts.push({
+      inWindow: inWindow && !input.isSkipped,
+      amountDue: participation.weeklyAmount,
+      covered: payment?.amountPaid ?? 0,
+      deferred: payment?.isDeferred ?? false,
+      skipped: input.isSkipped ?? false,
+    });
     if (!inWindow || input.isSkipped) continue;
     if (payment?.isDeferred) continue;
-    assertCents("weeklyAmount", participation.weeklyAmount);
     expected += participation.weeklyAmount;
     membersExpected++;
     if ((payment?.amountPaid ?? 0) >= participation.weeklyAmount) membersPaid++;
@@ -261,7 +272,18 @@ export function weekReceipts(input: {
     weekNumber,
     expected,
     received,
-    shortfall: Math.max(0, expected - received),
+    // THE BUG THAT STARTED THE AUDIT DIED HERE.
+    //
+    // This was `Math.max(0, expected - received)` — a group subtraction with no
+    // per-member cap, fed by a `received` that counted every participation
+    // including members outside their own window. One out-of-window overpayer
+    // made /admin/this-week read "Short $0" while two members owed $750.
+    //
+    // It is now the ENGINE's rule (lib/engine.ts `weekShortfallOf`): the sum of
+    // each in-window member's own remainder, capped at their own due. Same
+    // function the member-truth path uses, so a per-week total and the members
+    // it is made of can no longer disagree.
+    shortfall: weekShortfallOf(facts),
     membersPaid,
     membersExpected,
   };

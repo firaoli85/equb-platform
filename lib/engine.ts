@@ -408,12 +408,65 @@ export function describePayment(input: DescribePaymentInput): PaymentEventTruth 
  * member's surplus can mask another's.
  */
 export function weekShortfall(truths: readonly MemberTruth[], weekNumber: number): number {
+  return weekShortfallOf(
+    truths.map((t) => {
+      const week = t.weeks.find((w) => w.weekNumber === weekNumber);
+      // Not their week at all — they owe nothing for it, and cannot offset
+      // anyone who does.
+      if (!week) return { inWindow: false, amountDue: 0, covered: 0, deferred: false, skipped: false };
+      return {
+        inWindow: true,
+        amountDue: week.amountDue,
+        covered: week.covered,
+        deferred: week.deferred,
+        skipped: week.skipped,
+      };
+    }),
+  );
+}
+
+/** One member's position on one week, as the shortfall rule needs it. */
+export type WeekMemberFacts = {
+  /** Does this week fall inside their own window (2.18)? */
+  inWindow: boolean;
+  amountDue: number;
+  covered: number;
+  deferred: boolean;
+  skipped: boolean;
+};
+
+/**
+ * THE PER-WEEK SHORTFALL RULE — one implementation, and the shape that makes
+ * §1(a) unrepresentable.
+ *
+ * Every term is a MEMBER's own remainder, capped at their own due, and summed.
+ * There is no group subtraction anywhere in it, so:
+ *
+ *   - a member cannot owe less than zero, therefore
+ *   - no member's surplus can pay down another member's debt on screen, and
+ *   - a member outside their window contributes nothing at all rather than
+ *     contributing cash that was never expected of them.
+ *
+ * The old figure was `max(0, Σexpected − Σreceived)`, where `received`
+ * accumulated for EVERY participation before the window gate. One member
+ * outside their window who had overpaid made the group read short $0 while
+ * others genuinely owed — and the `max(0, …)` guaranteed the error could only
+ * ever hide a shortfall, never reveal itself as a negative.
+ *
+ * Two adapters feed this and nothing else computes it: {@link weekShortfall}
+ * from member truths, and `weekReceipts` in lib/dashboard.ts from the stored
+ * week rows the dashboard already loads.
+ */
+export function weekShortfallOf(members: readonly WeekMemberFacts[]): number {
   let short = 0;
-  for (const t of truths) {
-    const week = t.weeks.find((w) => w.weekNumber === weekNumber);
-    if (!week) continue; // not their week — they owe nothing for it
-    if (week.skipped || week.deferred) continue;
-    short += week.remainder;
+  for (const m of members) {
+    if (!m.inWindow || m.skipped) continue;
+    // A PAUSED WEEK IS NOT IN THE CURRENT EXPECTATION (D-42, §2.29a). Its
+    // money is held on the member's own truth and resolves at close.
+    if (m.deferred) continue;
+    // THE PER-MEMBER CAP, and the whole point: paying more than this week
+    // costs cannot reduce what anybody else owes for it.
+    short += Math.max(0, m.amountDue - Math.min(m.covered, m.amountDue));
   }
   return short;
 }

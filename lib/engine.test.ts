@@ -374,13 +374,17 @@ describe("RECONCILIATION 1 — an out-of-window overpayer cannot mask a shortfal
     { participationId: "bereket", weekNumber: WEEK, amountPaid: 300_000, isDeferred: false, isSkipped: false, markedLate: false },
   ];
 
-  it("THE OLD PATH gets it wrong: it reports the group as short NOTHING", () => {
-    const old = weekReceipts({ weekNumber: WEEK, participations, payments });
-    expect(old.expected).toBe(WEEKLY); // only Abebe is in window
-    // Bereket's $3,000 counts as received even though he owes nothing for it…
-    expect(old.received).toBe(300_000);
-    // …so the group subtraction hides Abebe's $2,000 entirely.
-    expect(old.shortfall).toBe(0);
+  it("THE SCREEN PATH now reports the real shortfall — the bug is dead", () => {
+    const screen = weekReceipts({ weekNumber: WEEK, participations, payments });
+    expect(screen.expected).toBe(WEEKLY); // only Abebe is in window
+    // Bereket's $3,000 is still counted as CASH received for the week — that is
+    // a true fact and the cash chart draws it…
+    expect(screen.received).toBe(300_000);
+    // …but it no longer decides the shortfall. Until 15 Aug 2026 this figure
+    // was `max(0, expected − received)` and reported **$0** here, hiding
+    // Abebe's $2,000 completely: the "Short $0 while two members owed $750"
+    // defect that started the audit. It is now the engine's per-member sum.
+    expect(screen.shortfall).toBe(WEEKLY);
   });
 
   it("THE ENGINE gets it right: short is the sum of what in-window members owe", () => {
@@ -402,6 +406,26 @@ describe("RECONCILIATION 1 — an out-of-window overpayer cannot mask a shortfal
     // And the surplus stays HIS, visible, instead of vanishing into a total.
     expect(bereket.surplus).toBe(3 * WEEKLY);
     expect(bereket.amountOutstanding).toBe(0);
+  });
+
+  it("THE TWO ADAPTERS AGREE — one rule, fed from truths or from week rows", () => {
+    // `weekShortfall` (member truths) and `weekReceipts` (the dashboard's
+    // stored rows) both call `weekShortfallOf`. If these ever disagree, a
+    // per-week total and the members it is made of have drifted apart — the
+    // defect this whole build exists to remove.
+    const abebe = truthFor({
+      participationId: "abebe",
+      windowWeeks: Array.from({ length: 20 }, (_, i) => week(i + 1)),
+      totalPaid: 11 * WEEKLY,
+    });
+    const bereket = truthFor({
+      participationId: "bereket",
+      weeksCommitted: 10,
+      windowWeeks: Array.from({ length: 10 }, (_, i) => week(i + 1, { storedPaid: WEEKLY })),
+      totalPaid: 13 * WEEKLY,
+    });
+    const fromRows = weekReceipts({ weekNumber: WEEK, participations, payments }).shortfall;
+    expect(fromRows).toBe(weekShortfall([abebe, bereket], WEEK));
   });
 
   it("cash expected is the sum of members' truths, never a group netting", () => {
