@@ -148,4 +148,43 @@ export async function rebuildParticipationPayments(
       data: { markedLateAt: null, markedLateNote: null },
     });
   }
+
+  // MONEY ENDS A PAUSE (Oli's ruling, 15 Aug 2026 — §2.29a, §3.0 rule 3).
+  //
+  // DEFERRED means "paused, outcome unknown". A payment answers the question
+  // the pause was holding open: the member is active again. So when money
+  // reaches a deferred week, EVERY deferred week of theirs returns to the
+  // ordinary ladder — the filled one reads PAID, and one the money did not
+  // reach is expected again and reads LATE or PARTIAL_LATE on its own money
+  // and calendar.
+  //
+  // ALL OF THEM, not only the weeks the money touched. The pause was about the
+  // MEMBER, not one week; once they have demonstrably paid, nothing of theirs
+  // should still read "unknown". A week the money did not reach is not
+  // mysterious any more — it is simply owed.
+  //
+  // A STORED CLEAR, NOT A DERIVED OVERRIDE, and that is the load-bearing
+  // choice. Deriving it would break the organizer's half of the rule twice
+  // over: he could never RE-DEFER (the stored flag never changed, so his mark
+  // would have nothing to write), and a week he deliberately paused that
+  // already held money would un-pause itself the instant he saved it. Clearing
+  // the row at the moment money arrives leaves the stored fact true, so a
+  // re-defer afterwards sticks.
+  //
+  // ONE WAY ONLY. The system un-defers, because money is a fact it can see; it
+  // never re-defers, because that needs what he knows about the member (2.2).
+  //
+  // HERE for the same reason the mark is cleared here: this is the only place
+  // money lands on weeks, so every route — a new receipt, an edit, a deletion,
+  // a changed commitment, a settlement — passes through it.
+  const reactivated = state.some((s) => s.isDeferred && !s.isSkipped && s.paid > 0);
+  if (reactivated) {
+    const paused = state.filter((s) => s.isDeferred && s.paymentId).map((s) => s.paymentId!);
+    if (paused.length > 0) {
+      await tx.payment.updateMany({
+        where: { id: { in: paused } },
+        data: { isDeferred: false },
+      });
+    }
+  }
 }
