@@ -208,15 +208,28 @@ is the fact the member most needs.
 ### P4. partial_completed — NEW TYPE
 
 ```
-Hi {{1}}, we received {{2}} for your Equb. You had already paid part of your {{3}}, and it is now paid in full. You have now paid {{4}} of your {{5}} weeks. Thank you.
+Hi {{1}}, we received {{2}} for your Equb. You had already paid {{3}} toward your {{4}}, and it is now paid in full. You have now paid {{5}} of your {{6}} weeks. Thank you.
 ```
 
-Variables: 1 `name` · 2 `amountReceived` · 3 `partialWeekLabel` · 4 `weeksPaid` ·
-5 `weeksTotal`.
-Samples: Henok · $1,800 · week 14 (Sunday, August 16) · 14 · 20.
-The "already paid part" clause carries NO date and NO split, so no later edit can
-falsify it. It exists to stop the "but I only sent $1,800" reading of a message
-that would otherwise look like a full week's payment.
+Variables: 1 `name` · 2 `amountReceived` · 3 `priorPaidOnWeek` · 4 `weekLabel` ·
+5 `weeksPaid` · 6 `weeksTotal`.
+Samples: Henok · $1,800 · $200 · week 14 (Sunday, August 16) · 14 · 20.
+
+**Names the exact prior amount, not "part"** (organizer, 15 Aug 2026). "You had
+already paid part" makes the member do the arithmetic to check it, and v3 forbids
+reader math. The figure carries NO date and NO split, so no later edit can falsify
+it, and it stops the "but I only sent $1,800" reading of a message that would
+otherwise look like a full week's payment.
+
+**{{3}} is computed as `amountDue − appliedToThatWeek`, NEVER as the sum of the
+prior receipts.** Both give the same number at send time, but the receipt sum reads
+`PaymentAllocation`, which `rebuild.ts` deletes and re-creates on every edit; the
+subtraction reads only this week's due amount and what this payment applied to it,
+so no rebuild can move it. It is exact rather than approximate: `allocatePayment`
+sets `applied = min(owed, remaining)`, so on a week that FILLS, `applied === owed`
+and `amountDue − applied` is the prior to the cent. Multiple prior partials collapse
+correctly with no itemizing: $100 then $100, completed by $1,800 on a $2,000 week,
+gives `2000 − 1800 = $200`.
 
 ### P5. late_notice_v4 — SUPERSEDES late_notice_v3 (HX5888a3…)
 
@@ -237,7 +250,8 @@ TOTAL where the sentence named one week. Both are gone.
 |---|---|---|
 | `paymentBreakdown` | week 14 (Aug 16), week 15 (Aug 23) and week 16 (Aug 30) | never a range; caps at 8 weeks then "and N more weeks" |
 | `stillDueOnWeek` | $1,800 is still due for your week 14 (Aug 16) | a whole sentence |
-| `partialWeekLabel` | week 14 (Sunday, August 16) | one week, full date |
+| `partialWeekLabel` / `weekLabel` | week 14 (Sunday, August 16) | one week, full date |
+| `priorPaidOnWeek` | $200 | amountDue minus what THIS payment applied to that week, never the receipt sum |
 
 **None is dashable.** Empty is refused at the ContentVariables boundary, so a
 confirmation can never send unable to say which weeks the money reached.

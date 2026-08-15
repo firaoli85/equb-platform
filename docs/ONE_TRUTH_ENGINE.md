@@ -779,14 +779,51 @@ earlier week(s) **and** leaves a remainder on the next.
 
 **4. PARTIAL_COMPLETED** — a payment finishes a week that was already part paid.
 
-> Hi {{1}}, we received {{2}} for your Equb. You had already paid part of your {{3}}, and it is now paid in full. You have now paid {{4}} of your {{5}} weeks. Thank you.
+> Hi {{1}}, we received {{2}} for your Equb. You had already paid {{3}} toward your {{4}}, and it is now paid in full. You have now paid {{5}} of your {{6}} weeks. Thank you.
 
-`1 name · 2 amountReceived · 3 partialWeekLabel · 4 weeksPaid · 5 weeksTotal`
+`1 name · 2 amountReceived · 3 priorPaidOnWeek · 4 weekLabel · 5 weeksPaid · 6 weeksTotal`
 
-> **The "already paid part" clause is STABLE and that is why it is allowed.** It
-> carries no date and no split, so no later edit can falsify it — a week that was
-> part paid was part paid. It exists to stop the *"but I only sent $1,800"*
-> reading of a message that would otherwise look like a full week's payment.
+> **NAME THE AMOUNT, NOT "PART" (ruled 15 Aug 2026).** "You had already paid part"
+> makes the member do the arithmetic to check it, and v3 forbids reader math. The
+> figure is calculable and stable, so it is stated.
+
+##### How `priorPaidOnWeek` is computed, and why not the obvious way
+
+> **`priorPaidOnWeek = amountDue(week) − appliedToThatWeek`.**
+> **NEVER the sum of the prior receipts on that week.**
+
+Both give the same number at send time. They do not have the same standing:
+
+- **The receipt sum reads the allocation table**, and `PaymentAllocation` is a
+  REPLAY — `rebuild.ts` deletes and re-creates every row oldest-first on any edit,
+  deletion, commitment change, settlement or un-defer. A figure derived from it
+  depends on a table that is rewritten.
+- **The subtraction reads two facts about THIS payment**: the week's own due amount
+  and what this event applied to it. Neither consults prior state at all, so nothing
+  a rebuild does can move it.
+
+**The subtraction is EXACT, not an approximation.** `allocatePayment` computes
+`applied = Math.min(owed, remaining)` where `owed = amountDue − amountAlreadyPaid`
+([lib/allocation.ts:91-93](../lib/allocation.ts#L91-L93)). When `fillsWeek` is
+true — which is the definition of a completed week — `applied === owed` exactly, so
+`amountDue − applied === amountAlreadyPaid`, to the cent.
+
+**It gives the TOTAL prior, never an itemization, however many prior payments there
+were.** A $2,000 week paid $100, then $100, then completed by $1,800:
+`2000 − 1800 = 200`. The member reads *"you had already paid $200"* — one true
+figure, no split, no dates, nothing a later rebuild can contradict.
+
+**One engine change this needs.** `describePayment` uses the per-week `applied`
+internally ([engine.ts:378](../lib/engine.ts#L378)) but does not return it. It must
+expose the applied amount for the completed week so the placeholder composes from
+the stable pair. **Do not substitute the event's total `amount`**: in the
+`WITH_PARTIAL` routing a single event spans several weeks, and even in this routing
+an event with `unallocated > 0` would make `amount > applied` and the subtraction
+wrong. The entry screen refuses such a commit today, but a money figure in a message
+that cannot be recalled must not rest on a UI guard.
+
+`{{4}}` stays singular-safe because `completedWeeks.length ≤ 1` always — see the
+invariant recorded under the routing above.
 
 **5. LATE_NOTICE v4** — the trust-law fix.
 
@@ -834,7 +871,8 @@ outright or is the one left partial. `describePayment` only pushes to
 |---|---|---|
 | `paymentBreakdown` | "week 14 (Aug 16), week 15 (Aug 23) and week 16 (Aug 30)" | member-relative numbering, `shortDate`, comma-separated with "and" before the last. **Never a range.** |
 | `stillDueOnWeek` | "$1,800 is still due for your week 14 (Aug 16)" | a whole sentence, so no template glue |
-| `partialWeekLabel` | "week 14 (Sunday, August 16)" | one week, full date |
+| `partialWeekLabel` / `weekLabel` | "week 14 (Sunday, August 16)" | one week, full date |
+| `priorPaidOnWeek` | "$200" | `amountDue − appliedToThatWeek`, **never** the receipt sum — see PARTIAL_COMPLETED above |
 
 **None is added to `DASHABLE_PLACEHOLDERS`.** Empty means refused at the
 ContentVariables boundary, so no confirmation can send unable to say which weeks
