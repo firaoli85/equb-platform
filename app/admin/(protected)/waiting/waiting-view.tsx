@@ -24,6 +24,7 @@ import {
   type AwaitingTurnRow,
   type WaitingSort,
 } from "@/lib/waiting";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 // A financial obligations screen, not a table dump: quiet rows, tabular
 // figures, one prominent total per group, and the action that clears a row
@@ -209,6 +210,7 @@ export function WaitingView({ data }: { data: WaitingData }) {
 
           {owedRows.length === 0 ? (
             <EmptyState
+              variant="dashed"
               title="Nobody is waiting to be paid."
               hint="Every drawn payout has been handed over and marked collected."
             />
@@ -249,6 +251,7 @@ export function WaitingView({ data }: { data: WaitingData }) {
 
           {turnRows.length === 0 ? (
             <EmptyState
+              variant="dashed"
               title="Everyone has been drawn."
               hint="No number is still in the wheel for this cycle."
             />
@@ -338,6 +341,7 @@ function OwedRow({
       className="border-b border-gray-100 dark:border-gray-800/60 last:border-b-0"
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+        <InitialAvatar name={row.name} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Link
@@ -475,6 +479,7 @@ function TurnRow({
       }`}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+        <InitialAvatar name={row.name} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Link

@@ -7,8 +7,12 @@
 // {key,label} array beside pure comparators, so the <Select> and the sort
 // cannot drift apart and the comparators test without a DOM.
 
+import type { SigningState } from "./agreement-view";
+import { bySigningOutstanding } from "./signing-monitor";
+
 export type DirectorySortKey =
   | "name"
+  | "signing"
   | "weekly"
   | "contributed"
   | "committed"
@@ -16,6 +20,7 @@ export type DirectorySortKey =
 
 export const DIRECTORY_SORTS: readonly { key: DirectorySortKey; label: string }[] = [
   { key: "name", label: "Alphabetical" },
+  { key: "signing", label: "Agreement outstanding" },
   { key: "weekly", label: "Weekly amount" },
   { key: "contributed", label: "Total contributed" },
   { key: "committed", label: "Weeks committed" },
@@ -24,6 +29,8 @@ export const DIRECTORY_SORTS: readonly { key: DirectorySortKey; label: string }[
 
 export type DirectorySortFacts = {
   nameEnglish: string;
+  /** The derived chip state — the outstanding sort orders by it. */
+  signing: SigningState;
   weeklyAmount: number;
   contributedThisCycle: number;
   weeksCommitted: number;
@@ -40,6 +47,10 @@ export function sortDirectory<T extends DirectorySortFacts>(
 ): T[] {
   const out = [...rows];
   switch (sort) {
+    // Outstanding first, then alphabetical WITHIN each bucket — otherwise the
+    // list becomes three unordered piles rather than a scannable order.
+    case "signing":
+      return out.sort((a, b) => bySigningOutstanding(a, b) || byName(a, b));
     case "weekly":
       return out.sort((a, b) => b.weeklyAmount - a.weeklyAmount || byName(a, b));
     case "contributed":

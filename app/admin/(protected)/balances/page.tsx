@@ -14,6 +14,7 @@ import { formatDateUTC, formatMoney } from "@/lib/format";
 import { PAGE_SIZES, parsePage, parsePageSize } from "@/lib/paging";
 import { PageSizeSelect } from "@/components/ui/page-size";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,20 @@ export const dynamic = "force-dynamic";
 export default async function BalancesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string | string[]; pageSize?: string | string[] }>;
+  searchParams: Promise<{
+    page?: string | string[];
+    pageSize?: string | string[];
+  }>;
 }) {
   const query = await searchParams;
   const pageSize = parsePageSize(query.pageSize, PAGE_SIZES.balances);
-  const result = await listCarriedBalances({ page: parsePage(query.page), pageSize });
+  const result = await listCarriedBalances({
+    page: parsePage(query.page),
+    pageSize,
+  });
   if (!result.ok) {
-    if (result.error === PRESENTATION_HIDDEN) return <PresentationHidden what="Carried balances" />;
+    if (result.error === PRESENTATION_HIDDEN)
+      return <PresentationHidden what="Carried balances" />;
     return (
       <main className="space-y-4">
         <Alert kind="err">{result.error}</Alert>
@@ -42,7 +50,10 @@ export default async function BalancesPage({
     <main className="space-y-6">
       <header className="animate-fade-in-up">
         <p className="mb-1 text-sm">
-          <Link href="/admin" className="text-gray-600 dark:text-gray-400 hover:underline">
+          <Link
+            href="/admin"
+            className="text-gray-600 dark:text-gray-400 hover:underline"
+          >
             ← Dashboard
           </Link>
         </p>
@@ -50,36 +61,44 @@ export default async function BalancesPage({
           Carried balances
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-gray-600 dark:text-gray-400 text-pretty">
-          What members still owe from earlier cycles. A balance belongs to the person, not the
-          cycle — it survives the cycle being closed or deleted, and it can be settled or written
-          off at any time, whether or not they are in a cycle now.
+          What members still owe from earlier cycles. A balance belongs to the
+          person, not the cycle — it survives the cycle being closed or deleted,
+          and it can be settled or written off at any time, whether or not they
+          are in a cycle now.
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard
-          label="Carried in total"
-          cents={total}
-          emphasis={total > 0}
-          sub={
-            rows.length === 0
-              ? "nobody carries a balance"
-              : `across ${rows.length} ${rows.length === 1 ? "person" : "people"}`
-          }
-        />
-        <StatCard
-          label="Largest"
-          cents={rows[0]?.balance ?? 0}
-          sub={rows[0] ? rows[0].name : "—"}
-          delayClass="animate-fade-in-up-1"
-        />
-        <StatCard
-          label="Written off to date"
-          cents={rows.reduce((s, r) => s + r.forgiven, 0)}
-          sub="across the people listed here"
-          delayClass="animate-fade-in-up-2"
-        />
-      </div>
+      {/* THREE FIGURES, OR NONE — never three zeroes. With nobody carrying a
+          balance every card reads $0 and the empty state below says the same
+          thing in words, so the strip spent ~250px repeating "nothing" three
+          times. Nothing is lost by dropping it: each figure is derived from
+          `rows`, so all three are zero exactly when it is empty. */}
+      {rows.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatCard
+            label="Carried in total"
+            cents={total}
+            emphasis={total > 0}
+            sub={
+              rows.length === 0
+                ? "nobody carries a balance"
+                : `across ${rows.length} ${rows.length === 1 ? "person" : "people"}`
+            }
+          />
+          <StatCard
+            label="Largest"
+            cents={rows[0]?.balance ?? 0}
+            sub={rows[0] ? rows[0].name : "—"}
+            delayClass="animate-fade-in-up-1"
+          />
+          <StatCard
+            label="Written off to date"
+            cents={rows.reduce((s, r) => s + r.forgiven, 0)}
+            sub="across the people listed here"
+            delayClass="animate-fade-in-up-2"
+          />
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <EmptyState
@@ -98,6 +117,7 @@ export default async function BalancesPage({
                 key={r.personId}
                 className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-gray-100 dark:border-gray-800/60 px-5 py-3 last:border-b-0"
               >
+                <InitialAvatar name={r.name} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
@@ -112,13 +132,18 @@ export default async function BalancesPage({
                       </span>
                     )}
                     {r.forgiven > 0 && (
-                      <Pill tone="neutral">{formatMoney(r.forgiven)} written off</Pill>
+                      <Pill tone="neutral">
+                        {formatMoney(r.forgiven)} written off
+                      </Pill>
                     )}
                   </div>
                   {/* WHERE IT CAME FROM — the point of the ledger. */}
                   <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400 text-pretty">
-                    {r.origins.length > 0 ? r.origins.join(" · ") : "No recorded origin"}
-                    {r.oldest !== null && ` · since ${formatDateUTC(new Date(r.oldest))}`}
+                    {r.origins.length > 0
+                      ? r.origins.join(" · ")
+                      : "No recorded origin"}
+                    {r.oldest !== null &&
+                      ` · since ${formatDateUTC(new Date(r.oldest))}`}
                   </p>
                 </div>
 
@@ -127,7 +152,8 @@ export default async function BalancesPage({
                     {formatMoney(r.balance)}
                   </p>
                   <p className="mt-1 text-[11px] tabular-nums text-gray-600 dark:text-gray-400">
-                    {formatMoney(r.raised)} raised · {formatMoney(r.repaid)} repaid
+                    {formatMoney(r.raised)} raised · {formatMoney(r.repaid)}{" "}
+                    repaid
                   </p>
                 </div>
 
@@ -142,19 +168,31 @@ export default async function BalancesPage({
           </ul>
         </Card>
       )}
-      {/* Always rendered, even on one page: a list that shows part of
-          itself while looking whole is how someone concludes a debt was
-          settled when it was only on page two. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Pager
-          info={page}
-          noun={{ one: "person carries a balance", many: "people carry a balance" }}
-          label="Balance pages"
-          hrefFor={(n) => `/admin/balances?page=${n}${pageSize !== PAGE_SIZES.balances ? `&pageSize=${pageSize}` : ""}`}
-        />
-        <PageSizeSelect dflt={PAGE_SIZES.balances} storageKey="admin-balances-page-size" />
-      </div>
-
+      {/* Always rendered WHENEVER THERE IS A LIST, even on one page: a list
+          that shows part of itself while looking whole is how someone
+          concludes a debt was settled when it was only on page two. That
+          ruling is about a list with rows in it. With none, there is nothing
+          to mistake for whole, and a rows-per-page control under "Nobody
+          carries a balance" is only furniture. */}
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Pager
+            info={page}
+            noun={{
+              one: "person carries a balance",
+              many: "people carry a balance",
+            }}
+            label="Balance pages"
+            hrefFor={(n) =>
+              `/admin/balances?page=${n}${pageSize !== PAGE_SIZES.balances ? `&pageSize=${pageSize}` : ""}`
+            }
+          />
+          <PageSizeSelect
+            dflt={PAGE_SIZES.balances}
+            storageKey="admin-balances-page-size"
+          />
+        </div>
+      )}
     </main>
   );
 }

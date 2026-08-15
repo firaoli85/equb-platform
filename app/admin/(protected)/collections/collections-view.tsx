@@ -16,6 +16,7 @@ import { formatDateUTC, formatMoney, parseDollarsToCents } from "@/lib/format";
 import type { UndoDrawConsequences } from "@/lib/undo-draw";
 import { removeWinnerPreview, previewSentences, type WeekWinners } from "@/lib/week-winners";
 import { removeWinnerFromWeek } from "@/app/actions/week-winners";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 type Method = "ZELLE" | "CASH" | "OTHER" | null;
 
@@ -643,6 +644,10 @@ function PayoutLine({
       {/* One obligation per row, read left to right: who, then the state,
           then the money right-aligned so a column of figures lines up. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        {/* The disc leads the row here as it does everywhere else. The gold
+            badge beside it is the LUCKY NUMBER, not an identity — the two
+            read together as "this person, drawn on that number". */}
+        <InitialAvatar name={p.who} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span

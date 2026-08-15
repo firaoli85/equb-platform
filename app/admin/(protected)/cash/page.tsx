@@ -180,12 +180,11 @@ function HeldView({ d }: { d: Data }) {
           }
         />
         {d.pendingPayouts.length === 0 ? (
-          <div className="px-5 pb-5">
-            <EmptyState
-              title="Nobody is waiting for a payout."
-              hint="Every payout that has been drawn is already handed out, so none of the money you hold is promised to a winner."
-            />
-          </div>
+          <EmptyState
+            variant="inside"
+            title="Nobody is waiting for a payout."
+            hint="Every payout that has been drawn is already handed out, so none of the money you hold is promised to a winner."
+          />
         ) : (
           <ul className="border-t border-gray-100 dark:border-gray-800/60">
             {d.pendingPayouts.map((p) => (
@@ -251,9 +250,7 @@ function ReceivedView({
         <Card>
           <CardHeader title="By week" sub="what each week brought in against what it asked for" />
           {d.series.length === 0 ? (
-            <div className="px-5 pb-5">
-              <EmptyState title="No weeks yet." hint="Weeks appear once the cycle starts." />
-            </div>
+            <EmptyState variant="inside" title="No weeks yet." hint="Weeks appear once the cycle starts." />
           ) : (
             <Table className="!rounded-none !border-0 !shadow-none">
               <thead>
@@ -305,12 +302,11 @@ function ReceivedView({
         <Card>
           <CardHeader title="By member" sub="total contributed across the whole cycle" />
           {d.receivedByMember.length === 0 ? (
-            <div className="px-5 pb-5">
-              <EmptyState
-                title="Nothing received yet."
-                hint="Record a payment on the Payments screen."
-              />
-            </div>
+            <EmptyState
+              variant="inside"
+              title="Nothing received yet."
+              hint="Record a payment on the Payments screen."
+            />
           ) : (
             <Table className="!rounded-none !border-0 !shadow-none">
               <thead>
@@ -362,12 +358,11 @@ function PaidOutView({ d }: { d: Data }) {
         }
       />
       {d.paidOutDetail.length === 0 ? (
-        <div className="px-5 pb-5">
-          <EmptyState
-            title="Nothing has been paid out yet."
-            hint="A collection is recorded on the Collections screen once the winner takes the money."
-          />
-        </div>
+        <EmptyState
+          variant="inside"
+          title="Nothing has been paid out yet."
+          hint="A collection is recorded on the Collections screen once the winner takes the money."
+        />
       ) : (
         <Table className="!rounded-none !border-0 !shadow-none">
           <thead>

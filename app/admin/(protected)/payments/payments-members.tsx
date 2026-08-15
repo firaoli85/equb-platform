@@ -17,6 +17,7 @@ import {
 } from "@/lib/members-view";
 import type { GridCell, PaymentGrid } from "@/lib/payments-view";
 import { STATUS_LABELS, STATUS_LEGEND, statusLabel } from "@/lib/status-labels";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 // THE MEMBERS VIEW — where marking happens (the grid is the map, this is the
 // workspace). One row per member, a week strip whose segments are big enough
@@ -230,17 +231,20 @@ export function PaymentsMembers({
                       {row.numbersLabel}
                     </span>
                   ) : (
-                    <Link
-                      href={`/admin/participations/${row.participationId}`}
-                      className="font-bold text-gray-900 dark:text-white hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
-                    >
-                      {shortName}
-                    </Link>
-                  )}
-                  {!presentation && (
-                    <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
-                      {row.numbersLabel}
-                    </span>
+                    <>
+                      <InitialAvatar name={shortName} size="sm" />
+                      <span className="min-w-0">
+                        <Link
+                          href={`/admin/participations/${row.participationId}`}
+                          className="block truncate font-bold text-gray-900 dark:text-white hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
+                        >
+                          {shortName}
+                        </Link>
+                        <span className="block text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                          {row.numbersLabel}
+                        </span>
+                      </span>
+                    </>
                   )}
                   {!presentation && (
                     <span className="text-xs font-bold tabular-nums text-gray-900 dark:text-white">
@@ -283,7 +287,7 @@ export function PaymentsMembers({
                       ? " ring-2 ring-indigo-500 dark:ring-indigo-400 ring-offset-1 ring-offset-white dark:ring-offset-[#141414]"
                       : "";
                     const base =
-                      "flex h-8 w-9 shrink-0 items-center justify-center rounded-md text-[11px] font-bold tabular-nums transition-transform duration-100 ease-out";
+                      "flex h-8 w-9 shrink-0 items-center justify-center rounded text-[11px] font-bold tabular-nums transition-transform duration-100 ease-out";
 
                     if (cell.kind !== "week") {
                       // Outside this member's window. The digit here used to

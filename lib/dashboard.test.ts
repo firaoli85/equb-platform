@@ -553,6 +553,41 @@ describe("the this-week screen groups by the derived status", () => {
   it("notes the mark on the ROW instead", () => {
     expect(src).toMatch(/m\.markedLate && <Pill[^>]*>you marked this<\/Pill>/);
   });
+
+  // RIGHT-SIZING (14 Aug 2026). Every group used to render a full Card
+  // whether or not anyone was in it, and the grid stretched it to its
+  // neighbour's height — so "Partially paid", a state that occurs about five
+  // times in a cycle, sat beside a 27-row "Paid" card as a ~1,100px empty
+  // panel. These pin the two halves of the fix.
+  it("builds a card only for groups that have somebody in them", () => {
+    expect(src).toMatch(/GROUPS\.filter\(\(\{ key \}\) => members\(key\)\.length > 0\)/);
+    // The old always-render branch and its filler line are gone.
+    expect(src).not.toContain(">Nobody.</p>");
+  });
+
+  it("does not let an empty card stretch to its neighbour's height", () => {
+    // Without items-start a CSS grid row stretches every cell to the tallest,
+    // which is the mechanism that made an empty bucket a full-height panel.
+    expect(src).toMatch(/className="grid items-start[^"]*md:grid-cols-2/);
+  });
+
+  it("names the empty buckets in one line rather than dropping them", () => {
+    // Dropping a bucket makes the reader wonder whether it was checked.
+    expect(src).toContain("Nobody this week in");
+    expect(src).toMatch(/variant="dashed"/);
+  });
+
+  it("states nobody-in-window BEFORE the buckets, not after six denials", () => {
+    const empty = src.indexOf("Nobody is in their window this week.");
+    const grid = src.indexOf('className="grid items-start');
+    expect(empty).toBeGreaterThan(-1);
+    expect(grid).toBeGreaterThan(-1);
+    expect(empty).toBeLessThan(grid);
+  });
+
+  it("gives the member rows the same disc as every other member list", () => {
+    expect(src).toMatch(/<InitialAvatar name=\{m\.name\} size="sm" \/>/);
+  });
 });
 
 // WHO NEEDS AN ACTION THE MONEY COLUMNS CANNOT SHOW. Both states are

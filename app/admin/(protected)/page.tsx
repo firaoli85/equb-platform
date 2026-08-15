@@ -6,6 +6,7 @@ import { Card, CardHeader, Pill } from "@/components/ui/primitives";
 import { CollectedVsExpectedChart } from "@/components/charts/collected-vs-expected-chart";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatMoney } from "@/lib/format";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -257,6 +258,7 @@ export default async function CommandCenterPage() {
                     href={`/admin/people/${m.personId}`}
                     className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
+                    <InitialAvatar name={m.name} size="sm" />
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {m.name}
                     </span>
@@ -273,6 +275,7 @@ export default async function CommandCenterPage() {
                     href={`/admin/participations/${m.participationId}`}
                     className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
+                    <InitialAvatar name={m.name} size="sm" />
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {m.name}
                     </span>
@@ -296,6 +299,7 @@ export default async function CommandCenterPage() {
                     href={`/admin/people/${m.personId}`}
                     className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
+                    <InitialAvatar name={m.name} size="sm" />
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {m.name}
                     </span>
@@ -320,6 +324,7 @@ export default async function CommandCenterPage() {
                     href={`/admin/people/${m.personId}`}
                     className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
+                    <InitialAvatar name={m.name} size="sm" />
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {m.name}
                       <span className="ml-1.5 font-normal text-gray-600 dark:text-gray-400">
@@ -343,6 +348,7 @@ export default async function CommandCenterPage() {
                     href="/admin/collections"
                     className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                   >
+                    <InitialAvatar name={p.who} size="sm" />
                     <span className="flex-1 text-sm font-semibold text-gray-900 dark:text-white">
                       {p.who}
                       {p.weekNumber !== null && (

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, useReducedMotion, animate } from "motion/react";
 import { springs, motionTokens } from "@/lib/motion-tokens";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 interface Props {
   displayName: string;
@@ -37,7 +38,6 @@ export function MemberPersonalSummary({
 
   const pct = totalWeeks > 0 ? Math.min(Math.round((paidCount / totalWeeks) * 100), 100) : 0;
   const remainingWeeks = Math.max(0, totalWeeks - paidCount);
-  const avatarInitial = [...displayName][0] ?? "?";
 
   useEffect(() => {
     setMounted(true);
@@ -78,14 +78,7 @@ export function MemberPersonalSummary({
         {/* ── Identity row ─────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-2 mb-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className="w-9 h-9 rounded-full bg-blue-200/60 dark:bg-white/15 flex items-center justify-center shrink-0 select-none"
-              aria-hidden="true"
-            >
-              <span className="text-base font-black text-blue-800 dark:text-white leading-none">
-                {avatarInitial}
-              </span>
-            </div>
+            <InitialAvatar name={displayName} size="sm" />
             <div className="min-w-0">
               <h1 className="text-xl font-black text-blue-900 dark:text-white leading-tight text-balance">
                 {displayName}

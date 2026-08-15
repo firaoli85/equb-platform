@@ -28,6 +28,7 @@ import {
   SMS_SEND_TIMEOUT_MS,
   withTimeout,
 } from "@/lib/sms-login";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 // The two-step member login, in the portal's own visual system so entry
 // feels continuous: (1) phone number → (2) bilingual welcome + method
@@ -227,9 +228,6 @@ export function LoginFlow() {
       ? `${lookup.nameEnglishFirst} / ${lookup.nameAmharic}`
       : lookup.nameEnglishFirst || lookup.nameAmharic || "Member"
     : "";
-  const avatarInitial = lookup
-    ? ([...(lookup.nameEnglishFirst || lookup.nameAmharic || "?")][0] ?? "?")
-    : "?";
 
   // The resend cooldown, ticking down once per second and stopping at zero.
   // One interval, cleared on unmount — a timer left running after the member
@@ -705,9 +703,7 @@ export function LoginFlow() {
         {step === "picker" && lookup && (
           <div>
             <div className="flex flex-col items-center gap-2 mb-5">
-              <div className="w-10 h-10 rounded-full bg-blue-200/60 dark:bg-white/15 flex items-center justify-center select-none" aria-hidden="true">
-                <span className="text-base font-black text-blue-800 dark:text-white leading-none">{avatarInitial}</span>
-              </div>
+              <InitialAvatar name={lookup.nameEnglishFirst || welcomeName} size="md" />
               <div className="text-center">
                 <p className="text-base font-black text-gray-900 dark:text-white leading-tight text-balance">
                   Welcome back, {welcomeName}

@@ -34,6 +34,7 @@ import { formatDateLongUTC, formatMoney, parseDollarsToCents } from "@/lib/forma
 import type { NumberConflict } from "@/lib/lucky-numbers";
 import { calculateFinishWeek } from "@/lib/money";
 import { nameConfirmed } from "@/lib/settlement";
+import { SectionHeading } from "@/components/ui/section-nav";
 
 type Method = "ZELLE" | "CASH" | "OTHER" | null;
 
@@ -639,8 +640,26 @@ export function ParticipationEditor(props: {
           the reported defect, unchanged, in the very file it was reported
           against. Every action now renders its own message at itself. */}
 
-      <section className={`space-y-3 ${show.participation ? "" : "hidden"}`}>
-        <h2 className="text-base font-bold text-gray-900 dark:text-white">Participation</h2>
+      {/* PARTICIPATION, IN FOUR SEPARATED CONCERNS (2.25 pass, 14 Aug 2026).
+          It was one column: inputs, then a finish banner, then the fee card,
+          then a rule exception, then Save, then the stop controls, then
+          Remove — unrelated jobs stacked on each other, with the two most
+          destructive at the bottom of the same run as a text field.
+
+          WHAT CHANGED IS ARRANGEMENT ONLY. Every control is the same control,
+          every sentence is the same sentence, and the save still owns exactly
+          the fields it owned before. */}
+      <section className={`space-y-6 ${show.participation ? "" : "hidden"}`}>
+        {/* ————— 1 + 2: the inputs, and the story they tell —————
+            Side by side on a wide screen because the right half is nothing
+            but the CONSEQUENCE of the left half — the finish date and the fee
+            recompute as the fields change, and reading them a scroll apart is
+            what made the page feel like a form with notes attached. */}
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+          <div className="space-y-3">
+            <SectionHeading title="What they pay">
+              The three figures their whole record derives from.
+            </SectionHeading>
         <div className="flex flex-wrap gap-3">
           <Field label="Weekly amount">
             <AmountInput value={weeklyDollars} onChange={setWeeklyDollars} ariaLabel="Weekly amount in dollars" className="w-28" />
@@ -690,6 +709,15 @@ export function ParticipationEditor(props: {
             </span>
           }
         />
+          </div>
+
+          {/* THE DERIVED STORY — what those three figures come to. Nothing
+              here is editable and nothing here is saved; it is the answer,
+              updating live as the left half changes. */}
+          <div className="space-y-3">
+            <SectionHeading title="What that comes to">
+              Derived from the figures beside this, live. Nothing here is stored.
+            </SectionHeading>
 
         {/* THE thing being decided — prominent, live, and shown whether the
             toggle is on or off (the organizer never computes a finish date). */}
@@ -715,6 +743,18 @@ export function ParticipationEditor(props: {
           unitAmount={participation.unitAmount}
           feePercent={participation.feePercent}
         />
+          </div>
+        </div>
+
+        {/* ————— 3: THE RULE EXCEPTION, and the save that closes 1–3 —————
+            2.22 caps a commitment to the cycle's end. Overriding that is a
+            deliberate departure from a rule, not another field, so it reads
+            as one — and the Save sits with it because the override is one of
+            the things being saved. */}
+        <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900/70 dark:bg-amber-950/15">
+          <SectionHeading title="Beyond the plan">
+            An exception to 2.22, taken on purpose. Everything above saves with it.
+          </SectionHeading>
 
         {cap !== null && cap.exceedsCap && (
           <p className="text-sm font-semibold text-red-800 dark:text-red-400">
@@ -757,6 +797,20 @@ export function ParticipationEditor(props: {
             disabled={busy}
             notDirtyHint="Nothing has changed — the weekly amount, start week and weeks committed all match what is saved."
           />
+        </div>
+        </div>
+
+        {/* ————— 4: LEAVING THE CYCLE —————
+            LIFECYCLE, NOT EDITING, and that is why it is its own area rather
+            than the tail of the save row. Stopping someone and removing them
+            are not adjustments to the figures above; they were one flex row
+            away from a text field, which is how a destructive control gets
+            pressed by someone who thought they were still filling in a form. */}
+        <div className="space-y-3 rounded-2xl border border-red-200 bg-red-50/30 p-4 dark:border-red-900/60 dark:bg-red-950/15">
+          <SectionHeading title="Leaving the cycle">
+            Neither of these edits their figures. Both ask before they act.
+          </SectionHeading>
+          <div className="flex flex-wrap items-center gap-3">
           {/* SOMEONE STOPPING IS THE ORDINARY CASE, so it sits first and is
               not styled as a danger. Shortening their weeks used to be the
               only way to say it, and that is the expensive way: it deletes
@@ -778,6 +832,7 @@ export function ParticipationEditor(props: {
           />
           {/* `doRemove`'s own outcome, beside the controls that trigger it. */}
           <SaveFeedback state={feedbackFor("remove")} />
+          </div>
         </div>
 
         {settlement && (

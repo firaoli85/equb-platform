@@ -105,7 +105,15 @@ export function Select<V extends string = string>({
         className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] px-3.5 py-2.5 text-left text-sm text-gray-900 dark:text-white transition-[border-color,transform] duration-150 ease-out hover:border-gray-400 dark:hover:border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 dark:focus:border-indigo-600 active:scale-[0.99] disabled:opacity-40"
         style={{ minHeight: "44px" }}
       >
-        <span className={current ? "" : "text-gray-400 dark:text-gray-600"}>
+        {/* THE LABEL IS CLIPPED, NOT SPILLED. Triggers carry a fixed width
+            (w-20 through w-72 across the app) and some option labels are long
+            — "Week 12 — Aug 7, 2026 (this week)" is wider than w-64. Without
+            min-w-0 a flex child refuses to shrink below its content, so the
+            text ran under the chevron and past the border. */}
+        <span
+          className={`min-w-0 truncate ${current ? "" : "text-gray-400 dark:text-gray-600"}`}
+          title={current?.label}
+        >
           {current?.label ?? "Choose…"}
         </span>
         <svg

@@ -6,6 +6,7 @@ import { Card, CardHeader, EmptyState, Pill } from "@/components/ui/primitives";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatMoney } from "@/lib/format";
 import { STATUS_LABELS } from "@/lib/status-labels";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -131,12 +132,29 @@ export default async function ThisWeekBreakdownPage({
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 animate-fade-in-up-2">
-        {GROUPS.map(({ key, title }) => {
+      {/* THE ANSWER BEFORE THE BREAKDOWN. This used to render BELOW the six
+          cards, so a week with nobody in it said "Nobody." six times and then
+          explained why. It states the reason first, and the buckets below it
+          are then simply absent rather than six denials. */}
+      {d.selectedWeekMembers.length === 0 && (
+        <EmptyState
+          title="Nobody is in their window this week."
+          hint="Members appear here from the week they join until the week they finish."
+        />
+      )}
+
+      {/* SPACE GOES TO THE BUCKETS THAT HAVE PEOPLE IN THEM.
+          Every group used to get a full card whether or not anyone was in it,
+          so a normal week — nobody partially paid, nobody unpaid — spent two
+          tall boxes saying "Nobody." twice. Partially paid happens perhaps
+          five times in a cycle and was costing a permanent panel.
+
+          The empty ones are NOT dropped: dropping a bucket makes the reader
+          wonder whether it was checked. They collapse to one line below,
+          which is the honest size of "nothing here". */}
+      <div className="grid items-start gap-4 md:grid-cols-2 animate-fade-in-up-2">
+        {GROUPS.filter(({ key }) => members(key).length > 0).map(({ key, title }) => {
           const list = members(key);
-          // SKIPPED is rare — an empty "Skipped" card every week would read
-          // as a missing feature rather than a deliberate state.
-          if (key === "SKIPPED" && list.length === 0) return null;
           return (
             <Card key={key}>
               <CardHeader
@@ -163,15 +181,15 @@ export default async function ThisWeekBreakdownPage({
                           : undefined
                 }
               />
-              {list.length === 0 ? (
-                <p className="px-5 pb-4 text-sm text-gray-600 dark:text-gray-400">Nobody.</p>
-              ) : (
-                <ul className="border-t border-gray-100 dark:border-gray-800/60">
+              <ul className="border-t border-gray-100 dark:border-gray-800/60">
                   {list.map((m) => (
                     <li
                       key={m.participationId}
                       className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-100 dark:border-gray-800/60 px-5 py-2.5 last:border-b-0"
                     >
+                      {/* The same disc as every other member list, so a face
+                          found on the directory is found here too. */}
+                      <InitialAvatar name={m.name} size="sm" />
                       <Link
                         href={`/admin/participations/${m.participationId}`}
                         className="text-sm font-semibold text-gray-900 dark:text-white hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
@@ -193,18 +211,22 @@ export default async function ThisWeekBreakdownPage({
                     </li>
                   ))}
                 </ul>
-              )}
             </Card>
           );
         })}
       </div>
 
-      {d.selectedWeekMembers.length === 0 && (
+      {/* THE EMPTY BUCKETS, IN ONE LINE. Named so the reader knows they were
+          checked, sized so they cost nothing. */}
+      {d.selectedWeekMembers.length > 0 && GROUPS.some(({ key }) => members(key).length === 0) && (
         <EmptyState
-          title="Nobody is in their window this week."
-          hint="Members appear here from the week they join until the week they finish."
+          variant="dashed"
+          title={`Nobody this week in ${GROUPS.filter(({ key }) => members(key).length === 0)
+            .map(({ title }) => title.toLowerCase())
+            .join(" · ")}.`}
         />
       )}
+
     </main>
   );
 }

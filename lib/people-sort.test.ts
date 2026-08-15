@@ -6,9 +6,9 @@ import { DIRECTORY_SORTS, sortDirectory } from "./people-sort";
 // the wrong field cannot pass by coincidence.
 
 const ROWS = [
-  { nameEnglish: "Abel", weeklyAmount: 100_000, contributedThisCycle: 400_000, weeksCommitted: 20, weeksPaid: 4 },
-  { nameEnglish: "meheret", weeklyAmount: 300_000, contributedThisCycle: 300_000, weeksCommitted: 5, weeksPaid: 1 },
-  { nameEnglish: "Tizita", weeklyAmount: 200_000, contributedThisCycle: 1_000_000, weeksCommitted: 10, weeksPaid: 5 },
+  { nameEnglish: "Abel", signing: "signed" as const, weeklyAmount: 100_000, contributedThisCycle: 400_000, weeksCommitted: 20, weeksPaid: 4 },
+  { nameEnglish: "meheret", signing: "signed" as const, weeklyAmount: 300_000, contributedThisCycle: 300_000, weeksCommitted: 5, weeksPaid: 1 },
+  { nameEnglish: "Tizita", signing: "signed" as const, weeklyAmount: 200_000, contributedThisCycle: 1_000_000, weeksCommitted: 10, weeksPaid: 5 },
 ];
 const names = (rows: readonly { nameEnglish: string }[]) => rows.map((r) => r.nameEnglish);
 
@@ -36,8 +36,8 @@ describe("sortDirectory", () => {
 
   it("ties fall back to the name, and the input array is never mutated", () => {
     const tied = [
-      { nameEnglish: "Sara", weeklyAmount: 100, contributedThisCycle: 0, weeksCommitted: 10, weeksPaid: 0 },
-      { nameEnglish: "Abel", weeklyAmount: 100, contributedThisCycle: 0, weeksCommitted: 10, weeksPaid: 0 },
+      { nameEnglish: "Sara", signing: "signed" as const, weeklyAmount: 100, contributedThisCycle: 0, weeksCommitted: 10, weeksPaid: 0 },
+      { nameEnglish: "Abel", signing: "signed" as const, weeklyAmount: 100, contributedThisCycle: 0, weeksCommitted: 10, weeksPaid: 0 },
     ];
     const before = [...tied];
     expect(names(sortDirectory(tied, "weekly"))).toEqual(["Abel", "Sara"]);

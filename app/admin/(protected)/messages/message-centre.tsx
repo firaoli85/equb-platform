@@ -10,6 +10,7 @@ import { SaveButton, SaveFeedback, type SaveState } from "@/components/ui/save-b
 import { Pill } from "@/components/ui/primitives";
 import type { ConversationFilter } from "@/lib/message-centre";
 import { Select } from "@/components/ui/controls";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 // THE MESSAGE CENTRE (2.20).
 //
@@ -177,7 +178,8 @@ function ThreadList({
                     : "hover:bg-gray-50 dark:hover:bg-white/5")
                 }
               >
-                <span className="flex items-baseline gap-2">
+                <span className="flex items-center gap-2">
+                  <InitialAvatar name={t.nameEnglish} size="sm" />
                   <span className="truncate text-sm font-bold text-gray-900 dark:text-white">
                     {t.nameEnglish}
                   </span>

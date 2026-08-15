@@ -44,6 +44,7 @@ import { ParticipationEditor } from "./participation-editor";
 import { PersonEditForm } from "./person-edit-form";
 import { PinControls } from "./pin-controls";
 import { personDisplayName, personSecondaryName } from "@/lib/person-name";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 export const dynamic = "force-dynamic";
 
@@ -416,12 +417,7 @@ export default async function PersonPage({
 
         {/* ——— Identity ——— */}
         <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
-          <span
-            className="flex h-14 w-14 shrink-0 select-none items-center justify-center rounded-full bg-indigo-100 text-2xl font-black text-indigo-700 ring-1 ring-indigo-200/70 dark:bg-indigo-950/60 dark:text-indigo-300 dark:ring-indigo-900/70"
-            aria-hidden="true"
-          >
-            {[...person.nameEnglishFirst][0] ?? [...person.nameAmharic][0] ?? "?"}
-          </span>
+          <InitialAvatar name={personDisplayName(person)} size="lg" />
 
           <div className="min-w-0 flex-1">
             {/* LATIN PRIMARY (14 Aug 2026) — the Amharic name renders under

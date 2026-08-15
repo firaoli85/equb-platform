@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { SigningChip } from "@/components/admin/agreement-signing";
 import { Pill, type PillTone } from "@/components/ui/primitives";
 import type { SigningState } from "@/lib/agreement-view";
 import { formatMoney } from "@/lib/format";
 import { usePersistedChoice, useViewMode, ViewToggle } from "@/components/ui/view-toggle";
+import {
+  countSigning,
+  filterBySigning,
+  SIGNING_FILTERS,
+  type SigningFilter,
+} from "@/lib/signing-monitor";
 import { DIRECTORY_SORTS, sortDirectory, type DirectorySortKey } from "@/lib/people-sort";
 import { Select } from "@/components/ui/controls";
+import { InitialAvatar } from "@/components/ui/initial-avatar";
 
 // Display-only rows, computed server-side — no raw person records cross to
 // the client, just what the directory renders.
@@ -39,7 +47,7 @@ const PIN_LABEL: Record<DirectoryRow["pinState"], { tone: PillTone; text: string
 };
 
 export function PeopleDirectory({ rows: unsorted }: { rows: DirectoryRow[] }) {
-  const [view, setView] = useViewMode("admin-people-view", "list");
+  const [view, setView] = useViewMode("admin-people-view", "grid");
   // Persisted like the view choice (the localStorage pattern this screen
   // already uses) — alphabetical until the organizer picks otherwise.
   const [sort, setSort] = usePersistedChoice<DirectorySortKey>(
@@ -47,10 +55,61 @@ export function PeopleDirectory({ rows: unsorted }: { rows: DirectoryRow[] }) {
     DIRECTORY_SORTS.map((s) => s.key),
     "name",
   );
-  const rows = sortDirectory(unsorted, sort);
+  // The filter is not persisted: narrowing to "waiting" is something he does
+  // for a minute, not a preference. The sort and the view are preferences and
+  // stay persisted, as they were.
+  const [signing, setSigning] = useState<SigningFilter>("all");
+  const counts = countSigning(unsorted);
+  const rows = sortDirectory(filterBySigning(unsorted, signing), sort);
 
   return (
     <div className="space-y-3">
+      {/* WHO HAS SIGNED, IN ONE LINE. Every figure is already on the rows —
+          this queries nothing.
+
+          THE TONES CARRY THE MEANING, and they are not the same: "not asked"
+          is the ORDINARY state (no welcome was ever sent, nothing is owed by
+          anyone), so it reads neutral. Only "waiting" is work. Painting them
+          alike would report problems on a group that has none. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+        {SIGNING_FILTERS.map((f) => {
+          const n =
+            f.key === "all"
+              ? counts.total
+              : f.key === "signed"
+                ? counts.signed
+                : f.key === "waiting"
+                  ? counts.waiting
+                  : counts.notAsked;
+          const active = signing === f.key;
+          // Waiting is the only bucket that means work; it keeps the amber
+          // reading even when it is not the active chip.
+          const attention = f.key === "waiting" && n > 0;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setSigning(f.key)}
+              aria-pressed={active}
+              className={`min-h-11 md:min-h-8 rounded-lg border px-2.5 py-1.5 text-xs font-semibold tabular-nums transition-[background-color,transform] duration-150 ease-out active:scale-[0.97] ${
+                active
+                  ? "border-indigo-400 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300"
+                  : attention
+                    ? "border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                    : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5"
+              }`}
+            >
+              {n} {f.label.toLowerCase()}
+            </button>
+          );
+        })}
+        {signing !== "all" && (
+          <span className="text-xs text-gray-600 dark:text-gray-400">
+            showing {rows.length} of {counts.total}
+          </span>
+        )}
+      </div>
+
       <div className="flex items-center justify-end gap-3">
         <span className="flex items-center gap-2">
           <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Sort</span>
@@ -87,17 +146,23 @@ export function PeopleDirectory({ rows: unsorted }: { rows: DirectoryRow[] }) {
                   className="transition-colors duration-150 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
                 >
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-2.5">
-                    <Link href={`/admin/people/${p.id}`} className="block hover:underline">
-                      {/* LATIN PRIMARY (14 Aug 2026): the Amharic renders
-                          after, smaller — and not at all where absent. */}
-                      <span className="block font-semibold text-gray-900 dark:text-white">
-                        {p.nameEnglish}
-                      </span>
-                      {p.nameAmharic && (
-                        <span className="block text-xs text-gray-600 dark:text-gray-400">
-                          {p.nameAmharic}
+                    <Link href={`/admin/people/${p.id}`} className="flex items-center gap-2.5 hover:underline">
+                      {/* THE SAME DISC AS THE CARDS. A member is one colour
+                          everywhere, so the eye finds the row it found on the
+                          other view. */}
+                      <InitialAvatar name={p.nameEnglish} size="sm" />
+                      <span className="min-w-0">
+                        {/* LATIN PRIMARY (14 Aug 2026): the Amharic renders
+                            after, smaller — and not at all where absent. */}
+                        <span className="block font-semibold text-gray-900 dark:text-white">
+                          {p.nameEnglish}
                         </span>
-                      )}
+                        {p.nameAmharic && (
+                          <span className="block text-xs text-gray-600 dark:text-gray-400">
+                            {p.nameAmharic}
+                          </span>
+                        )}
+                      </span>
                     </Link>
                   </td>
                   <td className="border-b border-gray-100 dark:border-gray-800/60 px-4 py-2.5 tabular-nums text-gray-700 dark:text-gray-300">
@@ -126,23 +191,18 @@ export function PeopleDirectory({ rows: unsorted }: { rows: DirectoryRow[] }) {
           </table>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((p, idx) => (
             <Link
               key={p.id}
               href={`/admin/people/${p.id}`}
-              className={`block rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] px-4 py-3.5 shadow-sm transition-[border-color,transform] duration-150 ease-out hover:border-indigo-300 dark:hover:border-indigo-700 active:scale-[0.99]${idx < 9 ? " animate-fade-in-up" : ""}`}
+              className={`block rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] p-4 shadow-sm transition-[border-color,box-shadow,transform] duration-150 ease-out hover:border-indigo-300 hover:shadow-md dark:hover:border-indigo-700 active:scale-[0.99]${idx < 9 ? " animate-fade-in-up" : ""}`}
               style={idx < 9 ? { animationDelay: `${idx * 0.05}s` } : undefined}
             >
-              <div className="flex items-center gap-3">
-                <span
-                  className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-sm font-bold text-indigo-700 dark:text-indigo-300"
-                  aria-hidden="true"
-                >
-                  {([...p.nameEnglish][0] ?? [...p.nameAmharic][0] ?? "?").toUpperCase()}
-                </span>
+              <div className="flex items-start gap-3">
+                <InitialAvatar name={p.nameEnglish} size="md" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
+                  <span className="block truncate text-sm font-bold text-gray-900 dark:text-white">
                     {p.nameEnglish}
                   </span>
                   {p.nameAmharic && (
@@ -166,14 +226,55 @@ export function PeopleDirectory({ rows: unsorted }: { rows: DirectoryRow[] }) {
                   <SigningChip state={p.signing} />
                 </span>
               </div>
-              <p className="mt-2.5 flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-400">
+              {/* THEIR YEAR, ON THE CARD. The directory offers sorting by
+                  weekly amount, weeks committed and weeks paid — and until
+                  now displayed NONE of the three, so "sort by weeks paid"
+                  reordered the page on a figure the reader could not see.
+                  A card that carries them is also the difference between a
+                  row of names and a member you can take in at a glance. */}
+              {p.inActiveCycle && p.weeksCommitted > 0 && (
+                <div className="mt-3 rounded-xl bg-gray-50 px-3 py-2.5 dark:bg-white/[0.03]">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] font-semibold tabular-nums text-gray-700 dark:text-gray-300">
+                      {p.weeksPaid} of {p.weeksCommitted} weeks
+                    </span>
+                    <span className="text-[11px] font-bold tabular-nums text-gray-900 dark:text-white">
+                      {formatMoney(p.contributedThisCycle)}
+                    </span>
+                  </div>
+                  {/* The same bar the waiting screen uses. Rounded-full inside
+                      a rounded-xl panel: a pill in a box, not two competing
+                      radii. */}
+                  <div
+                    className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-white/10"
+                    role="progressbar"
+                    aria-valuenow={p.weeksPaid}
+                    aria-valuemin={0}
+                    aria-valuemax={p.weeksCommitted}
+                    aria-label={`${p.weeksPaid} of ${p.weeksCommitted} weeks paid`}
+                  >
+                    <span
+                      className="block h-full rounded-full bg-indigo-500 dark:bg-indigo-400"
+                      style={{
+                        width: `${Math.min(100, Math.round((p.weeksPaid / p.weeksCommitted) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] tabular-nums text-gray-600 dark:text-gray-400">
+                    {formatMoney(p.weeklyAmount)} a week
+                  </p>
+                </div>
+              )}
+
+              {/* The quiet facts last — a phone number is looked up, not read. */}
+              <p className="mt-2.5 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-600 dark:text-gray-400">
                 <span className="tabular-nums">{p.phone ?? "no phone"}</span>
-                <span>{p.inActiveCycle ? "In the current cycle" : p.cycles}</span>
-                {p.inActiveCycle && (
-                  <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
-                    {formatMoney(p.contributedThisCycle)} paid in
-                  </span>
-                )}
+                <span aria-hidden="true" className="opacity-40">
+                  ·
+                </span>
+                <span className="min-w-0 truncate">
+                  {p.inActiveCycle ? "In the current cycle" : p.cycles}
+                </span>
               </p>
             </Link>
           ))}

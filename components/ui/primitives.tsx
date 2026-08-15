@@ -213,19 +213,55 @@ export function Alert({
 
 // ————— Empty state —————
 
+/**
+ * "There is nothing here", sized to how much of the page is empty.
+ *
+ * EMPTINESS SHOULD COST ABOUT AS MUCH ROOM AS IT CONTAINS. One `px-6 py-12`
+ * panel was doing all three jobs below, so an ORDINARY state — no pending
+ * payouts is what a settled week looks like; nobody partially paid is what a
+ * normal week looks like — was being announced at the size of a failure.
+ *
+ * The three variants existed already, hand-written across the app in six
+ * shapes with four different paddings. They are one component now so a reader
+ * meets the same treatment for the same meaning on every screen.
+ */
+export type EmptyStateVariant =
+  /** Empty is the whole page: stands alone, so it brings its own surface. */
+  | "panel"
+  /** Inside a Card whose header already said what this is. No second border. */
+  | "inside"
+  /** Under a section heading, or naming a rare state in passing. One line. */
+  | "dashed";
+
 export function EmptyState({
   title,
   hint,
   action,
+  variant = "panel",
 }: {
   title: ReactNode;
   hint?: ReactNode;
   action?: ReactNode;
+  variant?: EmptyStateVariant;
 }) {
+  const box =
+    variant === "inside"
+      ? "px-5 pb-4 pt-1"
+      : variant === "dashed"
+        ? "rounded-xl border border-dashed border-gray-200 dark:border-gray-800 px-4 py-3"
+        : "rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] px-6 py-12 text-center shadow-sm";
+  // The dashed line is a remark, not an announcement, so it does not take the
+  // heavier title weight the standing panel does.
+  const titleCls =
+    variant === "dashed"
+      ? "text-xs font-semibold text-gray-700 dark:text-gray-300"
+      : "text-sm font-semibold text-gray-900 dark:text-white";
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414] px-6 py-12 text-center shadow-sm">
-      <p className="text-sm font-semibold text-gray-900 dark:text-white">{title}</p>
-      {hint && <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">{hint}</p>}
+    <div className={box}>
+      <p className={titleCls}>{title}</p>
+      {hint && (
+        <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 text-pretty">{hint}</p>
+      )}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );

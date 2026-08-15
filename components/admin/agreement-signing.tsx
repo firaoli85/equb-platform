@@ -50,9 +50,34 @@ const CHIP: Record<SigningState, { tone: PillTone; text: string }> = {
   "not-asked": { tone: "neutral", text: "Not asked" },
 };
 
-/** The compact form, for a list. */
+/**
+ * The compact form, for a list.
+ *
+ * SIGNED CARRIES A TICK (organizer ask, 14 Aug 2026): he scans a column of
+ * 27 for the ones that are done, and three of the five states begin with the
+ * word "Waiting" — reading them apart is work the eye should not have to do.
+ * The mark is REDUNDANT with the colour and the word, never a replacement for
+ * either (WCAG 1.4.1: colour is not the only channel), and it is aria-hidden
+ * because "Signed" already says it.
+ */
 export function SigningChip({ state }: { state: SigningState }) {
-  return <Pill tone={CHIP[state].tone}>{CHIP[state].text}</Pill>;
+  return (
+    <Pill tone={CHIP[state].tone}>
+      {state === "signed" && (
+        <svg
+          className="h-3 w-3 shrink-0"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
+        </svg>
+      )}
+      {CHIP[state].text}
+    </Pill>
+  );
 }
 
 /**

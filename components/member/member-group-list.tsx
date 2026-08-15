@@ -1,5 +1,7 @@
 "use client";
 
+import { InitialAvatar } from "@/components/ui/initial-avatar";
+
 // The group (2.8): progress shared for accountability — name, weeks paid,
 // one status pill. NEVER amounts, lucky numbers, payouts, or phones; the
 // server sends none of them (member_progress view), so there is nothing
@@ -77,7 +79,6 @@ export function MemberGroupList({
       ? `${viewer.nameEnglishFirst} / ${viewer.nameAmharic}`
       : viewer.nameEnglishFirst
     : "";
-  const viewerInitial = ([...(viewer?.nameEnglishFirst ?? "?")][0] ?? "?").toUpperCase();
   const viewerOnTrack = (viewer?.weeksBehind ?? 0) === 0;
   const viewerTotal = viewer?.weeksCommitted ?? null;
   const viewerPct =
@@ -110,12 +111,7 @@ export function MemberGroupList({
       {viewer && (
         <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 px-4 pt-3.5 pb-3.5 shadow-sm">
           <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-full bg-indigo-200/80 dark:bg-indigo-900/60 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-sm shrink-0 select-none"
-              aria-hidden="true"
-            >
-              {viewerInitial}
-            </div>
+            <InitialAvatar name={viewer.nameEnglishFirst} size="md" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold leading-snug text-gray-900 dark:text-white truncate">
                 <span className="text-indigo-600 dark:text-indigo-400">You</span>
@@ -168,7 +164,6 @@ export function MemberGroupList({
                 {group.members.map((m) => {
                   const idx = globalIdx++;
                   const onTrack = m.weeksBehind === 0;
-                  const initial = (m.nameEnglishFirst[0] ?? m.nameAmharic[0] ?? "?").toUpperCase();
                   return (
                     <div
                       key={m.participationId}
@@ -179,9 +174,7 @@ export function MemberGroupList({
                           : { minHeight: "56px" }
                       }
                     >
-                      <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-950/60 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-sm shrink-0 select-none">
-                        {initial}
-                      </div>
+                      <InitialAvatar name={m.nameEnglishFirst} size="md" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white truncate leading-snug">
                           {m.nameEnglishFirst}

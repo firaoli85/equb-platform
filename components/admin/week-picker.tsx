@@ -39,7 +39,9 @@ export function WeekPicker({
         value={String(selected)}
         disabled={pending}
         ariaLabel="Choose which week to show"
-        className="w-64"
+        // Sized to the LONGEST label it can hold — "Week 12 — Aug 7, 2026
+        // (this week)" — rather than a round number that clipped it.
+        className="w-72"
         onChange={(value) => {
           const next = new URLSearchParams(params.toString());
           // The current week is the default, so it needs no parameter — the

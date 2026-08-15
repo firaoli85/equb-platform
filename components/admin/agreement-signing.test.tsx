@@ -229,7 +229,7 @@ describe("the directory itself", () => {
   // ONE COLUMN, SCANNABLE DOWN THE LIST. Rendered from the real component, so
   // this fails if the column is dropped, renamed, or filled from a different
   // field than the one listPeople derives.
-  it("carries a signing state for every person, in the list", () => {
+  it("carries a signing state for every person, on their own card", () => {
     // DISTINCT NAMES, AND EACH CHIP READ FROM ITS OWN ROW. Three identical
     // names proved only that the three labels appeared SOMEWHERE on the page,
     // which is also true of a mapping that hands Tsion's "Signed" to Bekele —
@@ -241,41 +241,44 @@ describe("the directory itself", () => {
       { id: "c", nameEnglish: "Hanna Girma", signing: "not-asked", label: "Not asked" },
     ] as const;
 
+    // THE DEFAULT VIEW IS NOW CARDS (14 Aug 2026), so this static render
+    // reaches the cards and the TABLE is the branch behind the toggle — the
+    // exact inverse of when this was written. The guarantee is unchanged and
+    // now sits on the view the organizer actually opens: each person's chip
+    // must come from their OWN element.
     const out = renderToStaticMarkup(
       <PeopleDirectory rows={people.map((p) => row({ id: p.id, nameEnglish: p.nameEnglish, signing: p.signing }))} />,
     );
-    expect(out).toContain("Agreement");
 
-    // The table renders one <tr> per person, name first and chip later in the
-    // same row, so a row's own markup is the fragment to search.
-    const rows = out.split("<tr").filter((fragment) => /Tsion|Bekele|Hanna/.test(fragment));
-    expect(rows, "the list no longer renders one row per person").toHaveLength(3);
+    // One card per person — each is its own <a>, name and chip inside it.
+    const rows = out.split("<a ").filter((fragment) => /Tsion|Bekele|Hanna/.test(fragment));
+    expect(rows, "the directory no longer renders one card per person").toHaveLength(3);
 
     for (const person of people) {
       const own = rows.find((fragment) => fragment.includes(person.nameEnglish));
-      expect(own, `${person.nameEnglish} is not in the list`).toBeDefined();
-      expect(own, `${person.nameEnglish}'s row does not carry ${person.label}`).toContain(
+      expect(own, `${person.nameEnglish} is not in the directory`).toBeDefined();
+      expect(own, `${person.nameEnglish}'s card does not carry ${person.label}`).toContain(
         person.label,
       );
       for (const other of people) {
         if (other.label === person.label) continue;
-        expect(own, `${person.nameEnglish}'s row also reads ${other.label}`).not.toContain(
+        expect(own, `${person.nameEnglish}'s card also reads ${other.label}`).not.toContain(
           other.label,
         );
       }
     }
   });
 
-  // THE CARDS VIEW CANNOT BE REACHED FROM A STATIC RENDER — it lives behind
+  // THE LIST VIEW CANNOT BE REACHED FROM A STATIC RENDER — it lives behind
   // `useViewMode`, which only an effect or a click changes, and there is no
   // jsdom here (see components/admin/feedback-at-the-control.test.ts for the
   // same problem). So this reads the source with its comments stripped: a
   // guard that passes on the prose explaining it is not a guard.
   //
   // It is worth having because the toggle is per-organizer and sticky. Drop
-  // the chip from the cards and every test above still passes while the
-  // organizer who last chose Cards never sees signing state again.
-  it("carries the same chip in the cards view", () => {
+  // the chip from the table and every test above still passes while the
+  // organizer who last chose List never sees signing state again.
+  it("carries the same chip, and its header, in the list view", () => {
     const source = readFileSync(
       join(import.meta.dirname, "..", "..", "app", "admin", "(protected)", "people", "people-directory.tsx"),
       "utf8",
@@ -283,7 +286,11 @@ describe("the directory itself", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
       .replace(/^[ \t]*\/\/.*$/gm, "");
-    const cards = source.slice(source.indexOf("sm:grid-cols-2"));
-    expect(cards).toContain("<SigningChip");
+    // The table branch is everything BEFORE the card grid marker.
+    const list = source.slice(0, source.indexOf("sm:grid-cols-2"));
+    expect(list).toContain("<SigningChip");
+    expect(list).toContain("Agreement");
+    // …and the cards keep theirs too.
+    expect(source.slice(source.indexOf("sm:grid-cols-2"))).toContain("<SigningChip");
   });
 });
