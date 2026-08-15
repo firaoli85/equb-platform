@@ -6,6 +6,8 @@
 // library gives none of that for free and takes the layout decisions away — and
 // the layout decisions are the whole argument (see docs/ADMIN_IA.md §5).
 //
+
+import type { PaymentStatusValue } from "./derived";
 // So the maths lives here, pure and unit-tested, and the components are thin
 // SVG over it. The scales are the part that goes wrong silently — a bar drawn
 // 3px tall for a real $340 reads as zero — so they are the part that is tested.
@@ -228,7 +230,7 @@ export function longestOverdueRun(states: readonly ConsistencyState[]): number {
  * The strip's footnote says so in words.
  */
 export function consistencyFromStatus(
-  status: "PAID" | "PARTIAL" | "DEFERRED" | "SKIPPED" | "UNPAID" | "LATE",
+  status: PaymentStatusValue,
 ): ConsistencyState {
   switch (status) {
     case "PAID":
@@ -238,6 +240,11 @@ export function consistencyFromStatus(
     case "DEFERRED":
       return "deferred";
     case "LATE":
+    // PART PAID AND CHASED still draws as overdue on the consistency strip:
+    // the strip answers "was this week settled on time", and it was not. The
+    // remainder is shown where there is room for a figure; a one-glyph strip
+    // is not that place (R2).
+    case "PARTIAL_LATE":
       return "overdue";
     // UNPAID is "owed, window still open" — NOT overdue. Drawing it red is
     // the accusation the elapsed-week rule exists to prevent.

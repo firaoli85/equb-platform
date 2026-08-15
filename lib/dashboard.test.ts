@@ -539,9 +539,11 @@ describe("weekMemberStatus — the closed-window collapse (2.19: one engine)", (
     expect(status({ amountPaid: 50_000 })).toBe("PAID");
     expect(status({ isDeferred: true })).toBe("DEFERRED");
     expect(status({}, true)).toBe("SKIPPED");
-    // A partial payment on a CLOSED week is late, not "partially paid" — the
-    // money did not arrive in time, and PARTIAL is an open-window state.
-    expect(status({ amountPaid: 20_000 })).toBe("LATE");
+    // A partial payment on a CLOSED week is PARTIAL_LATE since R2 — chased for
+    // the remainder, and honest that money arrived. It asserted "LATE" until
+    // then, which told a member who had paid that nothing had. PARTIAL remains
+    // the open-window state; this is its closed counterpart.
+    expect(status({ amountPaid: 20_000 })).toBe("PARTIAL_LATE");
   });
 });
 

@@ -99,10 +99,16 @@ describe("the mark overrides the derived status", () => {
     expect(paymentStatus({ ...base, markedLate: true })).toBe("LATE");
   });
 
-  it("a marked week with part of the money on it still reads LATE", () => {
-    expect(paymentStatus({ ...base, amountPaid: 20_000, markedLate: true })).toBe("LATE");
-    // …and without the mark it is the ordinary PARTIAL.
+  // AMENDED BY R2 (15 Aug 2026). This asserted "LATE" until then, and Pass 3
+  // named it as the test that PINNED the defect: it recorded losing the money
+  // half as intended behaviour. A marked, part-paid week is now chased AND
+  // shown to have money on it.
+  it("a marked week with part of the money on it reads PARTIAL_LATE", () => {
+    expect(paymentStatus({ ...base, amountPaid: 20_000, markedLate: true })).toBe("PARTIAL_LATE");
+    // …and without the mark, its window still being open, it is plain PARTIAL.
     expect(paymentStatus({ ...base, amountPaid: 20_000 })).toBe("PARTIAL");
+    // Marked with NOTHING on it is still plain LATE.
+    expect(paymentStatus({ ...base, amountPaid: 0, markedLate: true })).toBe("LATE");
   });
 
   // MONEY IS THE TRUTH (2.14). The payment path clears the mark; this is the
@@ -369,11 +375,15 @@ describe("a late notice becomes sendable the moment the week is marked", () => {
     expect(lateNotice({ weeksBehind: 1, amountOutstanding: 50_000 }).applicable).toBe(true);
   });
 
-  // The message names the LATE weeks off the per-week statuses, so a marked
+  // The message names the CHASED weeks off the per-week statuses, so a marked
   // week reaches the wording by the same route a calendar-late one does.
+  //
+  // AMENDED BY R2 (15 Aug 2026): the filter was `w.status === "LATE"`. It now
+  // asks the shared predicate, so a part-paid chased week is named too and a
+  // real debt cannot drop off the notice.
   it("the notice names its weeks from the derived statuses, not a second rule", () => {
     const src = read("lib/messages.ts");
-    expect(src).toMatch(/\.filter\(\(w\) => w\.status === "LATE"\)/);
+    expect(src).toMatch(/\.filter\(\(w\) => isChasedStatus\(w\.status\)\)/);
   });
 });
 

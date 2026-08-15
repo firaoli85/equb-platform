@@ -7,6 +7,7 @@
 // hardship flag, and the imported-history rule are tested law in this file,
 // not UI behavior.
 
+import { isChasedStatus } from "./derived";
 import { formatDateLongUTC, formatMoney } from "./format";
 import {
   memberFullDate,
@@ -174,7 +175,10 @@ export type MessageExtras = {
 export function hasChaseableWeeks(
   weeks: readonly { status: string }[] | undefined,
 ): boolean {
-  return (weeks ?? []).some((w) => w.status === "LATE");
+  // PART-PAID AND CHASED COUNTS (R2). A member owed $1,800 on a closed week
+  // is chaseable; excluding them would drop a real debt off every chasing
+  // path at once, which is exactly what the sixth state exists to prevent.
+  return (weeks ?? []).some((w) => isChasedStatus(w.status));
 }
 
 /** "8" · "8–10" · "3, 8–10" — compact human form for a list of week numbers. */
@@ -220,8 +224,14 @@ export function placeholderValues(standing: StandingFacts, extras: MessageExtras
   const lastCovered = extras.weeksCovered?.length
     ? Math.max(...extras.weeksCovered)
     : undefined;
+  // Includes PART-PAID chased weeks (R2), so {myLateWeeks} and the amount
+  // owed describe the same set. NOTE the message TEXT still says "we did not
+  // receive your payment", which is false for a part payer — that wording is
+  // Meta-frozen and is replaced in the messages phase. Behaviour here is
+  // unchanged from before the sixth state: such a week was already LATE and
+  // already named.
   const lateWeeks = (standing.weeks ?? [])
-    .filter((w) => w.status === "LATE")
+    .filter((w) => isChasedStatus(w.status))
     .map((w) => w.weekNumber);
 
   // ————— THE MEMBER-RELATIVE TOKENS (v2 set, 13 Aug 2026) —————

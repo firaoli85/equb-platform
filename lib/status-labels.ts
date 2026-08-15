@@ -50,6 +50,25 @@ export const STATUS_LABELS: Record<PaymentStatusValue, StatusLabel> = {
     cls: "bg-amber-400 text-amber-950",
     tone: "attention",
   },
+  PARTIAL_LATE: {
+    text: "Part paid",
+    short: "part paid",
+    // WHAT IS STILL TRUE OF IT, not what went wrong. The screen shows the
+    // remainder beside this, so the meaning names the state and lets the
+    // figure do the arithmetic.
+    meaning: "some money in, the rest still owed and still chased",
+    // A HALF-FILLED CIRCLE, deliberately one step on from PARTIAL's ◐: the
+    // member is in the same place, the week has simply run out of time.
+    glyph: "◑",
+    // BLUE, NOT RED (R2's ruled treatment). Red says nothing arrived, and
+    // something did — that false reading is the whole reason this state
+    // exists. Blue is not a softening: the week is still chased, and the
+    // tone below puts it in the same bucket as LATE for anything that sorts
+    // or counts problems. Measured: white on blue-600 clears 4.5:1 in both
+    // themes, as every pair in this file must.
+    cls: "bg-blue-600 text-white",
+    tone: "problem",
+  },
   UNPAID: {
     text: "Unpaid",
     short: "unpaid",
@@ -106,6 +125,7 @@ export function statusLabel(status: string): StatusLabel {
 export const STATUS_LEGEND: PaymentStatusValue[] = [
   "PAID",
   "PARTIAL",
+  "PARTIAL_LATE",
   "UNPAID",
   "LATE",
   "DEFERRED",

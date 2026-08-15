@@ -12,7 +12,7 @@ export type StampWeek = {
   /** THEIR ordinal — 1 is their first week, never the cycle's coordinate. */
   ownWeek: number;
   date: string;
-  status: "PAID" | "LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
+  status: "PAID" | "LATE" | "PARTIAL_LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
   isPayoutWeek: boolean;
   /** What this week is covered by, in cents. */
   amountPaid: number;
@@ -28,6 +28,7 @@ const STATUS_LABEL: Record<StampWeek["status"], string> = {
   DEFERRED: "Deferred",
   SKIPPED: "Skipped",
   PARTIAL: "Partial",
+  PARTIAL_LATE: "Part paid",
   PENDING: "Upcoming",
 };
 
@@ -43,6 +44,9 @@ const BADGE_CLS: Record<StampWeek["status"], string> = {
   DEFERRED: "text-sky-800 dark:text-sky-300 bg-sky-100 dark:bg-sky-900/50",
   SKIPPED: "text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700/60",
   PARTIAL: "text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40",
+  // Blue, not red: money arrived (R2). Matches lib/status-labels.ts so the
+  // portal and the admin grid cannot describe one week two ways.
+  PARTIAL_LATE: "text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40",
   PENDING: "text-gray-500 dark:text-gray-400",
 };
 
@@ -180,7 +184,11 @@ export function WeekStampList({
         const isDone = filled.has(idx);
         const showFill = isActive || isDone;
         const paid = w.status === "PAID";
-        const notPaid = w.status === "LATE" || w.status === "DEFERRED" || w.status === "PARTIAL";
+        const notPaid =
+          w.status === "LATE" ||
+          w.status === "PARTIAL_LATE" ||
+          w.status === "DEFERRED" ||
+          w.status === "PARTIAL";
         const hasFill = paid || notPaid;
         const mark = paid ? (
           <svg

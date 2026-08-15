@@ -12,7 +12,7 @@ import { motionTokens } from "@/lib/motion-tokens";
 export type CalendarWeek = {
   weekNumber: number;
   date: string; // YYYY-MM-DD (UTC)
-  status: "PAID" | "LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
+  status: "PAID" | "LATE" | "PARTIAL_LATE" | "DEFERRED" | "SKIPPED" | "PARTIAL" | "PENDING";
 };
 
 const MONTH_NAMES = [
@@ -28,6 +28,9 @@ const STATUS_CELL: Record<CalendarWeek["status"], string> = {
   DEFERRED: "bg-sky-800 text-white",
   SKIPPED: "bg-gray-600 text-white",
   PARTIAL: "bg-amber-400 text-amber-950",
+  // Blue, not red — money arrived (R2). Same pair as lib/status-labels.ts, so
+  // the calendar and the admin grid cannot describe one week two ways.
+  PARTIAL_LATE: "bg-blue-600 text-white",
   PENDING: "ring-2 ring-inset ring-indigo-400 dark:ring-indigo-500 text-indigo-700 dark:text-indigo-300",
 };
 
@@ -37,6 +40,7 @@ const STATUS_DOT: Record<CalendarWeek["status"], string> = {
   DEFERRED: "bg-sky-800",
   SKIPPED: "bg-gray-600",
   PARTIAL: "bg-amber-400",
+  PARTIAL_LATE: "bg-blue-600",
   PENDING: "bg-indigo-500",
 };
 
@@ -44,6 +48,7 @@ const LEGEND = [
   { key: "PENDING" as const, label: "Upcoming" },
   { key: "PAID" as const, label: "Paid" },
   { key: "PARTIAL" as const, label: "Partial" },
+  { key: "PARTIAL_LATE" as const, label: "Part paid" },
   { key: "LATE" as const, label: "Late" },
   { key: "DEFERRED" as const, label: "Deferred" },
   { key: "SKIPPED" as const, label: "Skipped" },
@@ -161,6 +166,10 @@ export function EqubCalendar({
               const statusLabel =
                 status === "PAID"
                   ? "Paid"
+                  : status === "PARTIAL_LATE"
+                    ? // R2: money arrived and the rest is still owed. "Late"
+                      // alone would tell a member who paid that nothing did.
+                      "Part paid — the rest is still owed"
                   : status === "LATE"
                     ? "Late"
                     : status === "DEFERRED"

@@ -6,6 +6,7 @@ import { linkCurrentUserToPerson } from "@/app/actions/auth";
 import { allowLookup, callerIp, LOOKUP_THROTTLE_MESSAGE } from "@/lib/lookup-throttle";
 import { resolveWeekDate, storedWeekDates } from "@/lib/commitment";
 import { contribution } from "@/lib/contribution";
+import { isChasedStatus } from "@/lib/derived";
 import { calculateFinishWeek, currentWeekNumber } from "@/lib/money";
 import { finalPosition, finalPositionSentence } from "@/lib/final-position";
 import { formatDateLongUTC, formatMoney } from "@/lib/format";
@@ -297,7 +298,9 @@ export async function getMyPortal() {
       uncovered[0] ??
       null;
 
-    const lateCount = standing.weeks.filter((w) => w.status === "LATE").length;
+    // The portal count of weeks being chased — part-paid-and-closed included
+    // (R2). The member sees the state and its remainder on their week list.
+    const lateCount = standing.weeks.filter((w) => isChasedStatus(w.status)).length;
 
     return {
       ok: true as const,
@@ -367,6 +370,9 @@ export async function getMyPortal() {
               w.status === "UNPAID" ? ("PENDING" as const) : (w.status as
                 | "PAID"
                 | "PARTIAL"
+                // R2: part paid and still chased. The member sees the state
+                // and its remainder, never a bare "Late" over money they sent.
+                | "PARTIAL_LATE"
                 | "LATE"
                 | "DEFERRED"
                 | "SKIPPED"),

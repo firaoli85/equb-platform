@@ -24,6 +24,17 @@ export const PAYMENT_WINDOW_DAYS = 5;
 export type PaymentStatusValue =
   | "PAID"
   | "PARTIAL"
+  /**
+   * PART PAID, AND THE WEEK IS BEING CHASED — the sixth state (R2, 15 Aug
+   * 2026). Money arrived and the rest is still owed, still chased.
+   *
+   * It exists because a single-label ladder could not say both halves at
+   * once: the window test used to return LATE before the money test was
+   * reached, so a week with $200 of $2,000 on it read exactly like a week
+   * with nothing on it, and the chase then told a member who had paid that
+   * nothing arrived.
+   */
+  | "PARTIAL_LATE"
   | "DEFERRED"
   | "SKIPPED"
   | "UNPAID"
@@ -199,12 +210,33 @@ export function paymentStatus(args: {
   if (args.isSkipped) return "SKIPPED";
   if (args.amountPaid >= args.amountDue) return "PAID";
   if (args.isDeferred) return "DEFERRED";
-  if (args.markedLate) return "LATE";
-
   const daysSinceWeekOpened = Math.floor((utcDay(args.today) - utcDay(args.weekDate)) / MS_PER_DAY);
   const windowClosed = daysSinceWeekOpened >= windowDays;
-  if (windowClosed) return "LATE";
-  return args.amountPaid > 0 ? "PARTIAL" : "UNPAID";
+  // THE MONEY AND THE CALENDAR, COMBINED — never one or the other (R2, and
+  // ONE_TRUTH_ENGINE.md rule 1). Both halves are read before a word is chosen,
+  // so a part-paid week that is being chased says so instead of reading as
+  // though nothing came in.
+  const part = args.amountPaid > 0;
+  const chased = args.markedLate || windowClosed;
+  if (chased) return part ? "PARTIAL_LATE" : "LATE";
+  return part ? "PARTIAL" : "UNPAID";
+}
+
+/**
+ * IS THIS WEEK BEING CHASED — the one predicate, for all six consumers.
+ *
+ * A part-paid week whose window has closed is chased exactly like an unpaid
+ * one: the remainder is still owed (R2). Six places used to ask
+ * `status === "LATE"` for this, and after the sixth state arrived, six copies
+ * of `LATE || PARTIAL_LATE` would be six chances to forget the second half —
+ * and forgetting it drops a real debt off the chase silently, which is the
+ * money-visibility trap §3.3 warned about.
+ *
+ * DEFERRED is deliberately absent: it is paused, and the whole point of a
+ * pause is that nobody chases it (D-42).
+ */
+export function isChasedStatus(status: string): boolean {
+  return status === "LATE" || status === "PARTIAL_LATE";
 }
 
 export type ManualLateAdvice =

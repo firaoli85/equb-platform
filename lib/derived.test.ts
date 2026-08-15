@@ -115,9 +115,17 @@ describe("paymentStatus (derived from money and the calendar only)", () => {
     expect(paymentStatus({ ...base, amountPaid: 0, today: utc("2026-08-01") })).toBe("LATE");
   });
 
-  it("PARTIAL with some money while open; LATE once closed (2.16: late is derived)", () => {
+  // AMENDED BY R2 (15 Aug 2026). The closed case asserted "LATE" until then —
+  // the ladder returned on the window before it ever looked at the money, so a
+  // week with $100 on it read exactly like a week with nothing. It is now its
+  // own state: part paid, and still chased for the rest.
+  it("PARTIAL while open; PARTIAL_LATE once closed — money and calendar both", () => {
     expect(paymentStatus({ ...base, amountPaid: 10_000, today: utc("2026-05-20") })).toBe("PARTIAL");
-    expect(paymentStatus({ ...base, amountPaid: 10_000, today: utc("2026-05-22") })).toBe("LATE");
+    expect(paymentStatus({ ...base, amountPaid: 10_000, today: utc("2026-05-22") })).toBe(
+      "PARTIAL_LATE",
+    );
+    // Nothing paid and closed is still plain LATE — the distinction is the money.
+    expect(paymentStatus({ ...base, amountPaid: 0, today: utc("2026-05-22") })).toBe("LATE");
   });
 
   it("a future week is simply UNPAID", () => {

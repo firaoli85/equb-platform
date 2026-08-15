@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
+import { isChasedStatus } from "@/lib/derived";
 import {
   DEFAULT_TEMPLATES,
   isMessageKey,
@@ -432,7 +433,7 @@ export async function prepareBatch(input: { key: string }) {
       if (!loaded) continue;
 
       // Who this message type is FOR — the suggestion, never the decision.
-      const lateWeeks = loaded.standing.weeks.filter((w) => w.status === "LATE");
+      const lateWeeks = loaded.standing.weeks.filter((w) => isChasedStatus(w.status));
       const relevant =
         key === "BEHIND_NOTICE"
           ? loaded.facts.weeksBehind > 0
