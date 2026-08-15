@@ -34,13 +34,34 @@ export type QueuedRow = {
 // one button per member, which is precisely the case where a page-level banner
 // leaves the reader working out which row it meant.
 
-export function MessageQueue({ queued }: { queued: readonly QueuedRow[] }) {
+export function MessageQueue({
+  queued,
+  error,
+}: {
+  queued: readonly QueuedRow[];
+  /** Set when the queue could not be READ — never the same as being empty. */
+  error?: string | null;
+}) {
   const router = useRouter();
   // ONE STATE PER ROW, keyed by id (UI_STANDARDS 6): the outcome of sending
   // one member's message must render beside that member's message, never in a
   // shared banner that leaves the reader working out which one it meant.
   const [state, setState] = useState<Record<string, SaveState>>({});
 
+  // AN UNREADABLE QUEUE IS SAID OUT LOUD. "Nothing is waiting" and "I could
+  // not find out what is waiting" are different facts, and only one of them
+  // means the organizer has nothing to do.
+  if (error) {
+    return (
+      <Card className="border-red-300 dark:border-red-800">
+        <CardHeader
+          title="The waiting list could not be read"
+          sub="This is not the same as nothing waiting. Messages may be held back and unseen until this is fixed."
+        />
+        <p className="text-sm text-red-800 dark:text-red-400">{error}</p>
+      </Card>
+    );
+  }
   if (queued.length === 0) return null;
 
   function set(id: string, value: SaveState) {

@@ -87,8 +87,13 @@ export default async function MessagesPage({
   // a member waiting on the other end of it, and hiding it behind a tab is how
   // it would sit unsent for a week. The card renders nothing when the queue is
   // empty, so it costs the ordinary visit a query and no space.
+  // A BROKEN QUEUE MUST NOT LOOK LIKE AN EMPTY ONE. Substituting [] on failure
+  // told the organizer nothing was waiting when the truth was that nothing could
+  // be read — which is what happened on 15 Aug 2026, when a stale dev process
+  // made every listQueued() throw and the card simply did not render.
   const queuedResult = await listQueued();
   const queued = queuedResult.ok ? queuedResult.data.queued : [];
+  const queueError = queuedResult.ok ? null : queuedResult.error;
 
   // THE MESSAGE CENTRE'S DATA, loaded only for the view that shows it —
   // three extra queries on a screen that is not looking at them is three
@@ -146,6 +151,7 @@ export default async function MessagesPage({
       />
 
       <MessageQueue
+        error={queueError}
         queued={queued.map((q) => ({
           id: q.id,
           personName: q.personName,

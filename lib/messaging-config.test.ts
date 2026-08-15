@@ -40,15 +40,39 @@ const shipped = resolveMessagingConfig({
 });
 
 describe("THE NO-OP PROOF — resolved defaults equal today's hard-coded behaviour", () => {
-  it("auto-sends exactly what AUTOMATIC_MESSAGE_KEYS auto-sends today", () => {
-    // Read off the live constant, not a copy of it. If someone makes a second
-    // type automatic in the code and forgets the setting, this fails.
+  // THIS ASSERTED EQUALITY UNTIL 15 AUGUST 2026, and the equality is what
+  // broke. Two lists were answering one question: the setting said the
+  // part-payment confirmation was ON, `AUTOMATIC_MESSAGE_KEYS` did not contain
+  // it, and `sendDecision` refused the send — three part-payments produced no
+  // message, no queue row and no log row at all.
+  //
+  // The constant now answers "MAY this carry an automatic trigger" (did an
+  // event originate it) and the setting answers "DOES it". So the law is
+  // CONTAINMENT, not equality: anything shipping as auto must be permitted, and
+  // a permitted type is free to be switched either way.
+  it("everything that ships as auto is permitted to be automatic", () => {
+    // Read off the live constant, not a copy of it. A type made auto-by-default
+    // in the settings that the gate would refuse still fails here.
     for (const key of CONFIGURABLE_MESSAGE_KEYS) {
-      const automaticToday = (AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(key);
+      if (!shipped.message[key].auto) continue;
       expect(
-        shipped.message[key].auto,
-        `${key} must ship matching today's behaviour (automatic today: ${automaticToday})`,
-      ).toBe(automaticToday);
+        (AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(key),
+        `${key} ships as automatic, so the gate must permit an automatic trigger for it`,
+      ).toBe(true);
+    }
+  });
+
+  it("a type the organizer CAN switch on is one the gate will actually let through", () => {
+    // THE REGRESSION, stated directly. PARTIAL_CONFIRMED is switchable, and the
+    // whole incident was that switching it on produced silence. A setting that
+    // cannot take effect is worse than no setting: it reads as done.
+    expect((AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes("PARTIAL_CONFIRMED")).toBe(true);
+    expect((AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes("PAYMENT_CONFIRMED")).toBe(true);
+    // And the protection the list has always existed for still holds: a
+    // judgement about a member cannot fire on its own, however the settings
+    // are set.
+    for (const key of ["LATE_NOTICE", "BEHIND_NOTICE", "WINNER_ANNOUNCEMENT"] as const) {
+      expect((AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(key)).toBe(false);
     }
   });
 

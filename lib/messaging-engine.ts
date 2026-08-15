@@ -259,6 +259,42 @@ async function deliver(input: {
   queueReason?: string;
 }): Promise<SendOutcome> {
   const { person } = input;
+
+  // ————— A SKIP NOBODY ASKED FOR MUST STILL LEAVE A RECORD —————
+  //
+  // WHAT THIS COST, 15 AUGUST 2026. Three part-payments were recorded and
+  // produced NOTHING — no message, no queue row, no log row. Every `return
+  // { status: "SKIPPED" }` below sits before this function's first write, so a
+  // payment whose message was refused was indistinguishable from a payment that
+  // never tried to send one. The organizer reads the log to know what was said
+  // to whom, and a silence in it has to mean nothing happened.
+  //
+  // ONLY WHEN NOBODY IS WATCHING. A MANUAL send reports its outcome to the face
+  // of the person who pressed the button — logging that too would fill the log
+  // with rows nobody needs. An AUTOMATIC one fires from an event, and a QUEUE
+  // one is being prepared on a member's behalf; neither has anyone reading the
+  // answer, which is exactly the case this exists for.
+  const unattended = input.trigger === "AUTOMATIC" || input.mode === "QUEUE";
+  // THE RECORDER LIVES OUTSIDE THIS FUNCTION on purpose. Every gate below must
+  // run BEFORE deliver() writes anything claiming a message was handled, and
+  // three guard tests assert that by reading this function's own source. A log
+  // write inlined here would sit textually above those gates and make the
+  // assertion unreadable — while the real order, gate first and record second,
+  // is exactly what recordUnsentMessage preserves.
+  const skip = (reason: string, body = ""): Promise<SendOutcome> =>
+    (unattended
+      ? recordUnsentMessage({
+          personId: person.id,
+          phone: person.phone,
+          key: input.key,
+          status: "SKIPPED",
+          reason,
+          trigger: input.trigger === "AUTOMATIC" ? "AUTOMATIC" : "MANUAL",
+          body,
+        })
+      : Promise.resolve()
+    ).then(() => ({ status: "SKIPPED" as const, reason }));
+
   const decision = sendDecision({
     key: input.key,
     trigger: input.trigger,
@@ -268,13 +304,13 @@ async function deliver(input: {
     // chasing types — the debt stays on every statement either way.
     weeks: input.facts.weeks,
   });
-  if (!decision.send) return { status: "SKIPPED", reason: decision.reason };
+  if (!decision.send) return skip(decision.reason);
 
   // The organizer's own switch: the choice about whether to send, distinct
   // from whether an approved template exists to carry it — the registry guard
   // below answers that per key.
   if (!(await getSetting("whatsappEnabled"))) {
-    return { status: "SKIPPED", reason: WHATSAPP_DISABLED_REASON };
+    return skip(WHATSAPP_DISABLED_REASON);
   }
 
   // ————— THE WELCOME'S TWO REFUSALS, at the boundary —————
@@ -301,7 +337,7 @@ async function deliver(input: {
       memberPinLoginAllowed: override?.pinLoginAllowed ?? null,
       memberName: override?.nameEnglishFirst,
     });
-    if (!check.ok) return { status: "SKIPPED", reason: check.reason };
+    if (!check.ok) return skip(check.reason);
   }
 
   // ————— THE EXTRAS BOUNDARY — checked BEFORE anything renders —————
@@ -380,13 +416,16 @@ async function deliver(input: {
     // about it. WHATSAPP_WELCOME is written and waiting on a submission, and
     // the next action is somebody's. Reading the first sentence about the
     // second would make a queued template look like a closed door.
-    return {
-      status: "SKIPPED",
-      reason: isDraftTemplateKey(input.key)
+    // THE BODY IS KEPT. It rendered before this guard, and "rendered and
+    // recorded, not delivered" is only true if the record holds what was
+    // rendered — LOCKOUT_NOTICE reaches here on every single lockout.
+    return skip(
+      isDraftTemplateKey(input.key)
         ? draftNotSubmittedRefusal(input.key)
         : `${input.key} has no Meta-approved WhatsApp template, so it cannot be sent. ` +
           `It was rendered and recorded, not delivered.`,
-    };
+      body,
+    );
   }
 
   // Twilio substitutes the APPROVAL SAMPLE for any variable it is not given —
@@ -584,6 +623,47 @@ export async function queueStatement(input: {
     mode: "QUEUE",
     queueReason: input.reason,
   });
+}
+
+/**
+ * Record a message that never reached `deliver()` at all.
+ *
+ * THE GAP THIS CLOSES. `deliver()` now logs its own skips, but a caller can
+ * fail BEFORE calling it — `confirmPayment` composes the placeholders first,
+ * and a composition it cannot complete produced no record of any kind. The
+ * money was recorded and the member was told nothing, silently.
+ *
+ * NEVER THROWS. It runs after money has committed; a logging failure must not
+ * turn a recorded payment into an error.
+ */
+export async function recordUnsentMessage(input: {
+  personId: string;
+  phone: string | null;
+  key: MessageKey;
+  status: "SKIPPED" | "FAILED";
+  reason: string;
+  trigger: "AUTOMATIC" | "MANUAL";
+  /** What HAD rendered, when anything had. Empty is honest, not a placeholder. */
+  body?: string;
+}): Promise<void> {
+  try {
+    await prisma.messageLog.create({
+      data: {
+        personId: input.personId,
+        templateId: null,
+        templateKey: input.key,
+        body: input.body ?? "",
+        channel: "WHATSAPP",
+        toPhone: (input.phone?.trim() ?? "") === "" ? "" : toE164(input.phone!),
+        trigger: input.trigger,
+        status: input.status,
+        providerSid: null,
+        error: input.reason,
+      },
+    });
+  } catch (e) {
+    console.error(`[statement] could not record an unsent ${input.key}:`, e);
+  }
 }
 
 /** One prepared message, as the organizer's queue shows it. */

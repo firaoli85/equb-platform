@@ -681,6 +681,21 @@ enum MessageSendStatus {
   ACCEPTED
   /** The provider refused it — error records why. */
   FAILED
+  /**
+   * THE PLATFORM DECIDED NOT TO SEND IT, and `error` says why.
+   *
+   * Written ONLY for a send nobody asked for — an automatic one, or one being
+   * prepared for the queue. A message the organizer pressed send on reports its
+   * own outcome to his face; a message that fires from an event has nobody
+   * watching, so a skip that wrote nothing was indistinguishable from a payment
+   * that never tried. That is exactly what happened on 15 Aug 2026: three
+   * part-payments produced no message, no queue row and no log row at all.
+   *
+   * NOT A FAILURE. A member marked "no messages" is a decision working, not a
+   * fault — which is why this is its own status and not a FAILED row that would
+   * alarm the organizer about something he chose.
+   */
+  SKIPPED
 }
 
 enum PayoutStatus {

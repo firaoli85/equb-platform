@@ -1,0 +1,17 @@
+-- A MESSAGE THAT WENT NOWHERE MUST STILL LEAVE A RECORD.
+--
+-- On 15 August 2026 three part-payments were recorded and produced NOTHING: no
+-- message, no queue row, no log row. `deliver()` returned SKIPPED before its
+-- first write, and SKIPPED wrote nothing anywhere — so a payment whose message
+-- was refused looked exactly like a payment that never tried to send one.
+--
+-- The organizer reads the log to know what was said to whom. A silence in it
+-- has to mean "nothing happened", and it did not.
+--
+-- ONLY FOR SENDS NOBODY ASKED FOR. A manual send reports its outcome to the
+-- face of the person who pressed the button; an automatic or queued one has
+-- nobody watching, which is the case this status exists for.
+--
+-- ADD VALUE runs inside the migration transaction (PostgreSQL 12+ allows it, so
+-- long as nothing USES the value before commit — nothing here does).
+ALTER TYPE "MessageSendStatus" ADD VALUE IF NOT EXISTS 'SKIPPED';

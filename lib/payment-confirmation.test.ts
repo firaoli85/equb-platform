@@ -255,18 +255,101 @@ describe("THE TWO AXES, READ AT THE CALL SITE", () => {
     expect(configKeyForPaymentMessage("PAYMENT_CONFIRMED_V4")).toBe("PAYMENT_CONFIRMED");
   });
 
-  it("EVENT_TRIGGERED and AUTOMATIC are genuinely different questions", () => {
-    // The proof the split was needed: three keys are event-triggered AND not
-    // automatic. One flag could not have expressed that, which is why 4b-i
-    // separated them and why this file reads both.
-    const eventButNotAuto = (EVENT_TRIGGERED_KEYS as readonly string[]).filter(
-      (k) => !(AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(k),
+  // THE INCIDENT, 15 AUGUST 2026. This test used to assert the opposite — that
+  // three event-triggered keys were absent from AUTOMATIC_MESSAGE_KEYS — and it
+  // passed, because it was describing the bug rather than the law. The two
+  // lists were both answering "may this send automatically", and they
+  // disagreed: the organizer switched the part-payment confirmation ON,
+  // confirmPayment sent with trigger AUTOMATIC, and sendDecision refused it.
+  // Three part-payments produced no message, no queue row and no log row.
+  //
+  // The questions really are different — but the difference is MAY versus DOES,
+  // not which keys. Every event-triggered key MAY be automatic; the config
+  // decides which ones ARE.
+  it("every event-triggered key is PERMITTED to be automatic", () => {
+    for (const key of EVENT_TRIGGERED_KEYS) {
+      expect(
+        (AUTOMATIC_MESSAGE_KEYS as readonly string[]).includes(key),
+        `${key} fires from a payment, so the gate must let an automatic trigger through — ` +
+          `otherwise turning its setting on produces silence`,
+      ).toBe(true);
+    }
+  });
+
+  it("the setting, not the constant, decides which ones actually fire", () => {
+    const config = resolveMessagingConfig(defaultSettingValues());
+    // Both are permitted; only one ships on. That is the whole separation, and
+    // it is only visible because "may" and "does" are now different things.
+    expect(AUTOMATIC_MESSAGE_KEYS).toContain("PARTIAL_CONFIRMED");
+    expect(config.message.PARTIAL_CONFIRMED.auto).toBe(false);
+    expect(AUTOMATIC_MESSAGE_KEYS).toContain("PAYMENT_CONFIRMED_V4");
+    expect(config.message.PAYMENT_CONFIRMED.auto).toBe(true);
+  });
+
+  it("a judgement about a member still cannot fire on its own", () => {
+    // What the gate list has always been FOR, unchanged by the fix: a late
+    // notice or a winner announcement is the organizer's call, and no setting
+    // and no caller can make one send itself.
+    for (const key of ["LATE_NOTICE", "LATE_NOTICE_V4", "BEHIND_NOTICE", "WINNER_ANNOUNCEMENT"]) {
+      expect(AUTOMATIC_MESSAGE_KEYS as readonly string[]).not.toContain(key);
+    }
+  });
+});
+
+describe("NEVER NOTHING — a payment always leaves a trace of what it told the member", () => {
+  const engine = readFileSync("lib/messaging-engine.ts", "utf8");
+  const confirmation = readFileSync("lib/payment-confirmation.ts", "utf8");
+
+  it("an unattended skip is recorded, and an attended one is not", () => {
+    // THE RULE. A MANUAL send reports its outcome to the face of the person who
+    // pressed the button. An AUTOMATIC one fires from an event and a QUEUE one
+    // is prepared on a member's behalf — neither has anyone reading the answer,
+    // which is why only those two write a row.
+    expect(engine).toContain(
+      'const unattended = input.trigger === "AUTOMATIC" || input.mode === "QUEUE"',
     );
-    expect(eventButNotAuto.sort()).toEqual([
-      "PARTIAL_COMPLETED",
-      "PARTIAL_CONFIRMED",
-      "PAYMENT_CONFIRMED_WITH_PARTIAL",
-    ]);
+    // BOUNDED TO deliver() ITSELF. Its callers skip too — "Participation not
+    // found", "Person not found" — and those cannot write a row because there
+    // is no person to attach one to, which is a different situation and an
+    // honest one.
+    const start = engine.indexOf("async function deliver(");
+    const end = engine.indexOf("export async function sendStatement(");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const deliver = engine.slice(start, end);
+
+    // EVERY refusal inside deliver goes through the recorder. A bare
+    // `return { status: "SKIPPED" }` here is the defect coming back.
+    const bare = deliver.match(/return \{ status: "SKIPPED"/g) ?? [];
+    expect(bare).toHaveLength(0);
+    // And there are real refusals in there to have routed — an empty scan
+    // would satisfy the line above while proving nothing.
+    expect((deliver.match(/return skip\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("a composition failure is logged FAILED before it returns", () => {
+    // This one happens BEFORE deliver(), so nothing downstream would write a
+    // row: the money recorded, the member told nothing, the log silent.
+    const branch = confirmation.slice(
+      confirmation.indexOf("if (!composed.ok)"),
+      confirmation.indexOf("// ————— THE CONFIG GATE"),
+    );
+    expect(branch).toContain("recordUnsentMessage(");
+    expect(branch).toContain('status: "FAILED"');
+    expect(branch).toContain("reason: composed.error");
+  });
+
+  it("recording the skip can never fail the payment", () => {
+    // It runs after the money has committed. A logging problem must not turn a
+    // recorded payment into an error on the organizer's screen.
+    const recorder = engine.slice(
+      engine.indexOf("export async function recordUnsentMessage("),
+      engine.indexOf("/** One prepared message, as the organizer's queue shows it. */"),
+    );
+    expect(recorder).toContain("try {");
+    expect(recorder).toContain("catch");
+    expect(recorder).toContain("console.error");
+    expect(recorder).not.toContain("throw");
   });
 });
 

@@ -393,7 +393,20 @@ describe("deliver() end to end", () => {
     }
     // A lockout must never become an error on top of a lockout.
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(messageLogCreate).not.toHaveBeenCalled();
+
+    // BUT IT IS RECORDED (15 Aug 2026). This used to assert that NOTHING was
+    // written, and that was the defect: an automatic message that goes nowhere
+    // has nobody watching the outcome, so a silent skip is indistinguishable
+    // from an event that never fired. The lockout notice reaches here on every
+    // single lockout, and the organizer can now see that it did.
+    expect(messageLogCreate).toHaveBeenCalledTimes(1);
+    const row = (messageLogCreate.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    expect(row.status).toBe("SKIPPED");
+    expect(row.providerSid).toBeNull();
+    expect(row.error).toContain("no Meta-approved");
+    // The body it DID render is kept: "rendered and recorded, not delivered"
+    // is only true if the record holds what was rendered.
+    expect(row.body).toContain("Tizita");
   });
 
   it("the switch OFF sends nothing, even with templates approved", async () => {

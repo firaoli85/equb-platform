@@ -29,7 +29,13 @@ import {
   type PaymentMessageKey,
 } from "./engine";
 import { configKeyForPaymentMessage, paymentMessageExtras } from "./payment-message";
-import { loadStandingFacts, queueStatement, sendStatement, type SendOutcome } from "./messaging-engine";
+import {
+  loadStandingFacts,
+  queueStatement,
+  recordUnsentMessage,
+  sendStatement,
+  type SendOutcome,
+} from "./messaging-engine";
 import { getMessagingConfig } from "./settings";
 
 /** A week of the member's window as it stood BEFORE this payment. */
@@ -125,9 +131,22 @@ export async function confirmPayment(input: {
     startWeek: input.startWeek,
   });
   if (!composed.ok) {
+    // A COMPOSITION FAILURE IS VISIBLE OR IT IS NOTHING. This is BEFORE
+    // deliver(), so nothing downstream would have written a row: the money
+    // would be recorded, the member told nothing, and the log silent. On
+    // 15 Aug 2026 that combination was indistinguishable from a payment that
+    // never tried, and it is the worst outcome in the whole message path.
     console.error(`[confirmPayment] ${key}: ${composed.error}`);
+    await recordUnsentMessage({
+      personId: loaded.participation.person.id,
+      phone: loaded.participation.person.phone,
+      key,
+      status: "FAILED",
+      reason: composed.error,
+      trigger: "AUTOMATIC",
+    });
     return {
-      outcome: { status: "SKIPPED", reason: composed.error },
+      outcome: { status: "FAILED", body: "", error: composed.error },
       key,
       event,
     };

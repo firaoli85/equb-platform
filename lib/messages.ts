@@ -53,23 +53,6 @@ export const MESSAGE_KEYS = [
   "LOCKOUT_NOTICE",
 ] as const;
 
-/**
- * The types that send themselves as the direct result of an action that
- * just happened (2.20): the mark-paid confirmation, and the lockout notice
- * a member triggers with their own failed attempts. Everything else is a
- * judgement and must be MANUAL.
- */
-export const AUTOMATIC_MESSAGE_KEYS = [
-  // THE LEGACY KEY STAYS until one delivered send retires it (see
-  // lib/whatsapp-templates.ts). Nothing routes to it any more — paymentMessageFor
-  // names v4 — but a key that can still be sent by hand must still be allowed to.
-  "PAYMENT_CONFIRMED",
-  // THE ONE THAT ACTUALLY FIRES since 15 Aug 2026. A clean full payment routes
-  // here, and the gate refuses an AUTOMATIC trigger for any key not on this
-  // list, so leaving it off would have turned every confirmation into a skip.
-  "PAYMENT_CONFIRMED_V4",
-  "LOCKOUT_NOTICE",
-] as const;
 
 /**
  * The types that CHASE a member for money they have not paid. These are the
@@ -117,6 +100,36 @@ export const EVENT_TRIGGERED_KEYS = [
   "PAYMENT_CONFIRMED_WITH_PARTIAL",
   "PARTIAL_CONFIRMED",
   "PARTIAL_COMPLETED",
+] as const;
+
+/**
+ * The types an AUTOMATIC trigger is ALLOWED to carry — may it, not does it.
+ *
+ * WHAT THIS COST, 15 AUGUST 2026. This was a second hand-written list, and it
+ * disagreed with the organizer's own setting. He turned the part-payment
+ * confirmation ON; `confirmPayment` read that, sent with trigger AUTOMATIC, and
+ * `sendDecision` refused it — because PARTIAL_CONFIRMED was not on this list.
+ * Three part-payments produced no message, no queue row and no log row at all.
+ * Two answers to one question, and the one the organizer could see lost.
+ *
+ * SO IT IS DERIVED, not written. The real question is the FIRST axis — did an
+ * EVENT originate this? — because that is precisely what makes an automatic
+ * trigger legitimate. A payment landing originates the payment messages; a
+ * member locking themselves out originates the lockout notice. Nothing else
+ * originates itself, so a late notice or a winner announcement still cannot be
+ * automatic, which is the protection this list has always existed for.
+ *
+ * WHETHER a permitted key actually fires stays with the phase-1 config gate
+ * (lib/messaging-config.ts). That separation is the whole 4b-i ruling; this
+ * constant now answers "may it", the setting answers "does it", and neither can
+ * silently overrule the other again.
+ */
+export const AUTOMATIC_MESSAGE_KEYS = [
+  ...EVENT_TRIGGERED_KEYS,
+  // The one event-triggered type that is not a payment: a member's own failed
+  // sign-in attempts originate it (2.28), and it is deliberately absent from
+  // EVENT_TRIGGERED_KEYS because that list is about what a PAYMENT originates.
+  "LOCKOUT_NOTICE",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
