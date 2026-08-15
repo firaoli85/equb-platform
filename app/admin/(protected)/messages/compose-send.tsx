@@ -29,7 +29,15 @@ type Outcome =
   /** Twilio has it; delivery is unconfirmed until a status callback lands. */
   | { status: "ACCEPTED"; body: string }
   | { status: "FAILED"; body: string; error: string }
-  | { status: "SKIPPED"; reason: string };
+  | { status: "SKIPPED"; reason: string }
+  /**
+   * Prepared and parked for review. THE BATCH NEVER PRODUCES ONE — queueing is
+   * the payment path's ending (lib/messaging-engine.ts), and this screen is the
+   * organizer already choosing to send. It is here because the outcome type is
+   * shared, and a total union is what stops a future caller from silently
+   * counting a queued message as delivered.
+   */
+  | { status: "QUEUED"; body: string };
 
 export function ComposeSend() {
   const [key, setKey] = useState<MessageKey>(MANUAL_MESSAGE_KEYS[0]);
@@ -140,7 +148,13 @@ export function ComposeSend() {
         return;
       }
       const results = result.data.results;
-      const counts = { SENT: 0, ACCEPTED: 0, FAILED: 0, SKIPPED: 0 };
+      const counts: Record<Outcome["status"], number> = {
+        SENT: 0,
+        ACCEPTED: 0,
+        FAILED: 0,
+        SKIPPED: 0,
+        QUEUED: 0,
+      };
       for (const r of results) counts[r.outcome.status] += 1;
       setOutcomes(new Map(results.map((r) => [r.participationId, r.outcome])));
       setConfirm(null);

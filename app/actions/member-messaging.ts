@@ -10,6 +10,7 @@ import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { portalUrlValue, welcomeSendCheck } from "@/lib/welcome-send";
 import { winnerExtrasForParticipation } from "@/lib/winner-extras";
+import { lateNoticeExtrasForParticipation } from "@/lib/late-notice-extras";
 import { getSetting } from "@/lib/settings";
 
 // SEND ONE MESSAGE TO ONE MEMBER, FROM WHERE YOU ARE.
@@ -364,10 +365,17 @@ export async function sendToMember(input: { participationId: string; key: string
     // the figure the organizer read before pressing send is the figure that
     // leaves. buildContentVariables now refuses a dashed money placeholder as
     // well, so even a future caller that forgets this cannot deliver the hole.
+    // LATE_NOTICE_V4 JOINS THE SAME RULE (15 Aug 2026). Its {{2}} is a required
+    // extra, so a send with none would be refused at the boundary and written as
+    // a FAILED row on a real member's log — the winner announcement's lesson,
+    // arriving a second time. Null means nothing is chaseable, and the gate
+    // refuses the notice for that same reason, in its own honest words.
     const extras =
       input.key === "WINNER_ANNOUNCEMENT"
         ? ((await winnerExtrasForParticipation(prisma, input.participationId)) ?? undefined)
-        : undefined;
+        : input.key === "LATE_NOTICE_V4"
+          ? ((await lateNoticeExtrasForParticipation(input.participationId)) ?? undefined)
+          : undefined;
 
     const outcome = await sendStatement({
       participationId: input.participationId,
@@ -385,12 +393,15 @@ export async function sendToMember(input: { participationId: string; key: string
         status: outcome.status,
         // ACCEPTED carries no reason: nothing went wrong, Twilio simply has
         // not said anything yet. The UI words that state for itself.
+        // Asked as "is there something wrong to say", so a new outcome that is
+        // not a failure (QUEUED, 15 Aug 2026) reads as no reason rather than
+        // forcing a branch that would have to invent one.
         reason:
-          outcome.status === "SENT" || outcome.status === "ACCEPTED"
-            ? null
-            : outcome.status === "SKIPPED"
-              ? outcome.reason
-              : outcome.error,
+          outcome.status === "SKIPPED"
+            ? outcome.reason
+            : outcome.status === "FAILED"
+              ? outcome.error
+              : null,
       },
     };
   } catch (e) {
@@ -470,12 +481,15 @@ export async function resendWelcome(input: { participationId: string }) {
       ok: true as const,
       data: {
         status: outcome.status,
+        // Asked as "is there something wrong to say", so a new outcome that is
+        // not a failure (QUEUED, 15 Aug 2026) reads as no reason rather than
+        // forcing a branch that would have to invent one.
         reason:
-          outcome.status === "SENT" || outcome.status === "ACCEPTED"
-            ? null
-            : outcome.status === "SKIPPED"
-              ? outcome.reason
-              : outcome.error,
+          outcome.status === "SKIPPED"
+            ? outcome.reason
+            : outcome.status === "FAILED"
+              ? outcome.error
+              : null,
       },
     };
   } catch (e) {

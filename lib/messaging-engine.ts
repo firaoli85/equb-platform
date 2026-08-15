@@ -13,6 +13,7 @@ import {
   MESSAGE_KEYS,
   placeholderValues,
   renderTemplate,
+  isMessageKey,
   sendDecision,
   type MessageExtras,
   type MessageKey,
@@ -204,6 +205,15 @@ export type SendOutcome =
   /** Twilio CONFIRMED delivery. Never written for a mere acceptance. */
   | { status: "SENT"; body: string }
   /**
+   * PREPARED, NOT SENT — it is waiting in `queued_messages` for the organizer.
+   *
+   * The outcome of an event-triggered message whose config setting says manual
+   * (lib/payment-message.ts `configKeyForPaymentMessage`). `body` is the exact
+   * sentence he will see and the exact one that will go out, because it was
+   * rendered through this same function; nothing re-composes it later.
+   */
+  | { status: "QUEUED"; body: string }
+  /**
    * Twilio has it and has confirmed nothing. The ordinary outcome of a send,
    * and the one the UI must not describe as delivered — a status callback
    * decides its fate later, or nothing ever does when no public APP_BASE_URL
@@ -234,6 +244,19 @@ async function deliver(input: {
    * have no participation at all (the lockout notice).
    */
   participationId?: string;
+  /**
+   * SEND (the default) delivers. QUEUE does everything up to the provider call
+   * — the gate, the extras check, the render, the ContentVariables check — and
+   * then parks the finished message for the organizer instead of sending it.
+   *
+   * ONE PATH, TWO ENDINGS, and that is the point. A queued message that
+   * rendered here is byte for byte the message that will leave here, and a
+   * message the boundary would refuse is refused NOW, at the moment the
+   * evidence still exists, rather than days later when he presses send.
+   */
+  mode?: "SEND" | "QUEUE";
+  /** QUEUE only: why it is waiting, in the words the organizer reads. */
+  queueReason?: string;
 }): Promise<SendOutcome> {
   const { person } = input;
   const decision = sendDecision({
@@ -395,6 +418,30 @@ async function deliver(input: {
     return { status: "FAILED", body, error: variables.error };
   }
 
+  // ————— THE FORK: park it, or send it —————
+  //
+  // AFTER the ContentVariables check on purpose. A message that would be
+  // refused at the boundary must be refused while the payment that produced it
+  // is still on screen — parking it and discovering the hole on send day puts
+  // the failure as far as possible from the mistake that caused it.
+  if (input.mode === "QUEUE") {
+    await prisma.queuedMessage.create({
+      data: {
+        personId: person.id,
+        participationId: input.participationId ?? null,
+        templateKey: input.key,
+        body,
+        toPhone: to,
+        // WHAT IT WAS COMPOSED FROM, stored so pressing send replays these
+        // exact facts. The alternative — recomposing at send time — would let a
+        // later edit quietly change a sentence the organizer already approved.
+        extras: (input.extras ?? {}) as Prisma.InputJsonValue,
+        reason: input.queueReason ?? "Waiting for you to review it.",
+      },
+    });
+    return { status: "QUEUED", body };
+  }
+
   const result = await sendWhatsAppMessage({
     toE164Phone: to,
     contentSid: APPROVED_TEMPLATES[input.key].contentSid,
@@ -505,6 +552,112 @@ export async function sendStatement(input: {
     // otherwise each need their own copy, and one of them would not get one.
     participationId: input.participationId,
   });
+}
+
+/**
+ * Prepare one statement and PARK it for the organizer (2.20).
+ *
+ * Same loader, same gate, same render as `sendStatement` — only the last step
+ * differs. A message that cannot be sent at all (hardship, no phone, channel
+ * off) comes back SKIPPED and is not queued: a backlog of messages that can
+ * never leave is not a queue, it is a pile.
+ */
+export async function queueStatement(input: {
+  participationId: string;
+  key: MessageKey;
+  extras?: MessageExtras;
+  reason: string;
+}): Promise<SendOutcome> {
+  const loaded = await loadStandingFacts(input.participationId);
+  if (!loaded) return { status: "SKIPPED", reason: "Participation not found." };
+  return deliver({
+    person: loaded.participation.person,
+    facts: loaded.facts,
+    key: input.key,
+    // THE TRIGGER IT WILL ACTUALLY HAVE. A queued message leaves because the
+    // organizer pressed send, so the gate that decides whether it may leave is
+    // asked the same question now as then — otherwise a message could pass
+    // here and be refused there, after he had already approved it.
+    trigger: "MANUAL",
+    extras: input.extras,
+    participationId: input.participationId,
+    mode: "QUEUE",
+    queueReason: input.reason,
+  });
+}
+
+/** One prepared message, as the organizer's queue shows it. */
+export type QueuedMessageRow = {
+  id: string;
+  personId: string;
+  personName: string;
+  templateKey: string;
+  body: string;
+  toPhone: string;
+  reason: string;
+  createdAt: Date;
+};
+
+/** Everything waiting, oldest first — the order he should work through them. */
+export async function listQueuedMessages(limit = 100): Promise<QueuedMessageRow[]> {
+  const rows = await prisma.queuedMessage.findMany({
+    orderBy: { createdAt: "asc" },
+    take: limit,
+    include: { person: { select: { nameEnglishFirst: true, nameEnglishLast: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    personId: r.personId,
+    personName: `${r.person.nameEnglishFirst}${r.person.nameEnglishLast ? ` ${r.person.nameEnglishLast}` : ""}`,
+    templateKey: r.templateKey,
+    body: r.body,
+    toPhone: r.toPhone,
+    reason: r.reason,
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * Send one queued message, from the facts it was composed with.
+ *
+ * THE ROW SURVIVES A FAILURE. It is deleted only when the message actually
+ * left (SENT or ACCEPTED); a FAILED or SKIPPED attempt leaves it queued, so the
+ * organizer can fix the cause and press send again rather than discovering
+ * later that his approval silently threw the message away.
+ */
+export async function sendQueuedMessage(id: string): Promise<SendOutcome> {
+  const row = await prisma.queuedMessage.findUnique({ where: { id } });
+  if (!row) return { status: "SKIPPED", reason: "That message is no longer queued." };
+  if (!isMessageKey(row.templateKey)) {
+    return { status: "SKIPPED", reason: `${row.templateKey} is not a message type any more.` };
+  }
+  // STORED FACTS, NOT FRESH ONES. The money figures are facts about the payment
+  // that produced this message and do not move; re-deriving them here would let
+  // a later edit change a sentence the organizer already read and approved.
+  const extras = (row.extras ?? {}) as MessageExtras;
+  const outcome = row.participationId
+    ? await sendStatement({
+        participationId: row.participationId,
+        key: row.templateKey,
+        trigger: "MANUAL",
+        extras,
+      })
+    : await sendStatementToPerson({
+        personId: row.personId,
+        key: row.templateKey,
+        trigger: "MANUAL",
+        extras,
+      });
+  if (outcome.status === "SENT" || outcome.status === "ACCEPTED") {
+    await prisma.queuedMessage.delete({ where: { id } });
+  }
+  return outcome;
+}
+
+/** Decide NOT to send one. It leaves no MessageLog row, because none was sent. */
+export async function discardQueuedMessage(id: string): Promise<{ ok: boolean }> {
+  await prisma.queuedMessage.deleteMany({ where: { id } });
+  return { ok: true };
 }
 
 /**

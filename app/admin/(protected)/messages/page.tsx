@@ -5,7 +5,7 @@ import {
   type ThreadListData,
 } from "@/app/actions/message-centre";
 import { getMemberMessaging, type MemberMessagingView } from "@/app/actions/member-messaging";
-import { getMessagingOverview } from "@/app/actions/messages";
+import { getMessagingOverview, listQueued } from "@/app/actions/messages";
 import { MessageCentre } from "./message-centre";
 import { Card, CardHeader, Pill, Table, Td, Th, trHoverCls } from "@/components/ui/primitives";
 import { Pager } from "@/components/ui/pager";
@@ -15,6 +15,7 @@ import { PageSizeSelect } from "@/components/ui/page-size";
 import { ChannelStatus } from "./channel-status";
 import { ComposeSend } from "./compose-send";
 import { GroupAnnouncement } from "./group-announcement";
+import { MessageQueue } from "./message-queue";
 import { TemplatesEditor } from "./templates-editor";
 import { telegramMissingConfig } from "@/lib/telegram";
 
@@ -81,6 +82,14 @@ export default async function MessagesPage({
     logPage,
   } = result.data;
 
+  // WHAT IS WAITING, on EVERY view of this page — not behind one of the four
+  // tabs. A message a payment prepared and held back is the one thing here with
+  // a member waiting on the other end of it, and hiding it behind a tab is how
+  // it would sit unsent for a week. The card renders nothing when the queue is
+  // empty, so it costs the ordinary visit a query and no space.
+  const queuedResult = await listQueued();
+  const queued = queuedResult.ok ? queuedResult.data.queued : [];
+
   // THE MESSAGE CENTRE'S DATA, loaded only for the view that shows it —
   // three extra queries on a screen that is not looking at them is three
   // queries the organizer waits for.
@@ -134,6 +143,18 @@ export default async function MessagesPage({
         whatsappEnabled={whatsappEnabled}
         disabledReason={whatsappDisabledReason}
         missingConfig={whatsAppMissingConfig}
+      />
+
+      <MessageQueue
+        queued={queued.map((q) => ({
+          id: q.id,
+          personName: q.personName,
+          templateKey: q.templateKey,
+          body: q.body,
+          toPhone: q.toPhone,
+          reason: q.reason,
+          createdAt: q.createdAt.toISOString(),
+        }))}
       />
 
       {/* THREE JOBS, ONE AT A TIME.

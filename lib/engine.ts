@@ -327,9 +327,18 @@ export type PaymentEventTruth = {
   appliedByWeek: { weekNumber: number; applied: number; amountDue: number; fillsWeek: boolean }[];
 };
 
-/** Which of the five approved templates documents this payment. */
+/**
+ * Which of the four approved payment templates documents this payment.
+ *
+ * `PAYMENT_CONFIRMED_V4`, NOT the legacy `PAYMENT_CONFIRMED`. The two are
+ * different templates with different variables — v4 carries the composed
+ * `paymentBreakdown`, the legacy one carries `myWeeksCovered` — so naming the
+ * old key here would select the old wording and the old placeholder set. The
+ * legacy body stays registered until one delivered send retires it, but nothing
+ * routes to it any more.
+ */
 export type PaymentMessageKey =
-  | "PAYMENT_CONFIRMED"
+  | "PAYMENT_CONFIRMED_V4"
   | "PAYMENT_CONFIRMED_WITH_PARTIAL"
   | "PARTIAL_CONFIRMED"
   | "PARTIAL_COMPLETED";
@@ -345,6 +354,14 @@ export type PaymentMessageKey =
  *     lists both. It is neither "only fullWeeks" nor the single-week
  *     PARTIAL_COMPLETED shape.
  *   - nothing allocated at all → no message.
+ *
+ * PARTIAL_COMPLETED NAMES EXACTLY ONE WEEK, so it may only be chosen when
+ * exactly one was completed. Its body is "you had already paid $X toward your
+ * week N, and it is now paid in full" — there is no second slot. A payment that
+ * finishes off TWO part-paid weeks would be described by naming one of them and
+ * silently dropping the other, which is a message that is true and incomplete,
+ * and incomplete about money. Those go to v4, whose breakdown lists every week
+ * the payment touched. Found wiring the call site, 15 Aug 2026.
  */
 export function paymentMessageFor(event: PaymentEventTruth): PaymentMessageKey | null {
   const full = event.fullWeeks.length > 0;
@@ -353,8 +370,10 @@ export function paymentMessageFor(event: PaymentEventTruth): PaymentMessageKey |
     return full || completed ? "PAYMENT_CONFIRMED_WITH_PARTIAL" : "PARTIAL_CONFIRMED";
   }
   if (!full && !completed) return null;
-  if (completed && !full) return "PARTIAL_COMPLETED";
-  return "PAYMENT_CONFIRMED";
+  if (completed && !full) {
+    return event.completedWeeks.length === 1 ? "PARTIAL_COMPLETED" : "PAYMENT_CONFIRMED_V4";
+  }
+  return "PAYMENT_CONFIRMED_V4";
 }
 
 /**

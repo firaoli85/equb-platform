@@ -138,16 +138,21 @@ describe("recording a payment can never fail because of messaging", () => {
   const payments = readFileSync("app/actions/payments.ts", "utf8");
   const record = payments.slice(payments.indexOf("export async function recordPayment("));
 
+  // THE CALL IS NOW confirmPayment (15 Aug 2026), which routes between the
+  // four approved payment templates and reads the config gate before sending
+  // or queueing. The three properties guarded here are unchanged and are the
+  // reason the name is pinned: money first, messaging after, and never the
+  // other way round.
   it("the confirmation is sent AFTER the money transaction has committed", () => {
     // Inside the transaction, a messaging throw would roll the payment back.
     const txEnd = record.indexOf("revalidatePath");
-    const send = record.indexOf("sendStatement(");
+    const send = record.indexOf("confirmPayment(");
     expect(txEnd).toBeGreaterThan(-1);
     expect(send).toBeGreaterThan(txEnd);
   });
 
   it("the send is wrapped in try/catch and the catch does not rethrow", () => {
-    const send = record.indexOf("sendStatement(");
+    const send = record.indexOf("confirmPayment(");
     const before = record.slice(0, send);
     expect(before.lastIndexOf("try {")).toBeGreaterThan(before.lastIndexOf("} catch"));
 
@@ -158,6 +163,8 @@ describe("recording a payment can never fail because of messaging", () => {
   });
 
   it("the payment still returns ok, carrying the messaging outcome", () => {
-    expect(record).toContain("return { ok: true as const, data: { ...data, confirmation } }");
+    expect(record).toContain(
+      "return { ok: true as const, data: { ...data, confirmation, confirmationKey } }",
+    );
   });
 });

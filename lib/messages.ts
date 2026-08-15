@@ -59,7 +59,17 @@ export const MESSAGE_KEYS = [
  * a member triggers with their own failed attempts. Everything else is a
  * judgement and must be MANUAL.
  */
-export const AUTOMATIC_MESSAGE_KEYS = ["PAYMENT_CONFIRMED", "LOCKOUT_NOTICE"] as const;
+export const AUTOMATIC_MESSAGE_KEYS = [
+  // THE LEGACY KEY STAYS until one delivered send retires it (see
+  // lib/whatsapp-templates.ts). Nothing routes to it any more — paymentMessageFor
+  // names v4 — but a key that can still be sent by hand must still be allowed to.
+  "PAYMENT_CONFIRMED",
+  // THE ONE THAT ACTUALLY FIRES since 15 Aug 2026. A clean full payment routes
+  // here, and the gate refuses an AUTOMATIC trigger for any key not on this
+  // list, so leaving it off would have turned every confirmation into a skip.
+  "PAYMENT_CONFIRMED_V4",
+  "LOCKOUT_NOTICE",
+] as const;
 
 /**
  * The types that CHASE a member for money they have not paid. These are the

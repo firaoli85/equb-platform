@@ -17,9 +17,13 @@ import {
   type MessageExtras,
   type MessageKey,
 } from "@/lib/messages";
+import { lateNoticeExtrasForParticipation } from "@/lib/late-notice-extras";
+import { stillDueOnWeek, weekLabelFull } from "@/lib/payment-message";
 import {
+  listQueuedMessages,
   loadStandingFacts,
   loadTemplates,
+  sendQueuedMessage,
   sendStatement,
   type SendOutcome,
 } from "@/lib/messaging-engine";
@@ -283,6 +287,46 @@ export async function previewMessage(input: {
         weeksCovered: [firstUncovered?.weekNumber ?? loaded.facts.currentCycleWeek],
       };
       sampleNote = "Preview uses a sample receipt of one weekly amount.";
+    } else if (key === "LATE_NOTICE_V4") {
+      // The real figure when there is one. A member with nothing chaseable has
+      // no week to name, so the preview says so rather than inventing one — and
+      // the send would be refused by the gate for the same reason.
+      const real = await lateNoticeExtrasForParticipation(input.participationId);
+      if (real) {
+        extras = real;
+      } else {
+        sampleNote =
+          "This member has no closed unpaid week right now, so there is nothing to chase and nothing to name.";
+      }
+    } else if (
+      key === "PARTIAL_CONFIRMED" ||
+      key === "PARTIAL_COMPLETED" ||
+      key === "PAYMENT_CONFIRMED_V4" ||
+      key === "PAYMENT_CONFIRMED_WITH_PARTIAL"
+    ) {
+      // THESE EXIST ONLY AT THE MOMENT OF A RECEIPT, like the confirmation
+      // above — there is no standing to read them off. The sample is LABELLED,
+      // so the wording is checkable without any figure here being mistaken for
+      // this member's own.
+      const week =
+        loaded.standing.weeks.find((w) => !w.isDeferred && w.coveredAtCurrentRate < w.amountDue) ??
+        loaded.standing.weeks[0] ??
+        null;
+      const own = week ? week.weekNumber - loaded.participation.startWeek + 1 : 1;
+      const due = loaded.participation.weeklyAmount;
+      const label = week
+        ? weekLabelFull({ weekNumber: week.weekNumber, date: week.date }, loaded.participation.startWeek)
+        : `week ${own}`;
+      extras = {
+        amountReceived: Math.round(due / 10),
+        paymentBreakdown: label.replace(/ (.*)/, ``),
+        partialWeekLabel: label,
+        priorPaidOnWeek: Math.round(due / 10),
+        stillDueOnWeek: week
+          ? stillDueOnWeek(due - Math.round(due / 10), { weekNumber: week.weekNumber, date: week.date }, loaded.participation.startWeek)
+          : ``,
+      };
+      sampleNote = "Preview uses a sample part payment of a tenth of one week.";
     } else if (key === "WINNER_ANNOUNCEMENT") {
       const winners = await winnerExtrasByParticipation(loaded.participation.cycleId);
       const real = winners.get(input.participationId);
@@ -437,7 +481,7 @@ export async function prepareBatch(input: { key: string }) {
       const relevant =
         key === "BEHIND_NOTICE"
           ? loaded.facts.weeksBehind > 0
-          : key === "LATE_NOTICE"
+          : key === "LATE_NOTICE" || key === "LATE_NOTICE_V4"
             ? lateWeeks.length > 0
             : key === "WINNER_ANNOUNCEMENT"
               ? (winners?.has(p.id) ?? false)
@@ -450,6 +494,15 @@ export async function prepareBatch(input: { key: string }) {
           ? "No phone number on file."
           : null;
 
+      // THE PREVIEW RENDERS FROM WHAT THE SEND WILL USE. Composed here rather
+      // than left empty: an unsupplied required extra renders as the NO_VALUE
+      // dash, so the organizer would read "— is still due" and then send a real
+      // figure. A preview that differs from the send is worse than none.
+      const rowExtras =
+        key === "LATE_NOTICE_V4"
+          ? ((await lateNoticeExtrasForParticipation(p.id)) ?? {})
+          : (winners?.get(p.id) ?? {});
+
       rows.push({
         participationId: p.id,
         nameAmharic: p.person.nameAmharic,
@@ -457,7 +510,7 @@ export async function prepareBatch(input: { key: string }) {
         phone: p.person.phone,
         rendered: renderTemplate(
           body,
-          placeholderValues(loaded.facts, winners?.get(p.id) ?? {}),
+          placeholderValues(loaded.facts, rowExtras),
         ),
         // THE WELCOME ARRIVES UNTICKED, and it is the only type that does.
         //
@@ -568,7 +621,14 @@ export async function sendBatch(input: { key: string; participationIds: string[]
         participationId,
         key,
         trigger: "MANUAL",
-        extras: winners?.get(participationId) ?? {},
+        // LATE_NOTICE_V4 composes PER MEMBER, because its sentence names one
+        // member's own week and that week's own remainder — there is no batch
+        // map to precompute, and a shared figure would be wrong for everyone
+        // but one of them.
+        extras:
+          key === "LATE_NOTICE_V4"
+            ? ((await lateNoticeExtrasForParticipation(participationId)) ?? {})
+            : (winners?.get(participationId) ?? {}),
       });
       results.push({ participationId, outcome });
     }
@@ -772,5 +832,95 @@ export async function broadcastAnnouncement(input: { text: string }) {
   } catch (e) {
     console.error("broadcastAnnouncement failed:", e);
     return { ok: false as const, error: `Could not send. ${errorMessage(e)}` };
+  }
+}
+
+// ————————————— THE QUEUE: messages prepared, waiting for him —————————————
+//
+// 2.20's preview, for the messages a payment originates. The four phase-4
+// payment types default to manual, so a partial notice is composed the moment
+// the money lands and then WAITS — with its exact rendered sentence — until the
+// organizer reads it and presses send. See lib/payment-confirmation.ts.
+
+/** Everything waiting, oldest first. */
+export async function listQueued() {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    return { ok: true as const, data: { queued: await listQueuedMessages() } };
+  } catch (e) {
+    console.error("listQueued failed:", e);
+    return { ok: false as const, error: `Could not load the queue. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * Send one that was waiting — the organizer has read it and approved it.
+ *
+ * PRESENTATION MODE REFUSES, like every other surface that puts a member's
+ * money on screen (2.4): the queued body names an amount and a week.
+ */
+export async function sendQueued(input: { id: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (await getSetting("presentationMode")) {
+      return { ok: false as const, error: PRESENTATION_HIDDEN };
+    }
+    const outcome = await sendQueuedMessage(input.id);
+    revalidatePath("/admin/messages");
+    return {
+      ok: true as const,
+      data: {
+        status: outcome.status,
+        // Asked as "is there something wrong to say" — SENT, ACCEPTED and
+        // QUEUED all have nothing to report, and only the last of those cannot
+        // happen here (a send never re-queues).
+        reason:
+          outcome.status === "SKIPPED"
+            ? outcome.reason
+            : outcome.status === "FAILED"
+              ? outcome.error
+              : null,
+      },
+    };
+  } catch (e) {
+    console.error("sendQueued failed:", e);
+    return { ok: false as const, error: `Could not send it. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * Decide NOT to send one.
+ *
+ * NO MessageLog ROW IS WRITTEN, because nothing was sent — the log answers what
+ * left, and a discarded draft never left. The audit entry below is where the
+ * decision is recorded, which is the right place for it: this is the
+ * organizer's judgement, not the platform's action.
+ */
+export async function discardQueued(input: { id: string }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const row = await prisma.queuedMessage.findUnique({
+      where: { id: input.id },
+      include: { person: { select: { nameEnglishFirst: true } } },
+    });
+    if (!row) return { ok: false as const, error: "That message is no longer queued." };
+    await prisma.$transaction(async (tx) => {
+      await tx.queuedMessage.delete({ where: { id: input.id } });
+      await logAudit(tx, {
+        entity: "QueuedMessage",
+        entityId: input.id,
+        action: "delete",
+        summary: `Discarded the ${row.templateKey} prepared for ${row.person.nameEnglishFirst}. It was never sent.`,
+        before: { templateKey: row.templateKey, body: row.body, toPhone: row.toPhone },
+      });
+    });
+    revalidatePath("/admin/messages");
+    return { ok: true as const, data: { discarded: true } };
+  } catch (e) {
+    console.error("discardQueued failed:", e);
+    return { ok: false as const, error: `Could not discard it. ${errorMessage(e)}` };
   }
 }

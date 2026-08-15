@@ -40,6 +40,7 @@ model Person {
   participations   Participation[]
   ledgerEntries    LedgerEntry[]
   messageLogs      MessageLog[]
+  queuedMessages   QueuedMessage[]
   signInSessions   SignInSession[]
   agreementSignatures AgreementSignature[]
   @@map("people")
@@ -716,4 +717,43 @@ model CashReading {
   @@index([readAt])
   @@index([cycleId])
   @@map("cash_readings")
+}
+
+// A MESSAGE PREPARED BUT NOT SENT — the queue behind 2.20's preview.
+//
+// NOT A MessageLog ROW, and the distinction is the whole point. `message_logs`
+// answers ONE question — what did the platform actually send to this member —
+// and every surface that reads it (their profile, the conversation view, the
+// delivery reconciliation, the closing audit) trusts that answer. A draft
+// sitting in that table under some new status would appear in a member's own
+// history as a message they were sent, which is exactly the overloading of one
+// name with two questions this build exists to remove (§5.10).
+//
+// WHY IT EXISTS. The four phase-4 payment messages are event-triggered — a
+// payment originates them, not the organizer — but default to MANUAL, because
+// a WRONG notice about money still owed is worse than a late one. So there has
+// to be somewhere for a message to WAIT: rendered, real, checkable, and not
+// yet delivered.
+//
+// `body` IS THE PREVIEW, rendered through the same path the send uses, at the
+// moment the payment landed. `extras` is what it was composed from, so pressing
+// send re-renders from the same facts rather than from whatever is true later.
+model QueuedMessage {
+  id              String   @id @default(cuid())
+  personId        String
+  /** The participation this is about — the standing the send re-renders from. */
+  participationId String?
+  templateKey     String
+  /** The EXACT rendered sentence, as previewed. */
+  body            String
+  toPhone         String
+  /** The composed placeholders (lib/payment-message.ts), replayed on send. */
+  extras          Json
+  /** Why it is waiting rather than gone — the organizer's sentence. */
+  reason          String
+  createdAt       DateTime @default(now())
+  person          Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  @@index([personId])
+  @@index([createdAt])
+  @@map("queued_messages")
 }

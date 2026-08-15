@@ -8,7 +8,8 @@ import { refuseIfCycleClosed, refuseIfParticipationClosed } from "@/lib/cycle-gu
 import { allocatePayment, type AllocationWeek } from "@/lib/allocation";
 import { formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
-import { sendStatement, type SendOutcome } from "@/lib/messaging-engine";
+import { type SendOutcome } from "@/lib/messaging-engine";
+import { confirmPayment } from "@/lib/payment-confirmation";
 import { contribution } from "@/lib/contribution";
 import { calculateFinishWeek, currentWeekNumber, MAX_MONEY_CENTS } from "@/lib/money";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
@@ -309,34 +310,62 @@ export async function recordPayment(input: RecordPaymentInput) {
         allocations: plan.result.allocations,
         totalApplied: plan.result.totalApplied,
         paidAt: receivedAt,
+        // ————— THE BEFORE STATE, captured while it still exists —————
+        //
+        // The message says what this payment DID, and that is only knowable
+        // from what the weeks looked like before it. One line after the upsert
+        // loop the evidence is gone: the rows now hold the new totals, and
+        // "already part paid, now finished" is indistinguishable from "settled
+        // outright" — the exact pair the member's sentence turns on.
+        //
+        // `loaded` was read at the top of this transaction, before any write,
+        // so this IS the before-state, and reading it inside the serializable
+        // transaction means a concurrent receipt cannot have moved it.
+        startWeek: loaded.participation.startWeek,
+        weeklyAmount: loaded.participation.weeklyAmount,
+        weeksBefore: loaded.windowWeeks.map((w) => ({
+          weekNumber: w.week.weekNumber,
+          date: w.week.date,
+          amountDue: w.allocation.amountDue,
+          covered: w.allocation.amountAlreadyPaid,
+          isDeferred: w.isDeferred,
+          isSkipped: w.week.isSkipped,
+        })),
       };
     });
 
     revalidatePath("/admin/cycle");
     revalidatePath("/admin/payments");
 
-    // 2.20 AUTOMATIC: the confirmation is the direct result of the action
-    // the organizer just took — the ONLY message that sends itself. Runs
-    // AFTER the transaction committed, and best-effort: a messaging failure
-    // never fails the payment; the outcome (sent / skipped / failed) goes
-    // back to the organizer and to MessageLog. Imported history never
+    // 2.20: the confirmation is the direct result of the action the organizer
+    // just took. Runs AFTER the transaction committed, and best-effort: a
+    // messaging failure never fails the payment; the outcome (sent / queued /
+    // skipped / failed) goes back to the organizer. Imported history never
     // reaches this — imports write receipts directly, never through here.
+    //
+    // ONE HARD-CODED TEMPLATE UNTIL 15 AUG 2026, which is how a member who part
+    // paid was thanked as though their week were settled. `confirmPayment`
+    // routes between the four approved payment templates on what the payment
+    // actually did, and reads the organizer's setting to decide whether the
+    // sentence goes out now or waits for him — see lib/payment-confirmation.ts.
     let confirmation: SendOutcome | null = null;
+    let confirmationKey: string | null = null;
     try {
-      confirmation = await sendStatement({
+      const result = await confirmPayment({
         participationId: input.participationId,
-        key: "PAYMENT_CONFIRMED",
-        trigger: "AUTOMATIC",
-        extras: {
-          amountReceived: input.amount,
-          weeksCovered: data.allocations.map((a) => a.weekNumber),
-        },
+        amount: input.amount,
+        receivedAt: data.paidAt,
+        weeklyAmount: data.weeklyAmount,
+        startWeek: data.startWeek,
+        weeksBefore: data.weeksBefore,
       });
+      confirmation = result.outcome;
+      confirmationKey = result.key;
     } catch (e) {
       console.error("payment confirmation message failed:", e);
     }
 
-    return { ok: true as const, data: { ...data, confirmation } };
+    return { ok: true as const, data: { ...data, confirmation, confirmationKey } };
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return {

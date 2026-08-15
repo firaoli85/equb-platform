@@ -33,10 +33,14 @@ const pay = (amount: number, covered: Record<number, number>, behindAfter = 0) =
   });
 
 describe("THE ROUTING — one branch each, none missed, none doubled", () => {
-  it("a clean full payment goes to PAYMENT_CONFIRMED", () => {
+  // THE KEY IS v4, NOT THE LEGACY NAME (15 Aug 2026). The two are different
+  // templates with different variables — v4 carries the composed breakdown, the
+  // legacy one carries myWeeksCovered — so a router naming the old key would
+  // select the old wording. It is the name of the template, not of the branch.
+  it("a clean full payment goes to PAYMENT_CONFIRMED_V4", () => {
     const e = pay(2 * WEEKLY, {});
     expect(e.remainder).toBe(0);
-    expect(paymentMessageFor(e)).toBe("PAYMENT_CONFIRMED");
+    expect(paymentMessageFor(e)).toBe("PAYMENT_CONFIRMED_V4");
   });
 
   it("completing a week AND part-paying the next goes to WITH_PARTIAL", () => {
@@ -71,7 +75,20 @@ describe("THE ROUTING — one branch each, none missed, none doubled", () => {
     expect(e.completedWeeks).toEqual([1]);
     expect(e.fullWeeks).toEqual([2]);
     expect(e.remainder).toBe(0);
-    expect(paymentMessageFor(e)).toBe("PAYMENT_CONFIRMED");
+    expect(paymentMessageFor(e)).toBe("PAYMENT_CONFIRMED_V4");
+  });
+
+  // FOUND WIRING THE CALL SITE, 15 Aug 2026. PARTIAL_COMPLETED names ONE week
+  // and has no second slot, so a payment that finishes off two part-paid weeks
+  // would have been described by naming one and dropping the other — true, and
+  // incomplete about money. Those go to v4, whose breakdown lists every week.
+  it("finishing TWO part-paid weeks goes to v4, because PARTIAL_COMPLETED names one", () => {
+    // Weeks 1 and 2 each hold $1,000; $2,000 finishes both exactly.
+    const e = pay(2 * 100_000, { 1: 100_000, 2: 100_000 });
+    expect(e.completedWeeks).toEqual([1, 2]);
+    expect(e.fullWeeks).toEqual([]);
+    expect(e.remainder).toBe(0);
+    expect(paymentMessageFor(e)).toBe("PAYMENT_CONFIRMED_V4");
   });
 
   it("a payment that allocates NOTHING sends no message", () => {
