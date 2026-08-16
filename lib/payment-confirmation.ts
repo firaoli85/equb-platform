@@ -56,9 +56,23 @@ export type WeekBeforePayment = {
  * mystery he has to go looking for the cause of (2.10).
  */
 function queueReasonFor(key: PaymentMessageKey): string {
-  return key === "PAYMENT_CONFIRMED_V4"
-    ? "Payment confirmations are set to send by hand (Settings → Messaging)."
-    : "Messages about money still owed are set to send by hand (Settings → Messaging).";
+  // ONE SENTENCE PER SWITCH, since each key now has its own (15 Aug 2026).
+  //
+  // These shared two sentences while they shared two switches, and the shared
+  // one was WRONG for the completion: it read "messages about money still owed"
+  // on a message whose entire point is that the week is now paid in full. A
+  // reason that describes a different message is worse than no reason — it
+  // sends him to the wrong switch.
+  switch (key) {
+    case "PAYMENT_CONFIRMED_V4":
+      return "Payment confirmations are set to send by hand (Settings → Messaging).";
+    case "PAYMENT_CONFIRMED_WITH_PARTIAL":
+      return "Confirmations that name an amount still owed are set to send by hand (Settings → Messaging).";
+    case "PARTIAL_CONFIRMED":
+      return "Part-payment confirmations are set to send by hand (Settings → Messaging).";
+    case "PARTIAL_COMPLETED":
+      return "“Part-paid week now complete” messages are set to send by hand (Settings → Messaging).";
+  }
 }
 
 export type PaymentConfirmation = {

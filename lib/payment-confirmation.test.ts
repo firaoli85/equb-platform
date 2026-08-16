@@ -612,3 +612,82 @@ describe("ACCEPTED MUST NOT MEAN DELIVERED FOREVER", () => {
     expect(data).toContain("error");
   });
 });
+
+describe("A COMPLETING PAYMENT ALWAYS LEAVES A RECORD", () => {
+  const confirmation = readFileSync("lib/payment-confirmation.ts", "utf8");
+
+  it("the completion routes, composes and is never dropped", () => {
+    // THE REPORT, 16 Aug 2026: a payment completing a part-paid week "sent no
+    // message". It had in fact been QUEUED, twice, with correct bodies — the
+    // record was there and the organizer could not see it from where he works.
+    // The routing was never the problem, and this pins that down.
+    // WEEKS 1 TO 14 SETTLED, so the $800 lands where it is meant to. Coverage
+    // runs oldest first: with the earlier weeks empty this payment would go to
+    // week 1 and the test would describe a different event entirely.
+    const { key, extras, text } = messageFor({
+      amount: 80_000, // $800 onto a week holding $1,200 of $2,000
+      covered: { ...paidThrough(14), 15: 120_000 },
+      standing: { weeksCredited: 15 },
+    });
+    expect(key).toBe("PARTIAL_COMPLETED");
+    expect(extras.priorPaidOnWeek).toBe(120_000);
+    expect(text).toContain("already paid $1,200");
+    expect(text).toContain("now paid in full");
+  });
+
+  it("every routed key produces EITHER a send or a queue — there is no third path", () => {
+    // The gate is a boolean over a config key that always resolves, so the
+    // ternary is total. A key whose setting did not resolve would be the hole
+    // this test exists to rule out.
+    const gate = confirmation.slice(confirmation.indexOf("const auto ="));
+    expect(gate).toContain("await sendStatement({");
+    expect(gate).toContain("await queueStatement({");
+    // No branch between them that could return without doing either.
+    expect(gate).not.toContain("return { outcome: { status: \"SKIPPED\"");
+  });
+
+  it("every payment key has its own config key, and every one resolves", () => {
+    // PARTIAL_COMPLETED rode on PARTIAL_CONFIRMED's switch until 15 Aug 2026.
+    // Splitting them is what made this message queue: the new key had no stored
+    // row and fell back to its shipped default of OFF, so an install that had
+    // turned the shared switch ON went quiet. That is what
+    // scripts/seed-partial-settings.mts exists to carry across.
+    const config = resolveMessagingConfig(defaultSettingValues());
+    for (const key of [
+      "PAYMENT_CONFIRMED_V4",
+      "PAYMENT_CONFIRMED_WITH_PARTIAL",
+      "PARTIAL_CONFIRMED",
+      "PARTIAL_COMPLETED",
+    ] as PaymentMessageKey[]) {
+      const configKey = configKeyForPaymentMessage(key);
+      expect(CONFIGURABLE_MESSAGE_KEYS as readonly string[]).toContain(configKey);
+      // Resolves to a real boolean, never undefined — the "falls through to a
+      // default that skips" shape.
+      expect(typeof config.message[configKey].auto).toBe("boolean");
+    }
+  });
+
+  it("the queue reason names the RIGHT switch for each message", () => {
+    // It said "messages about money still owed" on the completion — a message
+    // whose whole point is that the week is now paid in full. A reason that
+    // describes a different message sends him to the wrong switch.
+    const reason = confirmation.slice(
+      confirmation.indexOf("function queueReasonFor("),
+      confirmation.indexOf("export type PaymentConfirmation"),
+    );
+    expect(reason).toContain('case "PARTIAL_COMPLETED":');
+    const completed = reason.slice(reason.indexOf('case "PARTIAL_COMPLETED":'));
+    expect(completed).toContain("now complete");
+    expect(completed).not.toContain("still owed");
+  });
+
+  it("a new settings key must carry the old shared value across", () => {
+    // The migration that stops a split from going quiet. It is a script rather
+    // than a SQL migration because it copies a VALUE the organizer chose, and
+    // it must never overwrite a decision he has since made.
+    const seed = readFileSync("scripts/seed-partial-settings.mts", "utf8");
+    expect(seed).toContain('const SOURCE = "autoSendPartialConfirmed"');
+    expect(seed).toContain("autoSendPartialCompleted");
+    expect(seed).toContain("already set to");
+  });
+});
