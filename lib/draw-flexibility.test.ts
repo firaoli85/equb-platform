@@ -244,3 +244,102 @@ describe("HOW SEVERAL WINNERS ON ONE WEEK ACTUALLY WORK", () => {
     );
   });
 });
+
+describe("THE DRAW SCREEN CHOOSES ITS OWN WEEK (feature 1)", () => {
+  const page = read("app/admin/wheel/page.tsx");
+  const picker = read("app/admin/wheel/week-picker.tsx");
+  const drawScreen = actions.slice(
+    actions.indexOf("export async function getDrawScreen("),
+    actions.indexOf("// ————————————————— Arrangement —————————————————"),
+  );
+
+  it("the scan is real", () => {
+    expect(drawScreen.length).toBeGreaterThan(800);
+    expect(picker.length).toBeGreaterThan(400);
+  });
+
+  it("a chosen week wins over the auto-pick", () => {
+    // The screen auto-picked the earliest undrawn week and showed it as a
+    // heading, so the one decision made at the draw was the one thing that
+    // could not be touched.
+    expect(drawScreen).toContain("export async function getDrawScreen(input?: { weekId?: string })");
+    expect(drawScreen).toContain("const chosen = input?.weekId");
+    // Order matters: the choice is consulted BEFORE the fallbacks.
+    expect(drawScreen.indexOf("chosen ??")).toBeLessThan(drawScreen.indexOf("undrawn.find("));
+  });
+
+  it("a fully drawn cycle is no longer a dead end", () => {
+    // "Every week has been drawn" used to end the screen. With several winners
+    // on a week being ordinary, it just means the default lands on the last
+    // week and he picks from there.
+    expect(codeOnly(drawScreen)).not.toContain("Every week has been drawn");
+    expect(drawScreen).toContain("loaded.cycle.weeks[loaded.cycle.weeks.length - 1]");
+  });
+
+  it("EVERY week is offered, drawn ones included", () => {
+    expect(drawScreen).toContain("weeks: loaded.cycle.weeks.map((w) => ({");
+    expect(codeOnly(drawScreen)).not.toContain("weeks.filter((w) => w.draws.length === 0).map");
+    expect(picker).toContain("weeks.map((w) => (");
+  });
+
+  it("§2.4 — the option label carries a week number and nothing else", () => {
+    // A drawn week is already public: the room watched it happen. What the
+    // SETUP screen says — "Week 5 (2 winners)" — would tell the room how many
+    // payouts are lined up, so the count is deliberately not here.
+    expect(picker).toContain("Week {w.weekNumber}");
+    expect(picker).toContain('w.hasDraw ? " (drawn)" : ""');
+    for (const leak of ["plannedWinners", "winners", "eligible", "name", "amount", "payout"]) {
+      expect(picker.toLowerCase(), `${leak} must not reach the projected screen`).not.toContain(
+        `{w.${leak.toLowerCase()}`,
+      );
+    }
+  });
+
+  it("§2.4 — the screen gained ONE control, not a panel", () => {
+    // Everything else stays on /admin/wheel/setup, which is never shared.
+    for (const forbidden of ["createWinnerPlan", "cancelWinnerPlan", "planWeekId", "SlotGrid", "draggable"]) {
+      expect(page, `${forbidden} must not appear on the draw screen`).not.toContain(forbidden);
+      expect(picker, `${forbidden} must not appear in the picker`).not.toContain(forbidden);
+    }
+    // One select, and it replaced the heading rather than sitting beside it.
+    expect((picker.match(/<select/g) ?? []).length).toBe(1);
+    expect(codeOnly(page)).not.toContain("<h1");
+  });
+
+  it("the week rides in the URL so the wheel can never show another week's slots", () => {
+    expect(picker).toContain("/admin/wheel?week=");
+    expect(page).toContain("getDrawScreen({ weekId: week })");
+  });
+});
+
+describe("RECORDING TO A DRAWN WEEK ADDS, NEVER REPLACES (feature 1)", () => {
+  const record = actions.slice(
+    actions.indexOf("export async function recordDraw("),
+    actions.indexOf("export async function undoDraw("),
+  );
+
+  it("the scan is real", () => {
+    expect(record.length).toBeGreaterThan(1000);
+  });
+
+  it("an existing draw is REUSED — the unique constraint is not fought", () => {
+    // Draw is @@unique on weekId AND slotId, so a second create would be a
+    // P2002. Payouts carry their own luckyNumberId, which is how
+    // addWinnerToWeek has always added a second winner to a drawn week.
+    expect(record).toContain("const existing = await tx.draw.findUnique({ where: { weekId: week.id } })");
+    expect(record).toContain("const draw = existing ?? (await tx.draw.create(");
+  });
+
+  it("nothing is deleted or overwritten when a week gains a second winner", () => {
+    expect(codeOnly(record)).not.toContain("payout.deleteMany");
+    expect(codeOnly(record)).not.toContain("draw.delete");
+    expect(codeOnly(record)).not.toContain("draw.update");
+  });
+
+  it("a number may still win only ONCE in a cycle", () => {
+    // Additive for the WEEK, not for a member. Re-spinning a drawn week could
+    // otherwise land on the same slot and pay it twice.
+    expect(record).toContain("has already won in this cycle");
+    expect(record).toContain("tx.payout.findFirst({");
+  });
+});

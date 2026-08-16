@@ -243,25 +243,56 @@ export async function getWheelState() {
  * eligible slots as number labels. NOTHING else — no names, no amounts, no
  * plans. Selection logic never reaches the browser.
  */
-export async function getDrawScreen() {
+export async function getDrawScreen(input?: { weekId?: string }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
     const loaded = await loadWheel();
     if (!loaded) return { ok: false as const, error: "No active cycle." };
 
-    // Draw the earliest undrawn week that has arrived (catching up), else
-    // the next undrawn week.
+    // ————— THE WEEK IS CHOSEN, ON THIS SCREEN (§3.8) —————
+    //
+    // The organizer picks the week the payout is awarded to, INCLUDING one
+    // already drawn. Money is held across weeks when members are late, so an
+    // earlier week's slot is routinely awarded later, once enough has come in.
+    //
+    // THE AUTO-PICK REMAINS THE DEFAULT, not the rule: opening the screen with
+    // no week chosen lands on the earliest undrawn week that has arrived, which
+    // is the ordinary Sunday case and saves him a choice he did not need to
+    // make. It is a starting point now rather than the only possibility.
+    //
+    // "EVERY WEEK HAS BEEN DRAWN" IS NO LONGER AN ERROR. It used to end the
+    // screen; with several winners on a week being ordinary, a fully drawn
+    // cycle simply means the default falls back to the last week and he picks.
     const undrawn = loaded.cycle.weeks.filter((w) => w.draws.length === 0);
+    const chosen = input?.weekId
+      ? (loaded.cycle.weeks.find((w) => w.id === input.weekId) ?? null)
+      : null;
     const target =
-      undrawn.find((w) => w.weekNumber <= loaded.currentWeek) ?? undrawn[0] ?? null;
-    if (!target) return { ok: false as const, error: "Every week has been drawn." };
+      chosen ??
+      undrawn.find((w) => w.weekNumber <= loaded.currentWeek) ??
+      undrawn[0] ??
+      loaded.cycle.weeks[loaded.cycle.weeks.length - 1] ??
+      null;
+    if (!target) return { ok: false as const, error: "This cycle has no weeks." };
 
     return {
       ok: true as const,
       data: {
         weekId: target.id,
         weekNumber: target.weekNumber,
+        /** Whether the CHOSEN week already has a draw — the screen says so. */
+        alreadyDrawn: target.draws.length > 0,
+        // EVERY WEEK, AS NUMBERS ONLY. This list is on a projected screen
+        // (2.4), so it carries a week number and whether that week has been
+        // drawn — both already public — and nothing else. No plan counts, no
+        // names, no amounts: the setup screen's labels say "Week 5 (2 winners)"
+        // and that would tell the room how many payouts are lined up.
+        weeks: loaded.cycle.weeks.map((w) => ({
+          id: w.id,
+          weekNumber: w.weekNumber,
+          hasDraw: w.draws.length > 0,
+        })),
         // 2.4 / audit H3c: NOT position order — a planned winner's slot is
         // created last, so raw order would paint it as the final segment
         // every week. Seeded by the week: stable across reloads, unrelated
@@ -704,7 +735,34 @@ export async function recordDraw(input: { weekId: string; slotId: string }) {
       const frozen = frozenCycleRefusal(week.cycle);
       if (frozen) throw new Error(frozen);
 
-      const draw = await tx.draw.create({ data: { weekId: week.id, slotId: slot.id } });
+      // ————— ADDITIVE: a second winner JOINS the week, never replaces —————
+      //
+      // `Draw` is @@unique on weekId AND on slotId, so it is a 1:1 week↔slot
+      // row and a second `create` here would be a P2002. That constraint does
+      // NOT mean a week has one winner: payouts hang off the draw and carry
+      // their own luckyNumberId, which is exactly how `addWinnerToWeek` has
+      // always added a second and third winner to a drawn week.
+      //
+      // So drawing an already-drawn week attaches this slot's payouts to the
+      // week's EXISTING draw. Nothing is deleted and nothing is overwritten —
+      // the earlier winner keeps their payout, and the week now has both.
+      const existing = await tx.draw.findUnique({ where: { weekId: week.id } });
+      const draw = existing ?? (await tx.draw.create({ data: { weekId: week.id, slotId: slot.id } }));
+
+      // A NUMBER MAY WIN ONCE. Adding is additive for the WEEK, not for a
+      // member: a number that already has a payout anywhere in this cycle
+      // cannot be drawn again, and re-spinning a drawn week could otherwise
+      // land on the same slot and pay it twice.
+      const alreadyWon = await tx.payout.findFirst({
+        where: {
+          luckyNumberId: { in: slot.members.map((m) => m.luckyNumberId) },
+          draw: { week: { cycleId: week.cycleId } },
+        },
+        include: { luckyNumber: { select: { number: true } } },
+      });
+      if (alreadyWon) {
+        throw new Error(`Number ${alreadyWon.luckyNumber.number} has already won in this cycle.`);
+      }
 
       const payouts = [];
       for (const member of slot.members) {
