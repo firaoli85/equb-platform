@@ -44,7 +44,14 @@ export function WeekPicker({
     // ground the draw screen now uses, reads as chrome rather than as an input,
     // and stays small enough that the wheel keeps the room's attention — which
     // is the whole reason it is on this screen at all.
-    <label className="group relative inline-flex items-center">
+    //
+    // POINTER-EVENTS-AUTO TAKES CLICKS BACK. The strip this sits in is
+    // click-through (page.tsx), because as a full-width band pinned to the top
+    // it was covering the back arrow and eating its clicks. This label is the
+    // only thing in that strip anyone needs to press, so it is the only thing
+    // that hears a press. Changing the week mid-draw keeps working; the corner
+    // of the screen stops being a dead zone.
+    <label className="group pointer-events-auto relative inline-flex items-center">
       <span className="sr-only">Which week this draw is for</span>
       <select
         value={selectedWeekId}

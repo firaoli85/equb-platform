@@ -64,8 +64,23 @@ export default async function WheelPage({
           It was a text-2xl select stacked in the same centred flex as a fixed
           480px wheel, so on a laptop the two fought for the same vertical
           space and the wheel lost — "it covers the wheel". Pinned to the top,
-          it cannot crowd anything, and the wheel gets the whole middle. */}
-      <div className="absolute inset-x-0 top-0 z-20 flex flex-col items-center gap-1.5 px-4 pt-5">
+          it cannot crowd anything, and the wheel gets the whole middle.
+
+          POINTER-EVENTS-NONE, BECAUSE PINNING IT HERE PARKED IT ON THE EXIT.
+          `inset-x-0 top-0` makes this a full-viewport-width strip 66px deep
+          (88px with the drawn line), and `z-20` puts it over the back arrow's
+          `z-10` at left-4 top-4. A transparent background still hit-tests, so
+          the strip swallowed every click on the arrow — the ONE way off this
+          screen, on a route that sits outside the admin shell and has no nav
+          of its own. Confirmed dead at 390, 1440 and 1920: elementFromPoint at
+          the arrow's centre returned this div at every width.
+
+          The strip is a layout box, not a surface. It should never have
+          received a click, and now it does not — the two other overlays on
+          this page, the light pools above and the caret in the picker, were
+          already written this way. Only the control inside takes clicks back
+          (pointer-events-auto on the label in week-picker.tsx). */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col items-center gap-1.5 px-4 pt-5">
         <WeekPicker weeks={result.data.weeks} selectedWeekId={result.data.weekId} />
         {result.data.alreadyDrawn && (
           <p className="text-xs text-amber-200/60">
