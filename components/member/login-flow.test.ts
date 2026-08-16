@@ -18,6 +18,11 @@ import { describe, expect, it } from "vitest";
 
 const source = readFileSync(join(import.meta.dirname, "login-flow.tsx"), "utf8");
 
+/** Source with comments stripped — a guard must not trip on its own prose. */
+const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+/** Source with whitespace flattened — for text JSX wraps across lines. */
+const flat = source.replace(/\s+/g, " ");
+
 /** Does `earlier` really come before `later` in the file? */
 function precedes(earlier: string, later: string): boolean {
   const a = source.indexOf(earlier);
@@ -183,5 +188,61 @@ describe("forgot-PIN routes to WhatsApp directly — never the parked SMS channe
     expect(source).toContain("Text me a code");
     expect(source).toContain("signInWithFirebaseSms");
     expect(source).toContain("RecaptchaVerifier");
+  });
+});
+
+// THE FORCED FIRST-LOGIN PIN CHANGE (organizer ruling, 16 August 2026).
+//
+// The default PIN is the last 4 digits of the number the caller just typed, so
+// it authenticates nobody. Before this ruling the "set your own PIN" step was
+// skippable on every path, and every member in the group was still on the
+// default. These guards hold the two halves apart: a wall after the default, an
+// ask after a code.
+describe("forced PIN change after a default sign-in", () => {
+  it("hides the skip when the member arrived on the phone-digit default", () => {
+    expect(source).toContain("{!usedDefault && (");
+    // The skip must be INSIDE that guard, not merely near it.
+    const guarded = source.slice(source.indexOf("{!usedDefault && ("));
+    const closes = guarded.indexOf("Skip for now");
+    expect(closes).toBeGreaterThan(-1);
+    // Nothing else may re-open the door before the button.
+    expect(guarded.slice(0, closes)).not.toContain("goToPortal()");
+  });
+
+  it("KEEPS the skip for a member who proved identity with a code", () => {
+    // `recovering` reaches setpin without `usedDefault`, so the guard above
+    // leaves the button rendered. A wall here would strand the member who came
+    // BECAUSE they could not get in.
+    expect(source).toContain("Skip for now");
+    expect(source).toMatch(/recovering \|\| usedDefault/);
+  });
+
+  it("states the default PIN on the sign-in screen, for every first-timer", () => {
+    expect(source).toContain(
+      "First time signing in? Your PIN is the last 4 digits of your phone number.",
+    );
+    expect(flat).toContain("You will choose your own PIN after you sign in.");
+  });
+
+  // AUDIT C2: the hint that once lived here was driven by `hasOwnPin` and so
+  // told an unauthenticated caller who was still on the default. The new
+  // sentence is identical for every caller and must never become conditional.
+  it("the new instruction is unconditional — it cannot leak who is on the default", () => {
+    // Comments stripped first: this file's own comment DISCUSSES the C2 hint
+    // by name, and a guard that trips on its own explanation is worthless.
+    const i = code.indexOf("First time signing in?");
+    expect(i).toBeGreaterThan(-1);
+    const before = code.slice(Math.max(0, i - 400), i);
+    expect(before).not.toContain("hasOwnPin");
+    expect(before).not.toContain("pinState");
+    // Nor is it wrapped in any conditional of its own.
+    expect(before).not.toContain("&&");
+  });
+
+  it("no comment still claims the step is never forced", () => {
+    expect(source).not.toContain("ALWAYS skippable");
+    expect(source).not.toContain("never forced");
+    expect(source).not.toContain("takes no for an\n                  answer");
+    expect(source).not.toContain("INVITATION to set their own PIN");
   });
 });

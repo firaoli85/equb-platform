@@ -105,10 +105,20 @@ export async function verifyPin(
  * see the thing before being asked to secure it. The default is temporary and
  * retires at cycle 2.
  *
+ * AMENDED 16 August 2026 — THE DOOR IS UNCHANGED, WHAT FOLLOWS IT IS NOT.
+ * Nobody is still stopped HERE, so this predicate keeps returning false. But
+ * "temporary" is now enforced rather than hoped for: a member who signs in on
+ * the phone-digit default is required to set their own PIN before reaching the
+ * portal, because the last 4 digits of the number the caller just typed
+ * authenticate nobody, and a default nobody is made to replace is permanent in
+ * practice. A member who arrives by WhatsApp CODE has proved who they are and
+ * is still only asked, never forced.
+ *
  * The risk C2 identified is REAL and has not gone away: the default is the
  * last 4 digits of the identifier the caller just typed, so it authenticates
  * nobody. It is answered elsewhere instead of at the door —
- *   - an encouraging, skippable "set your own PIN" prompt after sign-in,
+ *   - a FORCED "set your own PIN" step after a default sign-in, and a
+ *     skippable one after a code (login-flow.tsx),
  *   - every sign-in recorded with device, browser and IP (lib/session-record),
  *   - bounded session lifetimes, idle and absolute (lib/session-policy),
  *   - "Where you are signed in" + "Sign out everywhere else" in the portal,

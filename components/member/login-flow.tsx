@@ -332,11 +332,17 @@ export function LoginFlow() {
           setPin("");
           return;
         }
-        // ORGANIZER'S RULING: the phone-digit default signs in DIRECTLY —
-        // they are already in by the time this runs. What follows is an
-        // INVITATION to set their own PIN, never a wall: friction a member
-        // does not understand is worse than the risk, and the risk is
-        // answered by the session layer instead.
+        // ORGANIZER'S RULING, 16 August 2026 (supersedes the invitation rule
+        // that stood here): the phone-digit default still signs in DIRECTLY —
+        // the door does not move — but what follows is now a WALL, not an
+        // invitation. The default is the last 4 digits of the number the
+        // caller just typed, so it authenticates nobody; a member who keeps it
+        // has no PIN at all in any meaningful sense.
+        //
+        // The old rule's reasoning was that unexplained friction is worse than
+        // the risk. It is answered by EXPLAINING it rather than by dropping
+        // it: the sign-in screen states the default and says a PIN of their
+        // own comes next, so nothing here is a surprise.
         if (result.data.usedDefaultPin) {
           setUsedDefault(true);
           setPromptSetPin(true);
@@ -869,6 +875,26 @@ export function LoginFlow() {
               {verifying ? "Signing in…" : "Sign in"}
             </button>
 
+            {/* HOW A FIRST-TIMER GETS IN, STATED ONCE AND ALWAYS TRUE.
+                A member who has never signed in has no way to know the door
+                is already open to them, and the welcome message does not say
+                so either.
+
+                THIS IS NOT THE HINT AUDIT C2 REMOVED. That one was driven by
+                `hasOwnPin`, so showing it told an UNAUTHENTICATED caller
+                whether this particular number was still on the default — a
+                ready-made target list. This sentence is the same for every
+                caller, known or unknown, member or stranger, and is true of
+                every first-timer forever. It discloses nothing about anyone,
+                so it cannot go stale and cannot be mined.
+
+                It says what happens next, so nobody is surprised by the
+                forced step that follows (Aug 2026 ruling). */}
+            <p className="text-center text-xs text-gray-500 dark:text-gray-400 text-pretty">
+              First time signing in? Your PIN is the last 4 digits of your phone number. You will
+              choose your own PIN after you sign in.
+            </p>
+
             {/* Rule 6b at the control that was pressed: the server's own
                 sentence — a wrong PIN, a locked account and when it lifts,
                 PIN sign-in switched off. It used to render above the pad,
@@ -907,10 +933,13 @@ export function LoginFlow() {
               <p className="text-sm font-semibold text-gray-900 dark:text-white">
                 You&apos;re in{recovering ? " — set a new PIN" : ""}
               </p>
-              {/* ENCOURAGING, NOT A WALL. They already have a session; this
-                  screen asks for something better and takes no for an
-                  answer. The reason is stated plainly so the ask makes sense
-                  to someone who has never thought about passwords. */}
+              {/* A WALL AFTER THE DEFAULT, AN ASK AFTER A CODE (16 Aug 2026).
+                  This used to say "encouraging, not a wall … takes no for an
+                  answer", which is no longer true of the default path: the
+                  skip below is hidden when `usedDefault`. The reason is still
+                  stated plainly, and it matters more now that it is a
+                  condition of entry — someone who has never thought about
+                  passwords should understand why they are being stopped. */}
               <p className="text-xs text-gray-500 dark:text-gray-400 text-pretty">
                 {firstPin !== null
                   ? "Enter the same PIN once more, to make sure it is what you meant."
@@ -951,20 +980,40 @@ export function LoginFlow() {
               className="flex-col [&>button]:w-full [&>button]:py-3"
             />
 
-            {/* ALWAYS skippable, including after a phone-digit default. The
-                ruling is explicit: never forced. A member who skips is
-                signed in, sees the amber badge on the organizer's side, and
-                gets asked again next time. */}
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={goToPortal}
-                disabled={savingPin}
-                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
-              >
-                Skip for now — take me to my account
-              </button>
-            </div>
+            {/* SKIPPABLE AFTER A CODE, FORCED AFTER THE DEFAULT.
+                ORGANIZER'S RULING, 16 August 2026 — supersedes the "never
+                forced" rule that stood here.
+
+                The two arrivals are not the same event and must not get the
+                same door:
+
+                  usedDefault — they typed the last 4 digits of the phone
+                    number they had just typed in. That authenticates NOBODY:
+                    anyone holding the number holds the PIN. There is no
+                    identity to trust yet, so the default is temporary by
+                    definition and setting a real one is the price of entry.
+
+                  recovering (and not usedDefault) — they proved who they are
+                    with a code sent to their own WhatsApp. Identity IS
+                    established. A wall here would strand a member who came
+                    BECAUSE they could not get in, so the skip stays.
+
+                What has NOT changed is why the old rule existed: friction a
+                member does not understand is worse than the risk. That is
+                answered by telling them on the sign-in screen what is coming,
+                not by letting the weak default persist. */}
+            {!usedDefault && (
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={goToPortal}
+                  disabled={savingPin}
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+                >
+                  Skip for now — take me to my account
+                </button>
+              </div>
+            )}
           </div>
         )}
 
