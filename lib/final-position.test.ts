@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   feeOnReturn,
+  recoverableForUndrawn,
   finalPosition,
   finalPositionAdminLine,
   finalPositionHeadline,
@@ -356,5 +359,83 @@ describe("finalPositionHeadline — the one line the organizer reads in a hurry"
       expect(line).not.toContain("—");
       expect(line).not.toContain("–");
     }
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// THE TWO MONEY SCREENS AGREE ABOUT A STOPPED MEMBER
+//
+// They did not, for one commit. A comment in app/actions/cycle-position.ts —
+// written before §2.30 and never revisited — claimed "a fee is only ever taken
+// from a payout and they never had one". It was believed over the code, the
+// subtraction was deleted there and nowhere else, and the organizer's cash
+// position said a stopped member was owed her whole paid-in while her own
+// portal said `paid in − fee`.
+//
+// §2.30 / D-41 is the law, and Section 4 of the agreement every member SIGNS
+// says the same: "If I stop early the fee does not shrink."
+//
+// Both paths now go through `recoverableForUndrawn`. These tests hold the rule
+// AND the single derivation, because the rule alone was never the problem —
+// having it written twice was.
+// ————————————————————————————————————————————————————————————————
+
+describe("a never-drawn stopped member: paid in minus fee, one rule", () => {
+  // $500 a week for 20 weeks: a $10,000 gross carrying a $200 fee. She paid
+  // 12 weeks before stopping.
+  const member = {
+    paidIn: 600_000,
+    weeklyAmount: 50_000,
+    weeksCommitted: 20,
+    unitAmount: 100_000,
+    feePercent: 2,
+  };
+
+  it("returns paid in minus the fee on the WHOLE commitment", () => {
+    const { fee, amount } = recoverableForUndrawn(member);
+    expect(fee).toBe(20_000); // $200 — on 20 weeks, not on the 12 she paid
+    expect(amount).toBe(580_000); // $6,000 − $200
+  });
+
+  it("stopping early never shrinks the fee (§2.30, agreement §4)", () => {
+    const stoppedEarlier = recoverableForUndrawn({ ...member, paidIn: 100_000 });
+    expect(stoppedEarlier.fee).toBe(20_000);
+  });
+
+  it("floors at zero rather than turning a small payer into a debtor", () => {
+    // §2.30: someone who paid $50 against a $400 fee is settled, not owing.
+    const tiny = recoverableForUndrawn({ ...member, paidIn: 5_000 });
+    expect(tiny.amount).toBe(0);
+  });
+
+  it("THE MEMBER'S PORTAL reads the same figure", () => {
+    // finalPosition feeds app/actions/member.ts and the admin profile.
+    const position = finalPosition({ ...member, received: 0 });
+    expect(position.direction).toBe("owed-to-them");
+    if (position.direction !== "owed-to-them") throw new Error("unreachable");
+    expect(position.amount).toBe(recoverableForUndrawn(member).amount);
+    expect(position.fee).toBe(recoverableForUndrawn(member).fee);
+  });
+
+  it("THE CASH POSITION reads it through the same function, not a copy", () => {
+    // The structural half. A behavioural test cannot reach owedBack — it is
+    // assembled inside a server action against the live database — so this
+    // pins the thing that actually broke: a second copy of the arithmetic.
+    const src = readFileSync(
+      join(import.meta.dirname, "..", "app", "actions", "cycle-position.ts"),
+      "utf8",
+    );
+    const owedBack = src.slice(src.indexOf("owedBack:"), src.indexOf("reason: closeReasonText"));
+    expect(owedBack).toContain("recoverableForUndrawn(");
+    // And it must not have grown its own fee arithmetic alongside.
+    expect(owedBack).not.toMatch(/paidInByThem\s*-\s*fee/);
+  });
+
+  it("a DRAWN member is untouched by any of this", () => {
+    // They had a payout and the fee was already withheld from it. Charging
+    // again would be charging twice (§2.30, last paragraph).
+    const drawn = finalPosition({ ...member, paidIn: 1_000_000, received: 980_000 });
+    expect(drawn.direction).toBe("settled");
+    expect(drawn.drawn).toBe(true);
   });
 });

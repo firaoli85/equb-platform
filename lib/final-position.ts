@@ -69,6 +69,43 @@ export function feeOnReturn(input: {
   return feePreview(input)?.fee ?? 0;
 }
 
+/**
+ * WHAT A NEVER-DRAWN STOPPED MEMBER GETS BACK: `paid in − fee`, floored at 0.
+ *
+ * §2.30 / D-41, and Section 4 of the agreement every member signs: *"It is
+ * fixed by what I committed to, not by how many weeks I end up paying. If I
+ * stop early the fee does not shrink."* The fee is the organizer's charge for
+ * holding their reserved place in the cycle, and the place was held whether or
+ * not the wheel ever reached them.
+ *
+ * FLOORED, NEVER NEGATIVE. Someone who paid $50 against a commitment carrying
+ * a $400 fee is settled, not in debt for $350 — the fee is not reduced, it is
+ * simply not pursued.
+ *
+ * ONE FUNCTION BECAUSE TWO SCREENS MUST NOT DISAGREE. This arithmetic lived
+ * twice: once here for the member's portal and the archive, once inline in
+ * app/actions/cycle-position.ts for the organizer's cash position. A stale
+ * comment on the second copy — written before §2.30 and claiming "a fee is
+ * only ever taken from a payout" — got the fee deleted from that one alone,
+ * so for one commit the cash position said a stopped member was owed her full
+ * paid-in while her own portal said `paid in − fee`. Two screens, two answers,
+ * about money a real person is owed.
+ *
+ * Both now call this. They can no longer drift, and a change of policy is a
+ * change in one place.
+ */
+export function recoverableForUndrawn(input: {
+  /** Every cent they paid in, from the receipts (2.14). */
+  paidIn: number;
+  weeklyAmount: number;
+  weeksCommitted: number;
+  unitAmount: number;
+  feePercent: number;
+}): { fee: number; amount: number } {
+  const fee = feeOnReturn(input);
+  return { fee, amount: Math.max(0, input.paidIn - fee) };
+}
+
 export type FinalPosition =
   | {
       direction: "owed-to-them";
@@ -122,8 +159,9 @@ export function finalPosition(input: {
 
   if (!drawn) {
     // The fee on their WHOLE COMMITMENT — stopping early does not reduce it.
-    const fee = feeOnReturn(input);
-    const amount = Math.max(0, input.paidIn - fee);
+    // Through the shared rule, so the organizer's cash position and this
+    // member's own portal cannot answer differently (§2.30).
+    const { fee, amount } = recoverableForUndrawn(input);
     if (amount === 0) {
       // They were never drawn and paid nothing in. Nothing moves either way,
       // and saying "you are owed $0" would be worse than saying so plainly.

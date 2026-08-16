@@ -14,6 +14,7 @@
 // The ONE stored fact is the cash READING the organizer enters. Everything
 // else is derived at read time (2.14).
 
+import { recoverableForUndrawn } from "@/lib/final-position";
 import { revalidatePath } from "next/cache";
 import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
@@ -262,19 +263,35 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         // not left his hands, so there is nothing yet to cover.
         shortfallToCover: alreadyPaidOut > 0 ? amountLeaving : 0,
         // Money he is HOLDING that is theirs: what a member who was never
-        // drawn paid in, IN FULL.
+        // drawn paid in, LESS THE FEE (§2.30 / D-41).
         //
-        // NO FEE IS WITHHELD. A fee is only ever taken from a payout, and a
-        // member who was never drawn never had one — there is nothing for a
-        // fee to come out of. 2.18 puts the same rule the other way round:
-        // the organizer absorbs, the member is made whole.
+        // THE FEE IS TAKEN WHETHER OR NOT THEY WERE DRAWN. It is the
+        // organizer's charge for holding their reserved place in the cycle,
+        // and the place was held for them whether or not the wheel reached
+        // them. Recoverable is `paid in − fee`, floored at zero. Section 4 of
+        // the agreement every member signs says the same thing: "It is fixed
+        // by what I committed to, not by how many weeks I end up paying. If I
+        // stop early the fee does not shrink."
         //
-        // The code here used to subtract `feeOnReturn` while this very comment
-        // said it did not, and the comment was the half that was right. On a
-        // $500-a-week, 20-week commitment that silently moved $300 of a
-        // stopped member's own money onto the organizer's side of the page —
-        // money she had paid in and never received a payout against.
-        owedBack: alreadyPaidOut > 0 ? 0 : paidInByThem,
+        // THE COMMENT THAT USED TO SIT HERE SAID THE OPPOSITE — "a fee is only
+        // ever taken from a payout and they never had one" — and it was
+        // simply out of date, written before §2.30 and never revisited. It was
+        // believed over the code, the subtraction was deleted, and for one
+        // commit this screen told the organizer he owed a stopped member her
+        // whole paid-in while her own portal told her `paid in − fee`. Two
+        // screens, two answers, about money a real person is owed.
+        //
+        // Through the shared rule now, so they cannot drift again.
+        owedBack:
+          alreadyPaidOut > 0
+            ? 0
+            : recoverableForUndrawn({
+                paidIn: paidInByThem,
+                weeklyAmount: p.weeklyAmount,
+                weeksCommitted: p.weeksCommitted,
+                unitAmount: cycle.unitAmount,
+                feePercent: cycle.feePercent,
+              }).amount,
 
         reason: closeReasonText(
           isCloseReason(p.closeReason) ? p.closeReason : "OTHER",
