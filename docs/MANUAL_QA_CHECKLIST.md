@@ -94,6 +94,42 @@ dot passed every mechanical check above:
 
 # ADMIN SCREENS
 
+## The admin on a phone — run on a REAL phone, not a resized window
+
+The rail is `hidden md:flex`. For the whole life of the admin shell there was nothing
+below 768px in its place, so every destination was `display: none` and the organizer —
+who works outside and records payments from his phone — landed on the dashboard and
+could not leave it. The bottom bar and the drawer are what replace it. **These checks
+need a real phone**: the safe area, the keyboard and the thumb are the three things a
+desktop browser at 390px will not tell you the truth about.
+
+- [ ] **The bar is there at all**, fixed to the bottom of every admin screen, with five
+      items: Payments, This week, Collections, Dashboard, More.
+- [ ] **Payments is one tap from anywhere.** From the deepest screen you can reach —
+      `/admin/cycle/close`, a member profile, an archive — one tap lands on the payment
+      screen. This is the whole point.
+- [ ] **Exactly one item is current, always.** On the four, that one is filled navy (white
+      in dark mode). On any other screen it is **More** that is filled — never nothing.
+- [ ] **Dashboard is not always lit.** `/admin` is a prefix of every admin route; only the
+      dashboard itself may show it as current.
+- [ ] **The labels are not cut off** at 390px, and not at 360px either.
+- [ ] **Nothing sits under the home indicator.** On an iPhone, the labels clear it.
+- [ ] **More opens the whole rail** — all nineteen destinations, in their groups, and it
+      scrolls to the last one.
+- [ ] **Every row in the drawer is comfortably tappable** — you should not have to aim.
+- [ ] **The drawer closes** on the Close button, on the dim area above it, and on tapping a
+      destination. It never stays open over the page it just opened.
+- [ ] **The page behind does not scroll** while the drawer is open.
+- [ ] **The waiting count shows on More** when a message is queued, and the number matches
+      what `/admin/messages` says.
+- [ ] **The last row of every page is reachable** — nothing is trapped under the bar.
+      Worst case: the record-payment button at the foot of a long member list.
+- [ ] **Recording a payment works end to end on the phone**, keyboard up, with the amount
+      field visible while typing. Use a real member and a real amount you were going to
+      record anyway — never test money on a real member.
+- [ ] **The desktop rail is unchanged.** Open the admin on the laptop: the sidebar is where
+      it was, no bottom bar, no extra padding at the foot of the page.
+
 ## Sign-in — `/admin/login`
 
 - [ ] The Sign in button is disabled until both fields have content.

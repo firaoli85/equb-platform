@@ -18,7 +18,7 @@ import { usePathname } from "next/navigation";
 // foot of the rail, because settings are somewhere you GO, not somewhere you
 // work (2.1: this rail is the working surface).
 
-type NavLink = {
+export type NavLink = {
   label: string;
   href: string;
   exact?: boolean;
@@ -85,6 +85,24 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+/** Every destination in the rail, flat. */
+export const ALL_NAV_LINKS: NavLink[] = NAV_GROUPS.flatMap((g) => g.links);
+
+/**
+ * The rail's own entry for a route — label, icon key and `exact` included.
+ *
+ * THE PHONE'S BOTTOM BAR LOOKS ITS TABS UP THROUGH HERE rather than restating
+ * them, so a label edited above changes in both places and neither can drift.
+ * A route that is not in the rail throws: the bar may only point at
+ * destinations the rail already carries, and a typo should be loud in
+ * development rather than a tab that quietly goes nowhere.
+ */
+export function navLink(href: string): NavLink {
+  const found = ALL_NAV_LINKS.find((l) => l.href === href);
+  if (!found) throw new Error(`${href} is not a destination in NAV_GROUPS`);
+  return found;
+}
 
 export const SETTINGS_LINKS: NavLink[] = [
   {
@@ -342,7 +360,12 @@ export function AdminSidebar({
                   aria-current={active ? "page" : undefined}
                   // Three signals for the active row, never colour alone
                   // (UI_STANDARDS rule 9): surface, font weight, icon colour.
-                  className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] ${
+                  //
+                  // py-3 BELOW md, py-2 above: this same list is now the phone
+                  // drawer, where a 36px row is a miss waiting to happen. 12px
+                  // of padding either side of a 20px line clears the 44px touch
+                  // floor; the mouse-driven rail keeps its tighter rhythm.
+                  className={`flex items-center gap-2.5 rounded-lg px-3 py-3 text-sm transition-[background-color,color,transform] duration-150 ease-out active:scale-[0.98] md:py-2 ${
                     active
                       ? "bg-indigo-50 dark:bg-indigo-950/50 font-bold text-indigo-700 dark:text-indigo-300"
                       : "font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5"

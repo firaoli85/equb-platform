@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AccountMenu } from "@/components/admin/account-menu";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
+import { AdminTabBar } from "@/components/admin/admin-tab-bar";
 import { PresentationToggle } from "@/components/presentation-toggle";
 import { requireAdmin } from "@/lib/auth";
 import { countQueuedMessages } from "@/lib/messaging-engine";
@@ -75,8 +76,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
       {/* Content */}
       <main className="md:pl-56">
-        <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">{children}</div>
+        {/* pb-6 clears the bottom bar so the last row of any page is never
+            trapped under it — the member portal does the same (pb-24). */}
+        <div className="mx-auto max-w-6xl px-4 pt-6 pb-28 md:px-8 md:py-8">{children}</div>
       </main>
+
+      {/* THE MOBILE HALF. Below md the rail above is display:none, and this is
+          what replaces it: four field destinations plus a drawer holding the
+          same AdminSidebar. Desktop is untouched. */}
+      <AdminTabBar queuedCount={queuedCount} />
     </div>
   );
 }
