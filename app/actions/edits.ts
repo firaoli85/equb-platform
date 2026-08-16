@@ -11,6 +11,11 @@ import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { refuseIfCycleClosed } from "@/lib/cycle-guard";
+import {
+  planWeekClear,
+  weekClearSummary,
+  type ClearableEvent,
+} from "@/lib/week-clear";
 // The week-date bound is enforced HERE as well as in the picker (rule 11:
 // "a bound that lives in the UI is a hint"). See updateWeek.
 import {
@@ -56,6 +61,7 @@ import { weekInWindowRefusal, windowChangeRefusal } from "@/lib/participation-wi
 import { duplicatePhoneRefusal, personRemovalBlockers } from "@/lib/person-record";
 import { typedConfirmationRefusal } from "@/lib/typed-confirmation";
 import {
+  isSettlementReceipt,
   settlementReceiptAmountRefusal,
   settlementReceiptDeleteRefusal,
 } from "@/lib/settlement-receipt";
@@ -2272,3 +2278,145 @@ export async function updateCycle(input: {
 
 // listAuditLog moved to app/actions/audit.ts — reading the record is not a
 // job for the file that writes it, and the reader now pages and filters.
+
+// ————————————————— CLEAR A WEEK'S RECEIPTS (single or several) —————————————————
+//
+// Undo removes ONE receipt. A week paid in ten partials therefore took ten
+// presses, and the organizer tests heavily — at ten clicks a correction gets
+// abandoned half way and the record drifts, which is worse than the mistake.
+//
+// EVERYTHING GOES THROUGH rebuild.ts, exactly as a single undo and an un-defer
+// do (§5.10: one recompute, so adding and removing money can never disagree
+// about lateness). There is no status to set: LATE / pending / part-paid are
+// DERIVED from money and the calendar on every read (2.14), so deleting the
+// receipts and replaying is the whole of it. A hand-set status is not merely
+// forbidden here — there is no column to write it to.
+//
+// NO NEGATIVE MONEY, EVER. This deletes receipts. It never writes a
+// compensating negative row, because the equb has no such thing.
+
+/** Load a participation's receipts with where their money currently lands. */
+async function clearableEvents(
+  tx: Prisma.TransactionClient,
+  participationId: string,
+): Promise<ClearableEvent[]> {
+  const events = await tx.paymentEvent.findMany({
+    where: { participationId },
+    orderBy: [{ receivedAt: "asc" }, { createdAt: "asc" }],
+    include: {
+      allocations: { include: { payment: { include: { week: { select: { weekNumber: true } } } } } },
+    },
+  });
+  return events.map((e) => ({
+    eventId: e.id,
+    amount: e.amount,
+    lands: e.allocations.map((a) => ({
+      weekNumber: a.payment.week.weekNumber,
+      applied: a.amount,
+    })),
+    isPinned: isSettlementReceipt(e),
+  }));
+}
+
+/**
+ * What clearing these weeks WOULD do — reads only, writes nothing (2.15).
+ *
+ * The organizer reads this before he presses. It is computed by the same pure
+ * function the commit uses, so the sentence he approves is the outcome he gets.
+ */
+export async function previewWeekClear(input: {
+  participationId: string;
+  weekNumbers: number[];
+}) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const events = await clearableEvents(prisma, input.participationId);
+    const plan = planWeekClear({ events, weekNumbers: input.weekNumbers });
+    return {
+      ok: true as const,
+      data: { ...plan, summary: weekClearSummary(plan, formatMoney) },
+    };
+  } catch (e) {
+    console.error("previewWeekClear failed:", e);
+    return { ok: false as const, error: `Could not read those weeks. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * Delete every receipt whose money lands on these weeks, then recalculate.
+ *
+ * ONE TRANSACTION, ONE REBUILD, however many weeks were ticked: the replay is
+ * oldest-first over what remains, so rebuilding once per week would be both
+ * slower and wrong about the intermediate states.
+ */
+export async function clearWeeks(input: { participationId: string; weekNumbers: number[] }) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    if (input.weekNumbers.length === 0) {
+      return { ok: false as const, error: "Pick at least one week to clear." };
+    }
+    const data = await serializableTransaction(async (tx) => {
+      await refuseIfCycleClosed(tx, { participationId: input.participationId });
+
+      const participation = await tx.participation.findUniqueOrThrow({
+        where: { id: input.participationId },
+        include: { person: { select: { nameEnglishFirst: true } } },
+      });
+
+      const events = await clearableEvents(tx, input.participationId);
+      const plan = planWeekClear({ events, weekNumbers: input.weekNumbers });
+      if (plan.eventIds.length === 0) {
+        return { ...plan, removed: 0, name: participation.person.nameEnglishFirst };
+      }
+
+      // TOLERATES A RECEIPT THAT IS ALREADY GONE — deliberately deleteMany
+      // rather than the single undo's findUniqueOrThrow, which is what made an
+      // undo throw "No record was found" when the row had been removed in
+      // another tab. A bulk correction is exactly where two people are most
+      // likely to be clearing at once, and "some of it was already done" is not
+      // an error, it is the desired end state.
+      const removed = await tx.paymentAllocation.deleteMany({
+        where: { eventId: { in: plan.eventIds } },
+      });
+      void removed;
+      const deleted = await tx.paymentEvent.deleteMany({
+        where: { id: { in: plan.eventIds }, participationId: input.participationId },
+      });
+
+      // THE SAME RECOMPUTE AS EVERY OTHER MONEY EDIT. Week aggregates,
+      // allocations and the un-defer clear all come from here.
+      await rebuildParticipationPayments(tx, input.participationId);
+
+      await logAudit(tx, {
+        entity: "Participation",
+        entityId: input.participationId,
+        action: "update",
+        summary:
+          `Cleared week${input.weekNumbers.length === 1 ? "" : "s"} ` +
+          `${[...input.weekNumbers].sort((a, b) => a - b).join(", ")} for ` +
+          `${participation.person.nameEnglishFirst}: ${deleted.count} receipt(s) deleted, ` +
+          `${formatMoney(plan.totalRemoved)} removed; weeks recalculated` +
+          (plan.weeksAffectedBeyondSelection.length > 0
+            ? `. Week ${plan.weeksAffectedBeyondSelection.join(", ")} also lost money (a receipt spanned them)`
+            : "") +
+          (plan.skippedPinned.length > 0
+            ? `. ${plan.skippedPinned.length} payout settlement(s) left in place`
+            : ""),
+        before: {
+          weekNumbers: input.weekNumbers,
+          eventIds: plan.eventIds,
+          totalRemoved: plan.totalRemoved,
+        },
+      });
+
+      return { ...plan, removed: deleted.count, name: participation.person.nameEnglishFirst };
+    });
+    revalidateAdmin();
+    return { ok: true as const, data };
+  } catch (e) {
+    console.error("clearWeeks failed:", e);
+    return { ok: false as const, error: `Could not clear. ${errorMessage(e)}` };
+  }
+}

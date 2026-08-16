@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { deletePaymentEvent, setWeekDeferral, setWeekLate, setWeekNote } from "@/app/actions/edits";
+import {
+  clearWeeks,
+  deletePaymentEvent,
+  previewWeekClear,
+  setWeekDeferral,
+  setWeekLate,
+  setWeekNote,
+} from "@/app/actions/edits";
 import type { ManualLateAdvice } from "@/lib/derived";
 import { getCatchUpWeeks, getCellDetail } from "@/app/actions/payments-view";
 import { PaymentEntry } from "@/components/admin/payment-entry";
@@ -187,6 +194,62 @@ export function WeekActionPanel({
    * the button that had just been pressed (UI_STANDARDS 6b). Reporting here is
    * the only shape in which the three cannot drift apart.
    */
+  /**
+   * Clear every receipt on this week, after showing exactly what that does.
+   *
+   * THE PREVIEW IS FETCHED FIRST, and the dialog is not opened until it comes
+   * back, because the one thing he has to know cannot be worked out on this
+   * screen: a receipt that covered more than one week takes the other weeks
+   * with it, and the panel only knows about this one. The server computes the
+   * plan with the same pure function the commit uses, so the sentence he
+   * approves is the outcome he gets (2.15).
+   */
+  async function askClearWeek() {
+    setSave({ slot: "receipt", state: { kind: "saving" } });
+    const preview = await previewWeekClear({
+      participationId: target.participationId,
+      weekNumbers: [target.weekNumber],
+    });
+    if (!preview.ok) {
+      setSave({
+        slot: "receipt",
+        state: { kind: "err", message: `Could not check the week: ${preview.error}` },
+      });
+      return;
+    }
+    setSave({ slot: "receipt", state: { kind: "idle" } });
+    const plan = preview.data;
+    ask(
+      {
+        title: `Clear week ${target.weekNumber} for ${target.memberName}?`,
+        body: (
+          <>
+            <p>{plan.summary}</p>
+            <p>
+              Nothing is written as a negative — the receipts are deleted, and the week is then
+              worked out again from what is left and the calendar. If its window has closed it
+              will read late.
+            </p>
+          </>
+        ),
+        confirmLabel:
+          plan.eventIds.length === 0
+            ? "Close"
+            : `Delete ${plan.eventIds.length} receipt${plan.eventIds.length === 1 ? "" : "s"}`,
+      },
+      () =>
+        clearWeeks({
+          participationId: target.participationId,
+          weekNumbers: [target.weekNumber],
+        }),
+      {
+        slot: "receipt",
+        okText: `Week ${target.weekNumber} cleared — ${formatMoney(plan.totalRemoved)} removed and their weeks recalculated.`,
+        refusalLabel: `Week ${target.weekNumber} was NOT cleared`,
+      },
+    );
+  }
+
   function ask(
     spec: ConfirmSpec,
     run: () => Promise<{ ok: boolean; error?: string }>,
@@ -569,6 +632,23 @@ export function WeekActionPanel({
               </li>
             ))}
           </ul>
+        )}
+
+        {/* ONE PRESS FOR THE WHOLE WEEK.
+            Two receipts is two Undos; ten partials is ten, and at ten a
+            correction gets abandoned half way, which leaves the record worse
+            than the mistake did. It appears only when there is more than one
+            receipt — with a single receipt, Undo above already IS this button,
+            and two controls doing one thing is the confusion 2.19 rules out. */}
+        {detail !== null && detail.receipts.length > 1 && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void askClearWeek()}
+            className={buttonCls.danger + " mt-2 !px-2.5 !py-1 !text-xs"}
+          >
+            Clear all {detail.receipts.length} receipts on week {target.weekNumber}
+          </button>
         )}
         {/* UNDER THE UNDO BUTTONS, not up in the header. The payment grid sits
             between the two, so a receipt undone from down here would otherwise
