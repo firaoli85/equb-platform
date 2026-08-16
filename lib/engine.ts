@@ -110,7 +110,9 @@ export function weekLabel(w: {
  * never forgiven, because `amountDeferred` keeps its money and rule 4 resolves
  * it at close. A skipped week was owed by nobody.
  */
-export function weekCountsNow(w: {
+// NOT EXPORTED. Its only caller is memberTruth, below; it was exported for a
+// surface that migrated to the label pair instead (phase 3).
+function weekCountsNow(w: {
   deferred: boolean;
   skipped: boolean;
   windowClosed: boolean;
@@ -565,9 +567,3 @@ export function cashExpected(truths: readonly MemberTruth[]): number {
   return truths.reduce((sum, t) => sum + t.amountOutstanding, 0);
 }
 
-/** The single-label view, for surfaces not yet migrated. Display only. */
-export function legacyStatus(w: WeekTruth): PaymentStatusValue {
-  if (w.label === "PARTIAL_LATE") return "LATE";
-  if (w.label === "UPCOMING") return "UNPAID";
-  return w.label;
-}
