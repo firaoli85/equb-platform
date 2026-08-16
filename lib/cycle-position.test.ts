@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   cashOnHand,
@@ -248,13 +250,17 @@ describe("positionVerdict — never just a number", () => {
     paidEarly: 50_000,
   });
 
-  it("SURPLUS: says how much more, and what is left that is his to use", () => {
+  it("SURPLUS: says how much more, and never calls the remainder his", () => {
     const v = positionVerdict({ cash, actual: cash.shouldBeHolding + 230_000, formatMoney });
     expect(v.kind).toBe("surplus");
     expect(v.difference).toBe(230_000);
     expect(v.sentence).toContain("$2,300 MORE than the books say");
-    expect(v.sentence).toContain("$2,000 you are holding for other people");
-    expect(v.sentence).toContain("$8,300 is yours to use");
+    expect(v.sentence).toContain("$2,000 is already owed to particular people");
+    expect(v.sentence).toContain("$8,300 is not promised to anyone yet");
+    // THE WHOLE POINT: the remainder is never described as his. He read
+    // "yours to use" as money he could spend, and it is equb money held in
+    // trust (2.18).
+    expect(v.sentence).toContain("not yours to spend");
   });
 
   it("SHORT: says by how much, what it is against, and what he must do", () => {
@@ -268,13 +274,24 @@ describe("positionVerdict — never just a number", () => {
     expect(v.sentence).toContain("before the next payout");
   });
 
-  it("a gap in the books is reported even when he can still cover everything", () => {
+  it("a gap in the books LEADS, and is never glossed by what is left over", () => {
     const v = positionVerdict({ cash, actual: cash.shouldBeHolding - 40_000, formatMoney });
     expect(v.kind).toBe("covered");
     expect(v.sentence).toContain("$400 LESS than the books say");
-    // Two different questions, both answered.
-    expect(v.sentence).toContain("can still cover everything");
+    // The gap is named as MISSING money that needs explaining, not as an
+    // aside after a reassurance.
+    expect(v.sentence).toContain("collected and not paid out");
+    expect(v.sentence).toContain("missing");
     expect(v.sentence).toContain("not recorded");
+    // Two different questions, both still answered.
+    expect(v.sentence).toContain("can still cover what you owe today");
+
+    // ORDER IS THE FIX. The shortfall must come BEFORE the remainder — the
+    // old sentence led with "You can still cover everything", so the two true
+    // halves together read as reassurance while the loss sat unexplained.
+    expect(v.sentence.indexOf("missing")).toBeLessThan(
+      v.sentence.indexOf("not promised to anyone yet"),
+    );
   });
 
   it("EXACT: the books and the cash agree", () => {
@@ -486,5 +503,42 @@ describe("collectionSentence — the dashboard's register", () => {
   it("says nothing about stopped members when nobody has stopped", () => {
     const p = collectionPosition({ series: [week(1, 100_000, 100_000, true)], owedBy: [], aheadBy: [] });
     expect(collectionSentence(p, formatMoney)).not.toContain("stopped");
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// A MEMBER WHO WAS NEVER DRAWN GETS EVERYTHING BACK
+//
+// app/actions/cycle-position.ts subtracted `feeOnReturn` from a stopped
+// member's returned money while the comment immediately above it said "No fee
+// is withheld — a fee is only ever taken from a payout and they never had
+// one." The comment was the half that was right.
+//
+// On a $500-a-week, 20-week commitment the subtraction quietly moved $300 of
+// the member's OWN money onto the organizer's side of the page — money she
+// paid in and never received a payout against. 2.18 says the opposite: the
+// organizer absorbs, the member is made whole.
+//
+// This is a source guard rather than a behavioural test because the figure is
+// assembled inside a server action against the live database. It pins the one
+// thing that went wrong: the fee is not in that expression.
+// ————————————————————————————————————————————————————————————————
+
+describe("a stopped member's returned money carries no fee", () => {
+  const src = readFileSync(
+    join(import.meta.dirname, "..", "app", "actions", "cycle-position.ts"),
+    "utf8",
+  );
+  const owedBack = src.slice(src.indexOf("owedBack:"), src.indexOf("reason: closeReasonText"));
+
+  it("returns every cent they paid in, with nothing taken out", () => {
+    expect(owedBack).toContain("paidInByThem");
+    expect(owedBack).not.toContain("feeOnReturn");
+  });
+
+  it("still returns nothing to a member who was already paid out", () => {
+    // The other half of the rule: they HAD a payout, so there is no money of
+    // theirs being held. Removing the fee must not turn this into a refund.
+    expect(owedBack).toContain("alreadyPaidOut > 0");
   });
 });

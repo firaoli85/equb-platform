@@ -411,6 +411,27 @@ export function positionVerdict(input: {
     };
   }
 
+  // THE ORGANIZER IS A CUSTODIAN, NEVER AN OWNER.
+  //
+  // All three of these sentences used to end "…is yours to use". He read that
+  // as money he could spend, which is the exact opposite of what it is: every
+  // cent on this page is equb money held in trust and owed out (2.18). The
+  // figure itself is real and worth showing — it is the part not promised to
+  // a named person yet — but that is not the same as his, and the sentence
+  // now says so instead of leaving him to supply the difference.
+  //
+  // AND THE SHORTFALL IS NEVER GLOSSED. The old order put reassurance first:
+  // "You can still cover everything" led, the left-over figure followed, and
+  // the gap arrived last as an aside. Two true sentences in that order read as
+  // "you are fine" while an unexplained loss sat above them. The gap now leads
+  // every variant that has one, and what is left over comes after it — a fact
+  // about the remainder, not the verdict on the page.
+  //
+  // "committed" and "uncommitted" are deliberately absent. They are banned by
+  // lib/cycle-position.test.ts along with the rest of the accounting register,
+  // because every word on that list made him stop and translate.
+  const custodyTail = `It is still equb money, not yours to spend.`;
+
   if (difference === 0) {
     return {
       kind: "exact",
@@ -418,8 +439,8 @@ export function positionVerdict(input: {
       coverage,
       shortBy: 0,
       sentence:
-        `${versusBooks} After the ${money(holdingForOthers)} you are holding for other ` +
-        `people, ${money(coverage)} is yours to use.`,
+        `${versusBooks} Of that, ${money(holdingForOthers)} is already owed to specific ` +
+        `people, and ${money(coverage)} is not promised to anyone yet. ${custodyTail}`,
     };
   }
 
@@ -430,9 +451,10 @@ export function positionVerdict(input: {
       coverage,
       shortBy: 0,
       sentence:
-        `${versusBooks} After the ${money(holdingForOthers)} you are holding for other ` +
-        `people, ${money(coverage)} is yours to use. Worth finding where the extra came ` +
-        `from — a payment recorded twice, or one handed out and not marked.`,
+        `${versusBooks} That extra needs explaining before it is trusted: a payment ` +
+        `recorded twice, or one handed out and not marked. Of what you hold, ` +
+        `${money(holdingForOthers)} is already owed to particular people and ` +
+        `${money(coverage)} is not promised to anyone yet. ${custodyTail}`,
     };
   }
 
@@ -442,10 +464,11 @@ export function positionVerdict(input: {
     coverage,
     shortBy: 0,
     sentence:
-      `${versusBooks} You can still cover everything — after the ` +
-      `${money(holdingForOthers)} you are holding for other people, ${money(coverage)} is ` +
-      `yours to use. The gap is worth explaining: a payment not recorded, or a payout ` +
-      `handed over without being marked.`,
+      `${versusBooks} That money was collected and not paid out, so it is missing and ` +
+      `needs explaining: a payment not recorded, or a payout handed over without being ` +
+      `marked. You can still cover what you owe today. Of what you hold, ` +
+      `${money(holdingForOthers)} is already owed to particular people and ` +
+      `${money(coverage)} is not promised to anyone yet. ${custodyTail}`,
   };
 }
 

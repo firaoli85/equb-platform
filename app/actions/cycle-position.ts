@@ -40,7 +40,6 @@ import {
   isCloseReason,
   weeksLeavingExpectation,
 } from "@/lib/participation-close";
-import { feeOnReturn } from "@/lib/final-position";
 import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
@@ -263,21 +262,19 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         // not left his hands, so there is nothing yet to cover.
         shortfallToCover: alreadyPaidOut > 0 ? amountLeaving : 0,
         // Money he is HOLDING that is theirs: what a member who was never
-        // drawn paid in. No fee is withheld — a fee is only ever taken from a
-        // payout and they never had one (lib/final-position.ts).
-        owedBack:
-          alreadyPaidOut > 0
-            ? 0
-            : Math.max(
-                0,
-                paidInByThem -
-                  feeOnReturn({
-                    weeklyAmount: p.weeklyAmount,
-                    weeksCommitted: p.weeksCommitted,
-                    unitAmount: cycle.unitAmount,
-                    feePercent: cycle.feePercent,
-                  }),
-              ),
+        // drawn paid in, IN FULL.
+        //
+        // NO FEE IS WITHHELD. A fee is only ever taken from a payout, and a
+        // member who was never drawn never had one — there is nothing for a
+        // fee to come out of. 2.18 puts the same rule the other way round:
+        // the organizer absorbs, the member is made whole.
+        //
+        // The code here used to subtract `feeOnReturn` while this very comment
+        // said it did not, and the comment was the half that was right. On a
+        // $500-a-week, 20-week commitment that silently moved $300 of a
+        // stopped member's own money onto the organizer's side of the page —
+        // money she had paid in and never received a payout against.
+        owedBack: alreadyPaidOut > 0 ? 0 : paidInByThem,
 
         reason: closeReasonText(
           isCloseReason(p.closeReason) ? p.closeReason : "OTHER",
