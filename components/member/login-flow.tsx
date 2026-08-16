@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from "firebase/auth";
 import { lookupMemberByPhone } from "@/app/actions/member";
+import { LEGACY_PIN_MAX, NEW_PIN_LENGTH } from "@/lib/pin-constants";
 import {
   requestWhatsAppCode,
   setMyPin,
@@ -80,8 +81,16 @@ const PAD_ROWS = [
   ["", "0", "back"],
 ] as const;
 
-const MAX_PIN = 8;
-const MIN_PIN = 4;
+// TWO LENGTHS, TWO MOMENTS — the reasoning is in lib/pin-constants.ts.
+//
+//   LOGIN pad → up to LEGACY_PIN_MAX (8). Members set 4-to-8-digit PINs while
+//               that was allowed, nothing stored says who has which, and a pad
+//               that stopped at 4 would make an existing 6-digit PIN
+//               physically untypeable. Capping the login pad is how you lock
+//               someone out of their own money.
+//   SET pad   → exactly NEW_PIN_LENGTH (4), stated up front by the slots.
+const MAX_PIN = LEGACY_PIN_MAX;
+const MIN_PIN = NEW_PIN_LENGTH;
 
 function ErrorMsg({ msg }: { msg: string }) {
   return (
@@ -98,10 +107,17 @@ function DigitPad({
   value,
   onChange,
   disabled,
+  /**
+   * Keys go dead at this length. Passed per pad rather than read from a
+   * constant, because the two pads genuinely differ: signing in allows an
+   * existing long PIN, setting one does not.
+   */
+  max,
 }: {
   value: string;
   onChange: (next: string) => void;
   disabled: boolean;
+  max: number;
 }) {
   return (
     <div className="grid grid-cols-3 gap-2.5">
@@ -109,7 +125,7 @@ function DigitPad({
         if (key === "") return <div key={idx} />;
         const isBackspace = key === "back";
         const keyDisabled =
-          disabled || (isBackspace ? value.length === 0 : value.length >= MAX_PIN);
+          disabled || (isBackspace ? value.length === 0 : value.length >= max);
         return (
           <button
             key={idx}
@@ -140,11 +156,19 @@ function DigitPad({
   );
 }
 
-function PinDots({ length }: { length: number }) {
-  // Exactly the digits entered: 4 slots by default (a 4-digit PIN reads as
-  // COMPLETE), growing only when a 5th+ digit is actually typed — never a
-  // phantom empty slot trailing the input.
-  const slots = Math.max(MIN_PIN, Math.min(length, MAX_PIN));
+function PinDots({ length, fixed }: { length: number; fixed?: number }) {
+  // TWO BEHAVIOURS, one per moment.
+  //
+  // FIXED (setting a PIN): exactly `fixed` slots, always. The target length is
+  // known, and stating it is the whole point — four empty slots say "four
+  // digits" before a key is pressed, so nobody discovers the rule by being
+  // refused after typing six.
+  //
+  // ADAPTIVE (signing in): the length is NOT known — it is whatever they
+  // chose, possibly before the four-digit rule existed — so the pad must not
+  // promise a count. It shows the digits entered, four minimum, growing to
+  // eight. A trailing empty slot here would be a guess presented as a fact.
+  const slots = fixed ?? Math.max(MIN_PIN, Math.min(length, MAX_PIN));
   return (
     <div className="flex justify-center gap-4" aria-label={`${length} digits entered`}>
       {Array.from({ length: slots }).map((_, i) => (
@@ -843,6 +867,7 @@ export function LoginFlow() {
                 setPinError(null);
               }}
               disabled={verifying}
+              max={MAX_PIN}
             />
 
             <button
@@ -905,7 +930,7 @@ export function LoginFlow() {
                     : "This PIN is your phone's last 4 digits — anyone who knows your number could use it. Set your own PIN so only you can get in."}
               </p>
               <div className="pt-2">
-                <PinDots length={newPin.length} />
+                <PinDots length={newPin.length} fixed={NEW_PIN_LENGTH} />
               </div>
             </div>
 
@@ -913,12 +938,13 @@ export function LoginFlow() {
               value={newPin}
               onChange={(next) => {
                 if (savingPin) return;
-                setNewPin(next.slice(0, MAX_PIN));
+                setNewPin(next.slice(0, NEW_PIN_LENGTH));
                 // Typing again retracts a refusal: it was about digits that
                 // are no longer the ones on screen.
                 setPinSave({ kind: "idle" });
               }}
               disabled={savingPin}
+              max={NEW_PIN_LENGTH}
             />
 
             {/* THE SAVE. `SaveButton` owns all four beats and renders its own

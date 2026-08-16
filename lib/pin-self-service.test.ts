@@ -89,7 +89,7 @@ beforeEach(async () => {
 describe("Door 1 — change with the current PIN proved", () => {
   it("the correct current PIN changes it: new hash stored, counters reset, audited", async () => {
     const { changeMyPin } = await actions();
-    const result = await changeMyPin({ currentPin: "240519", newPin: "873105" });
+    const result = await changeMyPin({ currentPin: "240519", newPin: "8731" });
     expect(result.ok).toBe(true);
     expect(personUpdate).toHaveBeenCalledTimes(1);
     const args = personUpdate.mock.calls[0][0] as {
@@ -109,7 +109,7 @@ describe("Door 1 — change with the current PIN proved", () => {
 
   it("a wrong current PIN refuses honestly — and moves NO lockout counter", async () => {
     const { changeMyPin } = await actions();
-    const result = await changeMyPin({ currentPin: "999999", newPin: "873105" });
+    const result = await changeMyPin({ currentPin: "999999", newPin: "8731" });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected refusal");
     expect(result.error).toContain("isn't your current PIN");
@@ -123,7 +123,7 @@ describe("Door 1 — change with the current PIN proved", () => {
   it("an ACTIVE lock is honoured — a locked PIN cannot be exercised here either", async () => {
     lockedUntil = new Date(Date.now() + 10 * 60_000);
     const { changeMyPin } = await actions();
-    const result = await changeMyPin({ currentPin: "240519", newPin: "873105" });
+    const result = await changeMyPin({ currentPin: "240519", newPin: "8731" });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected refusal");
     expect(result.error).toContain("locked");
@@ -134,7 +134,7 @@ describe("Door 1 — change with the current PIN proved", () => {
     storedHash = null;
     const { changeMyPin } = await actions();
     // Even the correct default (last 4 of their number) does not open this door.
-    const result = await changeMyPin({ currentPin: "0187", newPin: "873105" });
+    const result = await changeMyPin({ currentPin: "0187", newPin: "8731" });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected refusal");
     expect(result.error).toContain("asked to set one the next time you sign in");
@@ -152,13 +152,13 @@ describe("one validator, not a copy", () => {
     expect(tooShortSet.ok).toBe(false);
     if (tooShortChange.ok || tooShortSet.ok) throw new Error("expected refusals");
     expect(tooShortChange.error).toBe(tooShortSet.error);
-    expect(tooShortChange.error).toBe("PIN must be 4 to 8 digits.");
+    expect(tooShortChange.error).toBe("Your PIN must be exactly 4 digits.");
     // Nine digits — both refuse; letters — both refuse.
-    expect((await changeMyPin({ currentPin: "240519", newPin: "123456789" })).ok).toBe(false);
+    expect((await changeMyPin({ currentPin: "240519", newPin: "12345" })).ok).toBe(false);
     expect((await setMyPin({ pin: "12ab" })).ok).toBe(false);
   });
 
-  it("both actions call isValidPinFormat — the rule lives once, in lib/pin.ts", () => {
+  it("both actions call isValidNewPin — the rule lives once, in lib/pin.ts", () => {
     const src = readFileSync(join(import.meta.dirname, "..", "app", "actions", "auth.ts"), "utf8");
     const changeBody = src.slice(
       src.indexOf("export async function changeMyPin"),
@@ -168,8 +168,8 @@ describe("one validator, not a copy", () => {
       src.indexOf("export async function setMyPin"),
       src.indexOf("export async function changeMyPin"),
     );
-    expect(changeBody).toContain("isValidPinFormat(");
-    expect(setBody).toContain("isValidPinFormat(");
+    expect(changeBody).toContain("isValidNewPin(");
+    expect(setBody).toContain("isValidNewPin(");
     // Neither carries its own copy of the rule.
     expect(changeBody).not.toMatch(/\\d\{4,8\}/);
     expect(setBody).not.toMatch(/\\d\{4,8\}/);
@@ -180,11 +180,11 @@ describe("Door 2 — the code IS the authorization", () => {
   it("a refused code leaves no session, and without a session no PIN write is reachable", async () => {
     sessionSub = null; // the state a refused code leaves the browser in
     const { setMyPin, changeMyPin } = await actions();
-    const set = await setMyPin({ pin: "873105" });
+    const set = await setMyPin({ pin: "8731" });
     expect(set.ok).toBe(false);
     if (set.ok) throw new Error("expected refusal");
     expect(set.error).toBe("Not signed in.");
-    const change = await changeMyPin({ currentPin: "240519", newPin: "873105" });
+    const change = await changeMyPin({ currentPin: "240519", newPin: "8731" });
     expect(change.ok).toBe(false);
     expect(personUpdate).not.toHaveBeenCalled();
   });
@@ -241,7 +241,7 @@ describe("GUARD — no PIN value can reach a log", () => {
 describe("a PIN write signs out every OTHER session, through the one mechanism", () => {
   it("Door 1 (changeMyPin): other sessions revoked, THIS one spared, count audited", async () => {
     const { changeMyPin } = await actions();
-    const result = await changeMyPin({ currentPin: "240519", newPin: "873105" });
+    const result = await changeMyPin({ currentPin: "240519", newPin: "8731" });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
     expect(revokeCalls).toHaveBeenCalledTimes(1);
@@ -260,7 +260,7 @@ describe("a PIN write signs out every OTHER session, through the one mechanism",
 
   it("Doors 2 and 3 (setMyPin — forgot-PIN reset AND forced first-login setup): same rule, same mechanism", async () => {
     const { setMyPin } = await actions();
-    const result = await setMyPin({ pin: "873105" });
+    const result = await setMyPin({ pin: "8731" });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
     expect(revokeCalls).toHaveBeenCalledTimes(1);
@@ -275,7 +275,7 @@ describe("a PIN write signs out every OTHER session, through the one mechanism",
 
   it("a refusal revokes NOTHING — wrong current PIN leaves every session alone", async () => {
     const { changeMyPin } = await actions();
-    const result = await changeMyPin({ currentPin: "999999", newPin: "873105" });
+    const result = await changeMyPin({ currentPin: "999999", newPin: "8731" });
     expect(result.ok).toBe(false);
     expect(revokeCalls).not.toHaveBeenCalled();
   });

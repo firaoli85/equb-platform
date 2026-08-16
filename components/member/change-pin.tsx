@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { changeMyPin } from "@/app/actions/auth";
+import { LEGACY_PIN_MAX, NEW_PIN_LENGTH } from "@/lib/pin-constants";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 
 // CHANGE MY PIN — Door 1 of PIN self-service, in the member's Account area.
@@ -31,8 +32,21 @@ export function ChangePin() {
   const [confirmPin, setConfirmPin] = useState("");
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
 
-  const digits = (raw: string) => raw.replace(/\D/g, "").slice(0, 8);
-  const complete = currentPin.length >= 4 && newPin.length >= 4 && confirmPin.length >= 4;
+  // THE SPLIT RUNS THROUGH THIS ONE FORM.
+  //
+  // "Current PIN" is an EXISTING credential and may be four to eight digits —
+  // it was set while that range was allowed, and nothing stored says which
+  // length any member picked. Capping this field at four would make a member
+  // with a six-digit PIN unable to type it, so they could never reach the
+  // screen that would give them a four-digit one.
+  //
+  // "New PIN" and its confirmation are exactly four. That is the standard now.
+  const existingDigits = (raw: string) => raw.replace(/\D/g, "").slice(0, LEGACY_PIN_MAX);
+  const newDigits = (raw: string) => raw.replace(/\D/g, "").slice(0, NEW_PIN_LENGTH);
+  const complete =
+    currentPin.length >= NEW_PIN_LENGTH &&
+    newPin.length === NEW_PIN_LENGTH &&
+    confirmPin.length === NEW_PIN_LENGTH;
 
   async function change() {
     if (newPin !== confirmPin) {
@@ -67,7 +81,7 @@ export function ChangePin() {
     <section className="rounded-2xl bg-white dark:bg-[#141414] border border-gray-100 dark:border-gray-800 shadow-sm px-3.5 py-3.5">
       <h2 className="text-sm font-bold text-gray-900 dark:text-white">Change my PIN</h2>
       <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 text-pretty">
-        Your current PIN first, then the new one twice. 4 to 8 digits.
+        Your current PIN first, then the new one twice. New PINs are 4 digits.
       </p>
 
       <div className="mt-3 space-y-3">
@@ -85,7 +99,7 @@ export function ChangePin() {
             autoComplete="current-password"
             value={currentPin}
             onChange={(e) => {
-              setCurrentPin(digits(e.target.value));
+              setCurrentPin(existingDigits(e.target.value));
               setSave({ kind: "idle" });
             }}
             className={inputCls}
@@ -102,7 +116,7 @@ export function ChangePin() {
             autoComplete="new-password"
             value={newPin}
             onChange={(e) => {
-              setNewPin(digits(e.target.value));
+              setNewPin(newDigits(e.target.value));
               setSave({ kind: "idle" });
             }}
             className={inputCls}
@@ -122,7 +136,7 @@ export function ChangePin() {
             autoComplete="new-password"
             value={confirmPin}
             onChange={(e) => {
-              setConfirmPin(digits(e.target.value));
+              setConfirmPin(newDigits(e.target.value));
               setSave({ kind: "idle" });
             }}
             className={inputCls}
@@ -138,7 +152,7 @@ export function ChangePin() {
         label="Change my PIN"
         savingLabel="Changing…"
         dirty={complete}
-        notDirtyHint="Fill in all three boxes first — at least 4 digits each."
+        notDirtyHint="Fill in all three boxes — your current PIN, then a new 4-digit one twice."
       />
     </section>
   );

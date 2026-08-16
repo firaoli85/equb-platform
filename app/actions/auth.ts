@@ -13,7 +13,7 @@ import { maybeSendLockoutNotice } from "@/lib/messaging-engine";
 import {
   hashPin,
   isPinLocked,
-  isValidPinFormat,
+  isValidNewPin,
   lockoutAfterFailure,
   requiresSecondFactor,
   verifyPin,
@@ -322,8 +322,8 @@ export async function setMyPin(input: { pin: string }) {
   try {
     const claims = await getCurrentUser();
     if (!claims) return { ok: false as const, error: "Not signed in." };
-    if (!isValidPinFormat(input.pin)) {
-      return { ok: false as const, error: "PIN must be 4 to 8 digits." };
+    if (!isValidNewPin(input.pin)) {
+      return { ok: false as const, error: "Your PIN must be exactly 4 digits." };
     }
     const person = await prisma.person.findUnique({ where: { authUserId: claims.sub } });
     if (!person) return { ok: false as const, error: "No member record is linked to this sign-in." };
@@ -357,7 +357,7 @@ export async function setMyPin(input: { pin: string }) {
 /**
  * MEMBER: change their own PIN, proving the current one first (Door 1 of
  * PIN self-service). The signed-in analogue of the forced setup above —
- * SAME validator (isValidPinFormat), SAME hasher (hashPin), SAME comparator
+ * SAME validator (isValidNewPin), SAME hasher (hashPin), SAME comparator
  * (verifyPin), never copies of them.
  *
  * NO LOCKOUT COUNTING HAPPENS HERE (organizer's rule: nothing beyond what
@@ -375,8 +375,8 @@ export async function changeMyPin(input: { currentPin: string; newPin: string })
   try {
     const claims = await getCurrentUser();
     if (!claims) return { ok: false as const, error: "Not signed in." };
-    if (!isValidPinFormat(input.newPin)) {
-      return { ok: false as const, error: "PIN must be 4 to 8 digits." };
+    if (!isValidNewPin(input.newPin)) {
+      return { ok: false as const, error: "Your PIN must be exactly 4 digits." };
     }
     const person = await prisma.person.findUnique({ where: { authUserId: claims.sub } });
     if (!person) return { ok: false as const, error: "No member record is linked to this sign-in." };
@@ -756,8 +756,8 @@ export async function setMemberPin(input: { personId: string; pin: string }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
   try {
-    if (!isValidPinFormat(input.pin)) {
-      return { ok: false as const, error: "PIN must be 4 to 8 digits." };
+    if (!isValidNewPin(input.pin)) {
+      return { ok: false as const, error: "Your PIN must be exactly 4 digits." };
     }
     const person = await prisma.person.findUnique({ where: { id: input.personId } });
     if (!person) return { ok: false as const, error: "Person not found." };

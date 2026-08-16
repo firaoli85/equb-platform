@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { NEW_PIN_LENGTH } from "@/lib/pin-constants";
 import { useState } from "react";
 import {
   resetMemberPin,
@@ -81,7 +82,11 @@ export function PinControls({
     resetSave.kind === "saving";
 
   /** Beat 1: the button is dead until there is something valid to save. */
-  const pinIsValid = /^\d{4,8}$/.test(pin);
+  // SETTING is exactly four digits — the same rule the member-facing screens
+  // apply, so the organizer cannot hand out a PIN of a shape the member could
+  // never choose for themselves. Existing longer PINs keep working at
+  // SIGN-IN; that is the other half of the split (lib/pin-constants.ts).
+  const pinIsValid = pin.length === NEW_PIN_LENGTH && /^\d+$/.test(pin);
 
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
@@ -312,14 +317,14 @@ export function PinControls({
       >
         <label className="block">
           <span className="mb-1 block text-sm font-medium">
-            {pinSet ? "Replace PIN" : "Set PIN"} (4–8 digits)
+            {pinSet ? "Replace PIN" : "Set PIN"} (4 digits)
           </span>
           <input
             type="password"
             inputMode="numeric"
             value={pin}
             onChange={(e) => {
-              setPin(e.target.value);
+              setPin(e.target.value.replace(/D/g, "").slice(0, NEW_PIN_LENGTH));
               setPinSave({ kind: "idle" });
             }}
             className={inputCls}
@@ -333,7 +338,7 @@ export function PinControls({
           savingLabel="Saving…"
           dirty={pinIsValid}
           disabled={busy}
-          notDirtyHint="Type 4 to 8 digits first."
+          notDirtyHint="Type 4 digits first."
         />
         <p className="text-xs text-gray-600 dark:text-gray-400">
           Stored as a bcrypt hash only — the PIN itself is never saved. {pinSet ? "A PIN is currently set." : "No PIN set yet."}

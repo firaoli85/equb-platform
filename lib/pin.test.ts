@@ -1,10 +1,12 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   defaultPinForPhone,
   evaluatePinAttempt,
   hashPin,
   isPinLocked,
-  isValidPinFormat,
+  isValidNewPin,
   lockoutAfterFailure,
   requiresSecondFactor,
   verifyPin,
@@ -14,14 +16,26 @@ import {
 
 const NOW = new Date("2026-08-04T12:00:00.000Z");
 
-describe("isValidPinFormat", () => {
-  it("accepts 4 to 8 digits and nothing else", () => {
-    expect(isValidPinFormat("1234")).toBe(true);
-    expect(isValidPinFormat("12345678")).toBe(true);
-    expect(isValidPinFormat("123")).toBe(false);
-    expect(isValidPinFormat("123456789")).toBe(false);
-    expect(isValidPinFormat("12a4")).toBe(false);
-    expect(isValidPinFormat("")).toBe(false);
+describe("isValidNewPin — a NEW pin is exactly four digits", () => {
+  it("accepts exactly four digits", () => {
+    expect(isValidNewPin("1234")).toBe(true);
+    expect(isValidNewPin("0000")).toBe(true);
+  });
+
+  it("refuses anything longer, including lengths that used to be allowed", () => {
+    // 5 to 8 were valid until the standardisation. They are refused when
+    // SETTING now — the login path is what still accepts them, and it applies
+    // no length rule at all.
+    expect(isValidNewPin("12345")).toBe(false);
+    expect(isValidNewPin("123456")).toBe(false);
+    expect(isValidNewPin("12345678")).toBe(false);
+  });
+
+  it("refuses anything shorter, and anything that is not digits", () => {
+    expect(isValidNewPin("123")).toBe(false);
+    expect(isValidNewPin("12a4")).toBe(false);
+    expect(isValidNewPin("")).toBe(false);
+    expect(isValidNewPin(" 1234")).toBe(false);
   });
 });
 
@@ -419,5 +433,69 @@ describe("requiresSecondFactor — nobody is stopped at the door", () => {
       expect(v).toEqual({ result: "match", usedDefault: false });
       if (v.result === "match") expect(requiresSecondFactor(v)).toBe(false);
     }
+  });
+});
+
+// ————————————————————————————————————————————————————————————————
+// THE SPLIT: SETTING IS FOUR, SIGNING IN IS WHATEVER THEY HAVE
+//
+// The platform accepted 4–8 digit PINs for months. Six members are signed in
+// right now with PINs somewhere in that range, and nothing stored says which:
+// a bcrypt hash is fixed-width whatever it hashed (verified — every stored
+// hash is exactly 60 characters) and no audit row records a chosen length.
+//
+// So the long PINs cannot be found and migrated. Applying the new four-digit
+// rule at the login door would lock those members out of their own money,
+// with no warning and no route back except asking the organizer.
+//
+// These tests exist to make that regression impossible to ship.
+// ————————————————————————————————————————————————————————————————
+
+describe("an existing longer PIN still opens the door", () => {
+  it("bcrypt verifies a 6-digit PIN against its own hash", async () => {
+    // The exact scenario: a member set 123456 while that was allowed.
+    const stored = await hashPin("123456");
+    const outcome = await verifyPin({ pinHash: stored, phone: "+13015550100" }, "123456");
+    expect(outcome.result).toBe("match");
+  });
+
+  it("…and an 8-digit one", async () => {
+    const stored = await hashPin("12345678");
+    const outcome = await verifyPin({ pinHash: stored, phone: "+13015550100" }, "12345678");
+    expect(outcome.result).toBe("match");
+  });
+
+  it("the SET rule would have refused those very PINs", () => {
+    // Proving the two rules genuinely disagree — which is the whole design.
+    // If this ever passes for both, the split has collapsed into one rule and
+    // somebody is about to be locked out.
+    expect(isValidNewPin("123456")).toBe(false);
+    expect(isValidNewPin("12345678")).toBe(false);
+  });
+
+  it("the wrong PIN is still wrong, whatever its length", async () => {
+    const stored = await hashPin("123456");
+    const state = { pinHash: stored, phone: "+13015550100" };
+    expect((await verifyPin(state, "1234")).result).toBe("wrong");
+    expect((await verifyPin(state, "123457")).result).toBe("wrong");
+  });
+});
+
+describe("the login path applies NO length rule of its own", () => {
+  const src = readFileSync(join(import.meta.dirname, "..", "app", "actions", "auth.ts"), "utf8");
+  const signIn = src.slice(
+    src.indexOf("export async function signInWithPin"),
+    src.indexOf("export async function", src.indexOf("export async function signInWithPin") + 10),
+  );
+
+  it("signInWithPin never calls the new-PIN validator", () => {
+    // Calling it here is the single change that would strand every member
+    // holding a 5-to-8-digit PIN.
+    expect(signIn).not.toContain("isValidNewPin");
+  });
+
+  it("signInWithPin carries no length check of its own", () => {
+    expect(signIn).not.toMatch(/pin\.length\s*[!=<>]==?\s*\d/);
+    expect(signIn).not.toMatch(/\d\{\d/);
   });
 });
