@@ -622,6 +622,28 @@ export async function getMemberCollections() {
 // ————————————————— Login step 1 (/login) —————————————————
 
 /**
+ * IS THE SMS DOOR OPEN? No — closed by decision, 16 Aug 2026.
+ *
+ * §2.28: the sign-in screen offers ONLY channels that actually work. SMS does
+ * not. Firebase Phone Auth needs a reCAPTCHA the deployed domain fails, and
+ * production shows "The reCAPTCHA check failed" — so the button was a door
+ * onto a wall. Labelling it "may not be available yet" did not rescue it: an
+ * option that dead-ends is worse than no option, and a hedge on the label is
+ * not the same as a channel that works.
+ *
+ * THE CODE IS PARKED, NOT DELETED (§6.1). `signInWithFirebaseSms`,
+ * `lib/firebase-verify`, `lib/sms-login` and the whole `step === "sms"` branch
+ * of the login flow are untouched and still tested. §6.1 says retest on the
+ * real domain after deploy; when that passes, this constant goes back to
+ * `firebaseConfigured()` and the door reopens with no other edit.
+ *
+ * Gated HERE rather than in the component because this one value is what every
+ * consumer reads — the picker button and the "no sign-in method is available"
+ * fallback both key off it, so one flag cannot leave them disagreeing.
+ */
+const SMS_LOGIN_OFFERED: boolean = false;
+
+/**
  * Phone lookup for the two-step login. Returns the bilingual welcome name
  * and which sign-in methods this member may use — the PIN toggles
  * (pinLoginEnabled + per-person pinLoginAllowed, 2.6) are evaluated HERE,
@@ -677,7 +699,10 @@ export async function lookupMemberByPhone(input: { phone: string }) {
         // handing out codes that never arrive.
         whatsAppAvailable:
           whatsAppMissingConfig().length === 0 && (await getSetting("whatsappEnabled")),
-        smsAvailable: firebaseConfigured(),
+        // Closed by decision, not by configuration — see SMS_LOGIN_OFFERED.
+        // `firebaseConfigured()` stays in the expression so the day the flag
+        // flips, the channel still has to be genuinely configured to appear.
+        smsAvailable: SMS_LOGIN_OFFERED && firebaseConfigured(),
         // SECURITY (audit C2): `hasOwnPin` used to be returned here. This
         // endpoint is UNAUTHENTICATED, so that published a list of exactly
         // which members were still signable-in with their own phone digits —

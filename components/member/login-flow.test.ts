@@ -151,8 +151,37 @@ describe("forgot-PIN routes to WhatsApp directly — never the parked SMS channe
     expect(recovery).not.toContain('setChoice("sms")');
   });
 
-  it("SMS stays on the general picker, honestly labelled as maybe unavailable", () => {
+  // SUPERSEDED 16 Aug 2026. This test used to read "SMS stays on the general
+  // picker, honestly labelled as maybe unavailable" and asserted the label
+  // "may not be available yet". §2.28 does not permit a hedged label in place
+  // of a working channel: production returns "The reCAPTCHA check failed", so
+  // the door is closed at the lookup instead.
+  //
+  // The two halves are asserted apart on purpose — the door and the code are
+  // now separate facts, and the whole point of the change is that closing one
+  // did not delete the other.
+  it("the SMS door is closed at the lookup, so the picker cannot offer it", () => {
+    const lookup = readFileSync(
+      join(import.meta.dirname, "..", "..", "app/actions/member.ts"),
+      "utf8",
+    );
+    expect(lookup).toContain("const SMS_LOGIN_OFFERED: boolean = false;");
+    expect(lookup).toContain("smsAvailable: SMS_LOGIN_OFFERED && firebaseConfigured()");
+    // The button and the no-methods fallback both key off this one value, so
+    // a closed door cannot leave the picker empty AND silent.
+    expect(source).toContain("lookup.smsAvailable && (");
+    expect(source).toContain(
+      "!lookup.pinAvailable && !lookup.smsAvailable && !lookup.whatsAppAvailable",
+    );
+  });
+
+  it("the SMS implementation is PARKED, not deleted — §6.1 retests it after deploy", () => {
+    // If any of these vanish, the channel can no longer be retested by
+    // flipping one flag, which is the entire basis for closing the door
+    // rather than removing the feature.
+    expect(source).toContain('step === "sms"');
     expect(source).toContain("Text me a code");
-    expect(source).toContain("may not be available yet");
+    expect(source).toContain("signInWithFirebaseSms");
+    expect(source).toContain("RecaptchaVerifier");
   });
 });
