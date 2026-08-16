@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { NEW_PIN_LENGTH } from "@/lib/pin-constants";
+import { PIN_LENGTH } from "@/lib/pin-constants";
 import { useState } from "react";
 import {
   resetMemberPin,
@@ -82,11 +82,10 @@ export function PinControls({
     resetSave.kind === "saving";
 
   /** Beat 1: the button is dead until there is something valid to save. */
-  // SETTING is exactly four digits — the same rule the member-facing screens
-  // apply, so the organizer cannot hand out a PIN of a shape the member could
-  // never choose for themselves. Existing longer PINs keep working at
-  // SIGN-IN; that is the other half of the split (lib/pin-constants.ts).
-  const pinIsValid = pin.length === NEW_PIN_LENGTH && /^\d+$/.test(pin);
+  // Exactly four digits — the same rule the member-facing screens apply, so
+  // the organizer cannot hand out a PIN of a shape the member could never
+  // choose for themselves.
+  const pinIsValid = pin.length === PIN_LENGTH && /^\d+$/.test(pin);
 
   const [confirm, setConfirm] = useState<ConfirmSpec | null>(null);
   /**
@@ -324,7 +323,7 @@ export function PinControls({
             inputMode="numeric"
             value={pin}
             onChange={(e) => {
-              setPin(e.target.value.replace(/D/g, "").slice(0, NEW_PIN_LENGTH));
+              setPin(e.target.value.replace(/D/g, "").slice(0, PIN_LENGTH));
               setPinSave({ kind: "idle" });
             }}
             className={inputCls}

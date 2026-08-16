@@ -127,46 +127,36 @@ export async function hashPin(pin: string): Promise<string> {
   return bcrypt.hash(pin, BCRYPT_ROUNDS);
 }
 
-// ————————————— TWO RULES, BECAUSE THIS IS LIVE —————————————
+// ————————————— ONE RULE: A PIN IS FOUR DIGITS —————————————
 //
-// A NEW PIN IS EXACTLY FOUR DIGITS. An EXISTING one may be four to eight, and
-// must keep working.
+// This briefly held two rules — four when SETTING, any stored length at the
+// LOGIN door — because 4-to-8-digit PINs existed and a bcrypt hash does not
+// say which length it hashed, so the long ones could not be found and
+// migrated. Applying one rule everywhere would have locked those members out.
 //
-// The platform accepted 4–8 for months and members are signed in right now
-// with PINs somewhere in that range. Nothing stored says which: a bcrypt hash
-// is fixed-width whatever it hashed (all 60 characters, verified against the
-// live database), and no audit row records a chosen length. So the system
-// CANNOT find the long PINs to migrate them, and a single 4-digit rule applied
-// everywhere would lock those members out of their own money with no warning
-// and no way back except asking the organizer.
+// Resolved by removing the reason rather than working around it: every PIN was
+// reset to the member's own phone's last four digits
+// (scripts/reset-pins-to-phone-default.mts, 28 of 28 verified against their
+// own hash). The longer ones were the organizer's test data — no member had
+// been sent the portal link, so no member had ever chosen a PIN. No PIN in the
+// system is anything but four digits, so there is no second rule to keep.
 //
-// Hence the split, and it runs the length of the codebase:
-//
-//   SETTING a PIN  →  isValidNewPin, exactly 4. Every set path, every set UI.
-//   SIGNING IN     →  no length rule at all. bcrypt compares whatever is typed
-//                     against whatever was stored, so a 6-digit PIN set last
-//                     month still opens the door.
-//
-// The effect is a migration with no migration: everyone converges on four
-// digits the moment they next change their PIN, and nobody is stranded in the
-// meantime.
-
-// The lengths themselves live in lib/pin-constants.ts so the login pad — a
-// client component — can read them without pulling bcryptjs into the browser
-// bundle. Re-exported here so server callers have one obvious import.
-import { NEW_PIN_LENGTH } from "./pin-constants";
-export { LEGACY_PIN_MAX, NEW_PIN_LENGTH } from "./pin-constants";
+// The length lives in lib/pin-constants.ts so the login pad — a client
+// component — can read it without pulling bcryptjs into the browser bundle.
+import { PIN_LENGTH } from "./pin-constants";
+export { PIN_LENGTH } from "./pin-constants";
 
 /**
- * Is this an acceptable NEW PIN?
+ * Is this an acceptable PIN to SET?
  *
- * Named for the moment it governs. The previous name — `isValidPinFormat` —
- * described a shape rather than a decision, which is exactly the kind of name
- * that gets reused at the login door by someone being careful. Reused there,
- * this function would reject every existing 5-to-8-digit PIN.
+ * Named for the moment it governs rather than for a shape. The original name,
+ * `isValidPinFormat`, described a regex — and a name like that is what gets
+ * reused at the login door by someone being careful. That mattered while the
+ * two rules differed; the name is kept now because the next divergence would
+ * be just as quiet.
  */
 export function isValidNewPin(pin: string): boolean {
-  return new RegExp(`^\\d{${NEW_PIN_LENGTH}}$`).test(pin);
+  return new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin);
 }
 
 /**

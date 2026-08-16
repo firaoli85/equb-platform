@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from "firebase/auth";
 import { lookupMemberByPhone } from "@/app/actions/member";
-import { LEGACY_PIN_MAX, NEW_PIN_LENGTH } from "@/lib/pin-constants";
+import { PIN_LENGTH } from "@/lib/pin-constants";
 import {
   requestWhatsAppCode,
   setMyPin,
@@ -81,16 +81,12 @@ const PAD_ROWS = [
   ["", "0", "back"],
 ] as const;
 
-// TWO LENGTHS, TWO MOMENTS — the reasoning is in lib/pin-constants.ts.
-//
-//   LOGIN pad → up to LEGACY_PIN_MAX (8). Members set 4-to-8-digit PINs while
-//               that was allowed, nothing stored says who has which, and a pad
-//               that stopped at 4 would make an existing 6-digit PIN
-//               physically untypeable. Capping the login pad is how you lock
-//               someone out of their own money.
-//   SET pad   → exactly NEW_PIN_LENGTH (4), stated up front by the slots.
-const MAX_PIN = LEGACY_PIN_MAX;
-const MIN_PIN = NEW_PIN_LENGTH;
+// ONE LENGTH, BOTH PADS. Every PIN in the system is four digits — the reset
+// in scripts/reset-pins-to-phone-default.mts made that true rather than
+// assumed — so the login pad states it exactly as the set pad does: four
+// slots, stopping at four. See lib/pin-constants.ts.
+const MAX_PIN = PIN_LENGTH;
+const MIN_PIN = PIN_LENGTH;
 
 function ErrorMsg({ msg }: { msg: string }) {
   return (
@@ -107,11 +103,7 @@ function DigitPad({
   value,
   onChange,
   disabled,
-  /**
-   * Keys go dead at this length. Passed per pad rather than read from a
-   * constant, because the two pads genuinely differ: signing in allows an
-   * existing long PIN, setting one does not.
-   */
+  /** Keys go dead at this length. Four on both pads. */
   max,
 }: {
   value: string;
@@ -157,17 +149,14 @@ function DigitPad({
 }
 
 function PinDots({ length, fixed }: { length: number; fixed?: number }) {
-  // TWO BEHAVIOURS, one per moment.
+  // FOUR SLOTS, STATED BEFORE A KEY IS PRESSED. Both pads pass `fixed`, so
+  // the shape of what is being asked for is visible from the start rather than
+  // discovered by being refused.
   //
-  // FIXED (setting a PIN): exactly `fixed` slots, always. The target length is
-  // known, and stating it is the whole point — four empty slots say "four
-  // digits" before a key is pressed, so nobody discovers the rule by being
-  // refused after typing six.
-  //
-  // ADAPTIVE (signing in): the length is NOT known — it is whatever they
-  // chose, possibly before the four-digit rule existed — so the pad must not
-  // promise a count. It shows the digits entered, four minimum, growing to
-  // eight. A trailing empty slot here would be a guess presented as a fact.
+  // `fixed` stays optional and the fallback is deliberately kept: it is the
+  // behaviour for a pad that does NOT know the target length. Nothing needs
+  // that today — every PIN is four digits — but a pad that silently promised a
+  // count it could not know is the defect this parameter exists to prevent.
   const slots = fixed ?? Math.max(MIN_PIN, Math.min(length, MAX_PIN));
   return (
     <div className="flex justify-center gap-4" aria-label={`${length} digits entered`}>
@@ -399,7 +388,7 @@ export function LoginFlow() {
       const result = await setMyPin({ pin: newPin });
       if (!result.ok) {
         // THE SERVER'S OWN REASON, prefixed so the state is unmistakable
-        // ("PIN must be 4 to 8 digits.", "Not signed in."). The digits stay
+        // ("Your PIN must be exactly 4 digits.", "Not signed in."). The digits stay
         // in the pad: a refusal costs a retry, never a retype.
         setPinSave({ kind: "err", message: `Not saved: ${result.error}` });
         return;
@@ -856,7 +845,7 @@ export function LoginFlow() {
                   which the UNAUTHENTICATED lookup had to disclose — a public
                   list of who was still on the default (audit C2). Members who
                   have no PIN are guided after the attempt instead. */}
-              <PinDots length={pin.length} />
+              <PinDots length={pin.length} fixed={PIN_LENGTH} />
             </div>
 
             <DigitPad
@@ -930,7 +919,7 @@ export function LoginFlow() {
                     : "This PIN is your phone's last 4 digits — anyone who knows your number could use it. Set your own PIN so only you can get in."}
               </p>
               <div className="pt-2">
-                <PinDots length={newPin.length} fixed={NEW_PIN_LENGTH} />
+                <PinDots length={newPin.length} fixed={PIN_LENGTH} />
               </div>
             </div>
 
@@ -938,13 +927,13 @@ export function LoginFlow() {
               value={newPin}
               onChange={(next) => {
                 if (savingPin) return;
-                setNewPin(next.slice(0, NEW_PIN_LENGTH));
+                setNewPin(next.slice(0, PIN_LENGTH));
                 // Typing again retracts a refusal: it was about digits that
                 // are no longer the ones on screen.
                 setPinSave({ kind: "idle" });
               }}
               disabled={savingPin}
-              max={NEW_PIN_LENGTH}
+              max={PIN_LENGTH}
             />
 
             {/* THE SAVE. `SaveButton` owns all four beats and renders its own

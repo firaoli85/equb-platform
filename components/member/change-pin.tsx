@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { changeMyPin } from "@/app/actions/auth";
-import { LEGACY_PIN_MAX, NEW_PIN_LENGTH } from "@/lib/pin-constants";
+import { PIN_LENGTH } from "@/lib/pin-constants";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 
 // CHANGE MY PIN — Door 1 of PIN self-service, in the member's Account area.
@@ -10,7 +10,7 @@ import { SaveButton, type SaveState } from "@/components/ui/save-button";
 // Three masked numeric fields and one save. The heavy machinery is all
 // reused, none of it is here: the server action proves the CURRENT PIN with
 // the same comparator sign-in uses, validates the new one with the same
-// 4–8-digit rule forced setup uses, and hashes with the same bcrypt path.
+// exactly-4-digit rule forced setup uses, and hashes with the same bcrypt path.
 // This component's whole job is collecting three strings and rendering the
 // outcome at the control (UI_STANDARDS 6/6b).
 //
@@ -32,21 +32,13 @@ export function ChangePin() {
   const [confirmPin, setConfirmPin] = useState("");
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
 
-  // THE SPLIT RUNS THROUGH THIS ONE FORM.
-  //
-  // "Current PIN" is an EXISTING credential and may be four to eight digits —
-  // it was set while that range was allowed, and nothing stored says which
-  // length any member picked. Capping this field at four would make a member
-  // with a six-digit PIN unable to type it, so they could never reach the
-  // screen that would give them a four-digit one.
-  //
-  // "New PIN" and its confirmation are exactly four. That is the standard now.
-  const existingDigits = (raw: string) => raw.replace(/\D/g, "").slice(0, LEGACY_PIN_MAX);
-  const newDigits = (raw: string) => raw.replace(/\D/g, "").slice(0, NEW_PIN_LENGTH);
+  // Four digits, all three fields. The current PIN is four because every PIN
+  // in the system is — the reset made that true rather than assumed.
+  const newDigits = (raw: string) => raw.replace(/\D/g, "").slice(0, PIN_LENGTH);
   const complete =
-    currentPin.length >= NEW_PIN_LENGTH &&
-    newPin.length === NEW_PIN_LENGTH &&
-    confirmPin.length === NEW_PIN_LENGTH;
+    currentPin.length === PIN_LENGTH &&
+    newPin.length === PIN_LENGTH &&
+    confirmPin.length === PIN_LENGTH;
 
   async function change() {
     if (newPin !== confirmPin) {
@@ -99,7 +91,7 @@ export function ChangePin() {
             autoComplete="current-password"
             value={currentPin}
             onChange={(e) => {
-              setCurrentPin(existingDigits(e.target.value));
+              setCurrentPin(newDigits(e.target.value));
               setSave({ kind: "idle" });
             }}
             className={inputCls}

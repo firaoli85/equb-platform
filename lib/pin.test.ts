@@ -437,21 +437,24 @@ describe("requiresSecondFactor — nobody is stopped at the door", () => {
 });
 
 // ————————————————————————————————————————————————————————————————
-// THE SPLIT: SETTING IS FOUR, SIGNING IN IS WHATEVER THEY HAVE
+// A PIN IS FOUR DIGITS, AND bcrypt STILL DECIDES THE DOOR
 //
-// The platform accepted 4–8 digit PINs for months. Six members are signed in
-// right now with PINs somewhere in that range, and nothing stored says which:
-// a bcrypt hash is fixed-width whatever it hashed (verified — every stored
-// hash is exactly 60 characters) and no audit row records a chosen length.
+// The platform accepted 4-to-8-digit PINs for months. Those hashes existed and
+// could not be found by length — bcrypt is fixed-width whatever it hashed — so
+// for a moment the codebase carried two rules, four for setting and anything
+// for signing in.
 //
-// So the long PINs cannot be found and migrated. Applying the new four-digit
-// rule at the login door would lock those members out of their own money,
-// with no warning and no route back except asking the organizer.
+// That is gone, because the REASON is gone: every PIN was reset to the
+// member's own phone's last four digits (28 of 28 verified against their own
+// hash). No PIN in the system is anything but four.
 //
-// These tests exist to make that regression impossible to ship.
+// What these tests hold is the part that did NOT change: the login door
+// applies no length rule of its own. It compares against the stored hash, and
+// that is what makes a future length change a data migration rather than a
+// lockout.
 // ————————————————————————————————————————————————————————————————
 
-describe("an existing longer PIN still opens the door", () => {
+describe("bcrypt, not a length rule, decides the door", () => {
   it("bcrypt verifies a 6-digit PIN against its own hash", async () => {
     // The exact scenario: a member set 123456 while that was allowed.
     const stored = await hashPin("123456");
@@ -465,12 +468,13 @@ describe("an existing longer PIN still opens the door", () => {
     expect(outcome.result).toBe("match");
   });
 
-  it("the SET rule would have refused those very PINs", () => {
-    // Proving the two rules genuinely disagree — which is the whole design.
-    // If this ever passes for both, the split has collapsed into one rule and
-    // somebody is about to be locked out.
+  it("…while the SET rule refuses anything but four", () => {
+    // The door and the set rule are ALLOWED to disagree, and that is the
+    // safety property: a length change is then a data migration, never a
+    // lockout. These two assertions are what make that true rather than lucky.
     expect(isValidNewPin("123456")).toBe(false);
     expect(isValidNewPin("12345678")).toBe(false);
+    expect(isValidNewPin("1234")).toBe(true);
   });
 
   it("the wrong PIN is still wrong, whatever its length", async () => {
