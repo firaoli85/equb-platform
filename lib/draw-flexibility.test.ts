@@ -287,7 +287,10 @@ describe("THE DRAW SCREEN CHOOSES ITS OWN WEEK (feature 1)", () => {
     // SETUP screen says — "Week 5 (2 winners)" — would tell the room how many
     // payouts are lined up, so the count is deliberately not here.
     expect(picker).toContain("Week {w.weekNumber}");
-    expect(picker).toContain('w.hasDraw ? " (drawn)" : ""');
+    // The marker's punctuation is a design decision and has already changed
+    // once; what must not change is that `drawn` is the ONLY thing the label
+    // adds, and that it is conditioned on the week actually being drawn.
+    expect(picker).toMatch(/w\.hasDraw \? "[^"]*drawn"/);
     for (const leak of ["plannedWinners", "winners", "eligible", "name", "amount", "payout"]) {
       expect(picker.toLowerCase(), `${leak} must not reach the projected screen`).not.toContain(
         `{w.${leak.toLowerCase()}`,

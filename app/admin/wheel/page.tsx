@@ -43,18 +43,40 @@ export default async function WheelPage({
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6">
+    // THE STAGE. This screen is projected on a wall while a room watches, and
+    // it was rendering on the app's ordinary white page — a form background
+    // behind a ceremony. Dark ground makes the wheel the only lit object and
+    // survives a projector's washed-out contrast; the two faint pools of warm
+    // light place it in a room rather than on a slide.
+    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#0b0a14] text-amber-50">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(60% 55% at 50% 32%, rgba(224,169,46,0.10) 0%, transparent 70%)," +
+            "radial-gradient(70% 60% at 50% 108%, rgba(67,56,202,0.18) 0%, transparent 70%)",
+        }}
+      />
       <BackArrow />
-      {/* THE HEADING BECAME THE CONTROL. It read "Week 10" and could not be
-          changed; it is now the same line, choosable. See week-picker.tsx for
-          why it is one select and nothing more. */}
-      <WeekPicker weeks={result.data.weeks} selectedWeekId={result.data.weekId} />
-      {result.data.alreadyDrawn && (
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          This week has already been drawn. Spinning adds another winner to it.
-        </p>
-      )}
-      <DrawWheel weekId={result.data.weekId} slots={result.data.slots} />
+
+      {/* THE WEEK SITS ABOVE THE WHEEL AS CHROME, not in its column.
+          It was a text-2xl select stacked in the same centred flex as a fixed
+          480px wheel, so on a laptop the two fought for the same vertical
+          space and the wheel lost — "it covers the wheel". Pinned to the top,
+          it cannot crowd anything, and the wheel gets the whole middle. */}
+      <div className="absolute inset-x-0 top-0 z-20 flex flex-col items-center gap-1.5 px-4 pt-5">
+        <WeekPicker weeks={result.data.weeks} selectedWeekId={result.data.weekId} />
+        {result.data.alreadyDrawn && (
+          <p className="text-xs text-amber-200/60">
+            Already drawn. Spinning adds another winner to this week.
+          </p>
+        )}
+      </div>
+
+      <div className="relative z-10">
+        <DrawWheel weekId={result.data.weekId} slots={result.data.slots} />
+      </div>
     </main>
   );
 }

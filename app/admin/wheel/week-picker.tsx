@@ -40,7 +40,11 @@ export function WeekPicker({
   const [pending, startTransition] = useTransition();
 
   return (
-    <label className="flex items-center gap-2">
+    // A PILL ON THE STAGE, not a form control on a page. It sits on the dark
+    // ground the draw screen now uses, reads as chrome rather than as an input,
+    // and stays small enough that the wheel keeps the room's attention — which
+    // is the whole reason it is on this screen at all.
+    <label className="group relative inline-flex items-center">
       <span className="sr-only">Which week this draw is for</span>
       <select
         value={selectedWeekId}
@@ -49,15 +53,27 @@ export function WeekPicker({
           const weekId = e.target.value;
           startTransition(() => router.push(`/admin/wheel?week=${weekId}`));
         }}
-        className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-2xl font-semibold text-gray-900 disabled:opacity-60 dark:border-gray-700 dark:bg-[#141414] dark:text-white"
+        // appearance-none because the native chevron cannot be styled and looks
+        // like a spreadsheet on a wall; the caret below is drawn instead.
+        className="cursor-pointer appearance-none rounded-full border border-amber-200/25 bg-white/[0.04] py-2 pl-5 pr-10 text-lg font-semibold tracking-wide text-amber-50 outline-none transition-[background-color,border-color] duration-150 ease-out hover:bg-white/[0.08] focus-visible:border-amber-300/70 focus-visible:ring-2 focus-visible:ring-amber-300/40 disabled:opacity-50 motion-reduce:transition-none"
       >
         {weeks.map((w) => (
-          <option key={w.id} value={w.id}>
+          // The options themselves render in the OS menu, which cannot be
+          // styled — so they are given an explicit dark background rather than
+          // flashing white on a projector when the menu opens.
+          <option key={w.id} value={w.id} className="bg-[#14121f] text-amber-50">
             Week {w.weekNumber}
-            {w.hasDraw ? " (drawn)" : ""}
+            {w.hasDraw ? " · drawn" : ""}
           </option>
         ))}
       </select>
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 12 8"
+        className="pointer-events-none absolute right-4 h-2 w-3 text-amber-200/70"
+      >
+        <path d="M1 1 L6 6 L11 1" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </label>
   );
 }
