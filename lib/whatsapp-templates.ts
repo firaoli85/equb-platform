@@ -1,11 +1,15 @@
 // THE META-APPROVED TEMPLATE REGISTRY.
 //
-// Seven WhatsApp Content templates, all category UTILITY: five approved by
-// Meta on 7 August 2026, of which four were superseded on 13 August 2026 by
-// the member-relative v2 set — which also brought the welcome and the group
-// announcement in. Approved wording is CANONICAL from the moment it lands: it
-// is the only text that may leave the platform under these ContentSids, and
-// it cannot be changed without re-submission and re-approval.
+// TWELVE WhatsApp Content templates. Approved wording is CANONICAL from the
+// moment it lands: it is the only text that may leave the platform under these
+// ContentSids, and it cannot be changed without re-submission and re-approval.
+//
+// THIS SAID "Seven ... all category UTILITY" AND BOTH HALVES WENT STALE. The
+// phase-4 payment set took the count to twelve, and Meta files
+// group_announcement as MARKETING — which is exactly why it cannot reach a US
+// number (63049). Category is a claim about somebody else's system, so it is
+// READ BACK from Twilio by scripts/check-template-categories.mts rather than
+// asserted in a comment here, where it silently rotted for two days.
 //
 // WHY THIS FILE EXISTS AT ALL. The MessageTemplate rows in the database hold
 // freeform text the organizer can edit from the app (2.20 — templates are
@@ -253,9 +257,10 @@ export const APPROVED_TEMPLATES: Record<ApprovedTemplateKey, ApprovedTemplate> =
   // the member's own week number plus that week's SCHEDULED date, both stable
   // cycle facts, because a message states what stays true.
   //
-  // NOTHING CALLS THESE YET. The router that picks between them
-  // (paymentMessageFor, lib/engine.ts) is not wired to the payment site until
-  // 4b-ii, so landing them here changes no message any member receives.
+  // WIRED SINCE 4b-ii. `paymentMessageFor` (lib/engine.ts) picks between these
+  // from what the payment actually did, and `confirmPayment` then sends or
+  // queues the result. This said "NOTHING CALLS THESE YET", which was true for
+  // exactly one commit.
 
   PAYMENT_CONFIRMED_V4: approved({
     key: "PAYMENT_CONFIRMED_V4",

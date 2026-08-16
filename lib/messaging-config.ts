@@ -6,10 +6,15 @@
 // The engine computes the truth; these settings decide when and how it is
 // communicated. Nothing in this file decides what is true.
 //
-// NOTHING READS THIS YET, AND THAT IS THE POINT. The messages and deadline
-// phases read it; this phase only stores it and resolves it, and every default
-// reproduces today's behaviour exactly so shipping it changes nothing for any
-// member until Oli flips a switch (proven in messaging-config.test.ts).
+// READ AT THE PAYMENT SITE since phase 4b-ii. `confirmPayment` in
+// lib/payment-confirmation.ts asks this, per routed key, whether a message
+// sends itself or waits for the organizer — one switch per message a member
+// can receive.
+//
+// This block used to say "NOTHING READS THIS YET, AND THAT IS THE POINT" and
+// went on saying it while the payment path was reading it: §5.15 in a comment,
+// a sentence that outlived the phase it described. The defaults still reproduce
+// the pre-config behaviour, and messaging-config.test.ts still proves it.
 //
 import type { SettingKey } from "./setting-defaults";
 
@@ -116,9 +121,12 @@ const WEEKDAY_NAMES: Record<Weekday, string> = {
  * default would move a deadline on the day of deploy, which is exactly what
  * this phase must not do.
  *
- * STORED HERE, READ BY NOBODY YET. Repointing deadline computation at this
- * value is a later phase and rides on the §5.5 SQL-view decision — the view's
- * `current_date` cannot see a setting at all.
+ * STORED HERE, AND STILL READ BY NO DEADLINE. Repointing week arithmetic at it
+ * remains future work — but the REASON has changed and the old one must not be
+ * left standing. It used to say this "rides on the §5.5 SQL-view decision — the
+ * view's `current_date` cannot see a setting at all". Phase 5 retired that view;
+ * `member_progress` and its `current_date` are gone, so nothing external blocks
+ * this any more. It is simply not built.
  */
 export const DEFAULT_TIMEZONE = "UTC";
 

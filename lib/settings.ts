@@ -44,8 +44,12 @@ export {
  * Returns the RESOLVED config — defaults applied, stored junk rejected — so a
  * caller can never see a half-set schedule or an unknown weekday.
  *
- * NOTHING CALLS THIS YET, deliberately: phase 1 stores and exposes the config
- * and wires no message and no deadline to it.
+ * CALLED ON EVERY RECORDED PAYMENT since phase 4b-ii: `confirmPayment` asks it,
+ * per routed key, whether the message sends itself or waits for the organizer.
+ * No DEADLINE reads it yet.
+ *
+ * It used to say "NOTHING CALLS THIS YET, deliberately", and went on saying so
+ * after the payment path started calling it (§5.15).
  */
 export async function getMessagingConfig(): Promise<MessagingConfig> {
   return resolveMessagingConfig({

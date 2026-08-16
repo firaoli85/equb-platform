@@ -1,10 +1,20 @@
 // THE ONE-TRUTH ENGINE — phase 2, the core.
 //
 // ONE function returns a member's complete current truth
-// (docs/ONE_TRUTH_ENGINE.md §3). Every screen, message and total will READ
-// from it; nobody recomputes and nobody keeps a second copy. This phase BUILDS
-// it and proves it. It wires nothing: after this phase every screen still
-// reads its old implementation, and §5 step 2 migrates them one at a time.
+// (docs/ONE_TRUTH_ENGINE.md §3). Every screen, message and total READS from it;
+// nobody recomputes and nobody keeps a second copy.
+//
+// THE MIGRATION IS FINISHED (phases 3 to 6). This header used to say "it wires
+// nothing: after this phase every screen still reads its old implementation" —
+// true the day it was written, false since phase 3 moved the readers. §5.15: a
+// sentence describing a state that has ended is worse than no sentence, because
+// nothing marks it as history and it is read as current.
+//
+// WHAT READS WHAT, TODAY. Production reads `computeStanding` — the nucleus this
+// composes, and where phase 3 put the D-42 arithmetic — plus `describePayment`
+// and `paymentMessageFor` at the payment site. `memberTruth` below has no
+// production caller and is NOT dead: it is the API engine.test.ts drives the
+// engine's laws through, including both reconciliation proofs.
 //
 // WHY THIS IS A NEW MODULE AND NOT AN EDIT TO computeStanding.
 // §5 orders the work: (1) build the engine, nothing reads it; (2) migrate

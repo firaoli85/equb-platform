@@ -6,9 +6,19 @@ import { notInCurrentCycleLine } from "@/lib/member-history";
 
 export const dynamic = "force-dynamic";
 
-// The social layer (2.8): progress shared, nothing else. Data comes through
-// the member_progress view under the CALLER's session — the database itself
-// cannot hand over amounts, numbers, payouts, or phones.
+// The social layer (2.8): progress shared, nothing else — name, weeks paid,
+// behind count.
+//
+// WHERE THAT GUARANTEE LIVES CHANGED IN PHASE 5. This used to read "data comes
+// through the member_progress view under the CALLER's session — the database
+// itself cannot hand over amounts, numbers, payouts, or phones", and it was
+// true: the view granted six columns and scoped rows through auth.uid(). The
+// view is retired (it re-implemented the behind-count in SQL and had drifted
+// past D-42), so the database no longer refuses anything on this path.
+//
+// The projection in getGroupProgress does, and lib/member-group-disclosure.test.ts
+// fails if a seventh field appears. Said here because a security property that
+// moves quietly is one the next reader assumes is still enforced a layer down.
 export default async function GroupPage() {
   const result = await getGroupProgress();
   if (!result.ok) {
