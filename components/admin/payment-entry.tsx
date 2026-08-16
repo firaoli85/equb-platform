@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { recordPayment } from "@/app/actions/payments";
+import { paymentOutcomeLine, type OutcomeLine } from "@/lib/payment-outcome-line";
 import { SaveButton, type SaveState } from "@/components/ui/save-button";
 import { AmountInput, Select } from "@/components/ui/controls";
 import { formatMoney, parseDollarsToCents } from "@/lib/format";
@@ -84,6 +86,8 @@ export function PaymentEntry({
   const [method, setMethod] = useState<Method>("ZELLE");
   const [notes, setNotes] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+  /** What became of the message this payment produced. Null until one is. */
+  const [messageOutcome, setMessageOutcome] = useState<OutcomeLine | null>(null);
 
   // A fresh key per submission intent, re-armed after each save, so a
   // double-click cannot double-pay.
@@ -236,6 +240,14 @@ export function PaymentEntry({
       }
       const message = `Recorded ${formatMoney(result.data.totalApplied)} for ${memberName} — ${coverageSentence(coverage, formatMoney).replace(/^This /, "").replace(/\.$/, "")}.`;
       setSaveState({ kind: "ok", message });
+      // WHAT HAPPENED TO THEIR MESSAGE, beside the payment that produced it.
+      //
+      // recordPayment has always returned this and nothing rendered it. On
+      // 16 Aug a queued part-payment-completed message was reported as "no
+      // message was sent" — it had been queued correctly, and the only place
+      // that said so was a page the organizer had no reason to open. §2.10:
+      // never leave doubt, and the moment doubt starts is here.
+      setMessageOutcome(paymentOutcomeLine(result.data.confirmation));
       onRecorded(`✓ ${message}`);
       applySelection(new Set());
       setNotes("");
@@ -496,6 +508,31 @@ export function PaymentEntry({
             : "That amount does not fit their remaining weeks — reduce it."
         }
       />
+
+      {messageOutcome && (
+        <p
+          data-testid="message-outcome"
+          className={`text-sm ${
+            messageOutcome.kind === "bad"
+              ? "text-red-800 dark:text-red-400"
+              : "text-gray-600 dark:text-gray-400"
+          }`}
+        >
+          {messageOutcome.text}
+          {messageOutcome.kind === "queued" && (
+            <>
+              {" "}
+              <Link
+                href="/admin/messages"
+                className="font-semibold text-indigo-700 underline underline-offset-2 dark:text-indigo-300"
+              >
+                Review it on Messages
+              </Link>
+              .
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

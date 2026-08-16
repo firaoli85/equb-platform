@@ -3,6 +3,7 @@ import { AccountMenu } from "@/components/admin/account-menu";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { PresentationToggle } from "@/components/presentation-toggle";
 import { requireAdmin } from "@/lib/auth";
+import { countQueuedMessages } from "@/lib/messaging-engine";
 import { getSetting } from "@/lib/settings";
 
 // Server-side gate for every protected admin page. The proxy redirects
@@ -12,6 +13,19 @@ import { getSetting } from "@/lib/settings";
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const gate = await requireAdmin();
   if (!gate.ok) redirect("/admin/login");
+
+  // THE RAIL CARRIES THE WAITING COUNT, on every admin page.
+  //
+  // A queued message was only visible on the page it lives on, so one held back
+  // correctly looked exactly like one that was never created — which is how a
+  // working queue got reported as a silent failure. Never throws: a count that
+  // cannot be read must not take the whole admin shell down with it.
+  let queuedCount = 0;
+  try {
+    queuedCount = await countQueuedMessages();
+  } catch (e) {
+    console.error("queued message count failed:", e);
+  }
   const presentation = await getSetting("presentationMode");
 
   return (
@@ -33,7 +47,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             Admin
           </span>
         </div>
-        <AdminSidebar />
+        <AdminSidebar queuedCount={queuedCount} />
         {/* The foot of the rail: the screen-share switch, then the account
             menu (ADMIN_IA §3) that holds the four settings pages and
             sign-out. Sign-out is no longer a sibling here — it is the last

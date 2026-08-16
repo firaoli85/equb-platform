@@ -692,6 +692,17 @@ export type QueuedMessageRow = {
   createdAt: Date;
 };
 
+/**
+ * How many messages are waiting — for the badge on the Messages nav item.
+ *
+ * A COUNT, NOT THE ROWS. This runs on every admin page render, so it must cost
+ * one cheap aggregate and carry nothing about anybody: the rail is on screen
+ * during a screen share (2.4), and a number is the most it may ever say there.
+ */
+export async function countQueuedMessages(): Promise<number> {
+  return prisma.queuedMessage.count();
+}
+
 /** Everything waiting, oldest first — the order he should work through them. */
 export async function listQueuedMessages(limit = 100): Promise<QueuedMessageRow[]> {
   const rows = await prisma.queuedMessage.findMany({

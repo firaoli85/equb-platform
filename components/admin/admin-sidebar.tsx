@@ -304,7 +304,19 @@ export function navIsActive(pathname: string, link: NavLink): boolean {
   return link.exact ? pathname === link.href : pathname.startsWith(link.href);
 }
 
-export function AdminSidebar() {
+export function AdminSidebar({
+  /**
+   * Messages waiting to be sent, for the badge on the Messages row.
+   *
+   * PASSED IN, because this is a client component and the count is a database
+   * read. The layout is a server component and already renders on every admin
+   * page, so the rail carries the number everywhere without this file learning
+   * about Prisma.
+   */
+  queuedCount = 0,
+}: {
+  queuedCount?: number;
+} = {}) {
   const pathname = usePathname();
 
   return (
@@ -346,6 +358,23 @@ export function AdminSidebar() {
                     <NavIcon href={link.href} />
                   </span>
                   {link.label}
+                  {/* WAITING TO BE SENT — the one number the rail carries.
+                      A queued message used to be visible only on the page it
+                      lives on, so a message correctly held back looked exactly
+                      like one that was never created. It renders only when
+                      there is something to say: a persistent "0" is furniture,
+                      and the eye stops reading furniture. */}
+                  {link.href === "/admin/messages" && queuedCount > 0 && (
+                    <span
+                      data-testid="queued-badge"
+                      className="ml-auto min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[11px] font-bold tabular-nums text-white dark:bg-amber-600"
+                    >
+                      {queuedCount}
+                      {/* A bare number reads as "Messages 3" to a screen
+                          reader, which is a quantity of nothing. */}
+                      <span className="sr-only"> waiting to be sent</span>
+                    </span>
+                  )}
                 </Link>
               );
             })}
