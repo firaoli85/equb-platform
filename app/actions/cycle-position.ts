@@ -365,7 +365,19 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         cash,
         // The verdict only exists once he has told the system what he holds.
         verdict: latest
-          ? positionVerdict({ cash: holding, actual: latest.totalAmount, formatMoney })
+          ? positionVerdict({
+              cash: holding,
+              actual: latest.totalAmount,
+              // ONLY `soFar` — the fee on payouts already handed over. It is
+              // settled, not a projection, and it is the single biggest thing
+              // in a gap that is not actually missing money: he hands over a
+              // payout less his fee, so the fee never leaves the tin and the
+              // books count it as held right up until he takes it.
+              // `ifRemainingPayoutsComplete` is deliberately NOT passed — that
+              // half depends on how the cycle finishes.
+              feeSoFar: fee.soFar,
+              formatMoney,
+            })
           : null,
         latestReading: latest,
         // History, each with the difference AT THAT MOMENT against today's

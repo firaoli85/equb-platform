@@ -41,6 +41,7 @@ import {
   closeReasonText,
   inWindow,
   isCloseReason,
+  legacyBreak,
   reactivateConsequences,
   reactivatePlan,
   reactivateRefusal,
@@ -449,12 +450,43 @@ export async function reactivateParticipation(input: {
       });
       // The break they are still inside. A row closed before this table
       // existed has none, so one is derived from where they stopped.
+      //
+      // THROUGH `legacyBreak`, WHICH IS THE ONE RULE FOR THIS.
+      //
+      // This used to derive it inline as `(closedAtWeek ?? startWeek - 1) + 1`,
+      // and that skipped the middle step. `removeFromCycle`'s "keep their money
+      // records" choice writes `status: CLOSED, closedAtWeek: null` and no
+      // break at all, so for exactly those members the fallback landed on
+      // `startWeek - 1` and the derived break opened at WEEK ONE — swallowing
+      // every week they had actually paid.
+      //
+      // It happened. Alem was removed that way on 12 Aug having paid weeks 1
+      // to 7, was brought back from week 13, and got a break of 1→12. The
+      // cycle then expected nothing from her for any week, her seven real
+      // contributions were charged to nobody, and `shouldHaveCollected` was
+      // $3,500 light. The confirmation even said so out loud — "the 12 weeks
+      // they were away stay closed" — for a member who had been there for 7 of
+      // them, and it was accepted because the sentence was the only account of
+      // what the write would do.
+      //
+      // `legacyBreak` already had the answer: `closedAtWeek ?? lastWeekWithMoney
+      // ?? startWeek - 1`. Two derivations of one fact, and this was the copy
+      // missing a step. Now there is one.
+      const paidWeeks = p.payments
+        .filter((pm) => pm.amountPaid > 0)
+        .map((pm) => pm.week.weekNumber);
+      const derived = legacyBreak({
+        status: "CLOSED",
+        startWeek: p.startWeek,
+        closedAtWeek: p.closedAtWeek,
+        lastWeekWithMoney: paidWeeks.length > 0 ? Math.max(...paidWeeks) : null,
+      });
       const open =
         p.breaks.find((b) => b.toWeek === null) ??
         (await tx.participationBreak.create({
           data: {
             participationId: p.id,
-            fromWeek: (p.closedAtWeek ?? p.startWeek - 1) + 1,
+            fromWeek: derived?.fromWeek ?? p.startWeek,
             toWeek: null,
             reason: p.closeReason ?? "STOPPED_CONTRIBUTING",
             note: p.closeNote,

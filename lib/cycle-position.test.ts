@@ -294,6 +294,91 @@ describe("positionVerdict — never just a number", () => {
     );
   });
 
+  // ————— THE GAP IS NOT ALL LOSS —————
+  //
+  // On the live cycle the page said "$6,325 LESS than the books say" and, in
+  // another block, "$4,350 fee so far", and never joined them. He read the
+  // whole $6,325 as money gone, went looking for a hole that big, and
+  // concluded the two stopped members were being double-counted. They were
+  // not. $4,350 of it was his own fee, which the books count as held because
+  // he hands over a payout LESS his fee, so the fee never leaves the tin.
+  describe("a gap names the part that is the organizer's own fee", () => {
+    it("splits the gap into his fee and what is actually missing", () => {
+      // The live shape, scaled: $6,325 gap, $4,350 of it fee.
+      const v = positionVerdict({
+        cash,
+        actual: cash.shouldBeHolding - 632_500,
+        feeSoFar: 435_000,
+        formatMoney,
+      });
+      expect(v.feeInGap).toBe(435_000);
+      expect(v.unaccounted).toBe(197_500);
+      expect(v.sentence).toContain("$6,325 LESS than the books say");
+      expect(v.sentence).toContain("$4,350 of that is the fee you have already earned");
+      expect(v.sentence).toContain("if you have taken it, that part is not missing");
+      expect(v.sentence).toContain("$1,975 that was collected and not paid out and is unaccounted for");
+      // The fee must come BEFORE the remainder, for the same reason the gap
+      // leads: the first figure he reads decides what he thinks happened.
+      expect(v.sentence.indexOf("fee you have already earned")).toBeLessThan(
+        v.sentence.indexOf("unaccounted for"),
+      );
+    });
+
+    it("a fee bigger than the gap explains the gap and no more", () => {
+      const v = positionVerdict({
+        cash,
+        actual: cash.shouldBeHolding - 100_000,
+        feeSoFar: 435_000,
+        formatMoney,
+      });
+      expect(v.feeInGap).toBe(100_000);
+      expect(v.unaccounted).toBe(0);
+      expect(v.sentence).toContain("Nothing else is missing.");
+      // Never claims more of the gap than exists.
+      expect(v.sentence).not.toContain("$4,350");
+    });
+
+    it("with no fee earned yet, the old sentence is unchanged", () => {
+      const v = positionVerdict({ cash, actual: cash.shouldBeHolding - 40_000, formatMoney });
+      expect(v.feeInGap).toBe(0);
+      expect(v.unaccounted).toBe(40_000);
+      expect(v.sentence).toContain("collected and not paid out");
+      expect(v.sentence).not.toContain("fee");
+    });
+
+    it("a SURPLUS is never explained away by the fee", () => {
+      // Holding MORE than the books say is not his fee turning up. It is an
+      // error, and it still has to be explained.
+      const v = positionVerdict({
+        cash,
+        actual: cash.shouldBeHolding + 230_000,
+        feeSoFar: 435_000,
+        formatMoney,
+      });
+      expect(v.feeInGap).toBe(0);
+      expect(v.unaccounted).toBe(0);
+      expect(v.sentence).not.toContain("already earned");
+    });
+
+    it("coverage still does not lean on the fee", () => {
+      // The "can I meet what I owe" question must not borrow an estimate, and
+      // this change must not have quietly made it do so.
+      const withFee = positionVerdict({ cash, actual: 200_000, feeSoFar: 435_000, formatMoney });
+      const without = positionVerdict({ cash, actual: 200_000, formatMoney });
+      expect(withFee.coverage).toBe(without.coverage);
+      expect(withFee.kind).toBe(without.kind);
+    });
+
+    it("the shortfall sentence carries the breakdown too", () => {
+      // He can be short against what he owes AND have a gap in the books. The
+      // fee explanation belongs in both, or the worse screen is the vaguer one.
+      const v = positionVerdict({ cash, actual: 100_000, feeSoFar: 435_000, formatMoney });
+      expect(v.kind).toBe("short");
+      expect(v.sentence).toContain("fee you have already earned");
+      expect(v.sentence).toContain("short by $1,000");
+    });
+  });
+
   it("EXACT: the books and the cash agree", () => {
     const v = positionVerdict({ cash, actual: cash.shouldBeHolding, formatMoney });
     expect(v.kind).toBe("exact");

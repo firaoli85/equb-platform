@@ -356,6 +356,18 @@ export type PositionVerdict = {
   sentence: string;
   /** When short: what he would have to find. */
   shortBy: number;
+  /**
+   * Of a gap between the books and the count: the part that is his own fee,
+   * already earned on payouts already handed over.
+   *
+   * NOT a projection. `feeEstimate.soFar` is the settled half — the fee on
+   * money that has already crossed the table — and it is sitting in the tin
+   * because he handed over the payout less his fee. The books count it as
+   * held, correctly, right up until he takes it.
+   */
+  feeInGap: number;
+  /** Of a gap: what is left after his fee. This is the part that is missing. */
+  unaccounted: number;
 };
 
 /**
@@ -376,10 +388,59 @@ export function positionVerdict(input: {
   cash: CashOnHand;
   /** The organizer's entered reading, in cents. */
   actual: number;
+  /**
+   * The fee he has ALREADY EARNED, on payouts already handed over
+   * (`feeEstimate.soFar`). Used only to explain a gap, never to move a figure.
+   */
+  feeSoFar?: number;
   formatMoney: (cents: number) => string;
 }): PositionVerdict {
   const money = input.formatMoney;
   const difference = input.actual - input.cash.shouldBeHolding;
+
+  // ————— THE GAP IS NOT ALL LOSS, AND SAYING SO IS THE WHOLE FIX —————
+  //
+  // The page showed "$6,325 less than the books say" and, elsewhere, "$4,350
+  // fee so far", and never joined them. The organizer read the whole $6,325 as
+  // money gone, went looking for a hole that big, and started suspecting the
+  // two stopped members. $4,350 of it was his own fee.
+  //
+  // WHY THE FEE IS IN THE BOOKS AT ALL. He hands over a payout LESS his fee,
+  // so the fee never leaves the tin. `collected − handedOut` therefore counts
+  // it as money he holds, which is right — until he takes it, and taking it is
+  // exactly what he is entitled to do. The books cannot see that withdrawal,
+  // so it shows up as a gap.
+  //
+  // THIS IS NOT THE PROJECTION THE REST OF THIS FILE KEEPS OUT. `soFar` is the
+  // fee on money that has ALREADY crossed the table; it is settled, not a
+  // guess about how the cycle finishes. `coverage` still does not touch it —
+  // the question of whether he can meet what he owes must not lean on the fee,
+  // and it still does not.
+  //
+  // Capped at the gap: his fee can only explain a hole as deep as itself, and
+  // claiming more would turn one wrong figure into a different wrong figure.
+  const feeInGap = difference < 0 ? Math.min(input.feeSoFar ?? 0, -difference) : 0;
+  const unaccounted = difference < 0 ? -difference - feeInGap : 0;
+
+  /** The gap, broken into the half that is his and the half that is missing. */
+  const gapBreakdown = () => {
+    if (feeInGap <= 0) {
+      return (
+        ` That money was collected and not paid out, so it is missing and needs ` +
+        `explaining: a payment not recorded, or a payout handed over without being marked.`
+      );
+    }
+    const rest =
+      unaccounted > 0
+        ? ` That leaves ${money(unaccounted)} that was collected and not paid out and is ` +
+          `unaccounted for: a payment not recorded, or a payout handed over without being marked.`
+        : ` Nothing else is missing.`;
+    return (
+      ` ${money(feeInGap)} of that is the fee you have already earned on payouts you have ` +
+      `handed over. The books still count it as money in your hands, so if you have taken ` +
+      `it, that part is not missing.${rest}`
+    );
+  };
   // What he is holding for somebody else: money paid early for weeks that have
   // not happened, and payouts drawn but not yet handed over. Both are real
   // cash in his hand today and both have to come out of it later. The FEE is
@@ -403,8 +464,11 @@ export function positionVerdict(input: {
       difference,
       coverage,
       shortBy,
+      feeInGap,
+      unaccounted,
       sentence:
-        `${versusBooks} You are short by ${money(shortBy)} against what you owe: ` +
+        `${versusBooks}${difference < 0 ? gapBreakdown() : ""} ` +
+        `You are short by ${money(shortBy)} against what you owe: ` +
         `${money(input.cash.drawnNotHandedOut)} is drawn but not handed out yet, and ` +
         `${money(input.cash.paidEarly)} was paid early for weeks that have not happened. ` +
         `You would need to find that before the next payout.`,
@@ -438,6 +502,8 @@ export function positionVerdict(input: {
       difference,
       coverage,
       shortBy: 0,
+      feeInGap,
+      unaccounted,
       sentence:
         `${versusBooks} Of that, ${money(holdingForOthers)} is already owed to specific ` +
         `people, and ${money(coverage)} is not promised to anyone yet. ${custodyTail}`,
@@ -450,6 +516,8 @@ export function positionVerdict(input: {
       difference,
       coverage,
       shortBy: 0,
+      feeInGap,
+      unaccounted,
       sentence:
         `${versusBooks} That extra needs explaining before it is trusted: a payment ` +
         `recorded twice, or one handed out and not marked. Of what you hold, ` +
@@ -463,11 +531,11 @@ export function positionVerdict(input: {
     difference,
     coverage,
     shortBy: 0,
+    feeInGap,
+    unaccounted,
     sentence:
-      `${versusBooks} That money was collected and not paid out, so it is missing and ` +
-      `needs explaining: a payment not recorded, or a payout handed over without being ` +
-      `marked. You can still cover what you owe today. Of what you hold, ` +
-      `${money(holdingForOthers)} is already owed to particular people and ` +
+      `${versusBooks}${gapBreakdown()} You can still cover what you owe today. ` +
+      `Of what you hold, ${money(holdingForOthers)} is already owed to particular people and ` +
       `${money(coverage)} is not promised to anyone yet. ${custodyTail}`,
   };
 }
