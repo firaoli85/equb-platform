@@ -32,7 +32,7 @@ import {
   type StoppedMember,
 } from "@/lib/cycle-position";
 import { cashPosition, receiptsByWeek } from "@/lib/dashboard";
-import { endOfCycle, endOfCycleSentence } from "@/lib/end-of-cycle";
+import { bucketOutstanding, endOfCycle, endOfCycleSentence } from "@/lib/end-of-cycle";
 import { formatMoney } from "@/lib/format";
 import { calculateFinishWeek, MAX_MONEY_CENTS } from "@/lib/money";
 import { PAGE_SIZES, pageInfo } from "@/lib/paging";
@@ -350,16 +350,14 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
     //
     // Every figure below is READ from a derivation that already exists. This
     // adds and subtracts; it decides nothing.
-    const futureWeeks = series.filter((w) => w.weekNumber > currentWeek);
-    const futureContributions = futureWeeks.reduce(
-      // Less what is already in: money paid early for a future week is not
-      // still to come, and counting it again would flatter the projection.
-      (s, w) => s + Math.max(0, w.expected - w.received),
-      0,
-    );
-    const arrears = series
-      .filter((w) => w.elapsed)
-      .reduce((s, w) => s + Math.max(0, w.expected - w.received), 0);
+    // EVERY WEEK INTO EXACTLY ONE BUCKET, in `bucketOutstanding` rather than
+    // here. This used to be two independent filters in this file — `w.elapsed`
+    // for arrears and `w.weekNumber > currentWeek` for future — which read two
+    // DIFFERENT clocks, so the week the cycle was actually in matched neither
+    // and its money vanished from the sum. $12,125 of it, on the live cycle.
+    // A caller cannot get that wrong now: the classification is one exhaustive
+    // if/else in one tested function.
+    const outstanding = bucketOutstanding({ series, currentWeek });
 
     // WHAT IS STILL TO GO OUT, through `calculatePayout` — the same arithmetic
     // the draw, the portal and the archive use. The pot is the NUMBER's amount
@@ -422,12 +420,25 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         : await prisma.cashReading.findFirst({ orderBy: { readAt: "desc" } });
 
     const projection = endOfCycle({
-      futureContributions,
-      arrears,
+      outstanding,
       payoutsStillToGoOut,
       feeStillToEarn,
       refunds,
-      inHand: latest?.totalAmount ?? 0,
+      // THE LIVE POSITION, NOT THE COUNTED READING.
+      //
+      // This was `latest?.totalAmount` — the number the organizer last typed
+      // in. A reading is a declaration made at a moment and it is stale as soon
+      // as the next payment lands; on the live cycle it was eight payments and
+      // $9,000 behind, so every forward figure resting on it was wrong by that
+      // much and nothing on screen said so. It also meant a projection could
+      // only exist once he had entered one.
+      //
+      // `holding.shouldBeHolding` is `collected − handedOut`, derived at read
+      // time. Recording a payment IS the update: the money moves and this moves
+      // with it, on every screen, with nothing to re-enter. The reading still
+      // appears beside it, doing the one job it is good for — telling him
+      // whether the books and the tin agree.
+      inHand: holding.shouldBeHolding,
     });
 
 
@@ -445,7 +456,7 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         // WHERE THE CYCLE FINISHES — the other question, answered beside the
         // first one so he stops working it out on paper.
         projection,
-        projectionSentence: endOfCycleSentence(projection, formatMoney, latest !== null),
+        projectionSentence: endOfCycleSentence(projection, formatMoney),
         // The verdict only exists once he has told the system what he holds.
         verdict: latest
           ? positionVerdict({

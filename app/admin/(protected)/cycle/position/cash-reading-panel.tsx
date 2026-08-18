@@ -229,7 +229,10 @@ export function CashReadingPanel({
           : "good";
 
   return (
-    <Card>
+    // ANCHORED, because the projection on /admin/cash shows this figure and
+    // needs somewhere to send him to change it. ONE form; that page links here
+    // rather than growing a second copy.
+    <Card id="cash-reading">
       <CardHeader
         title="What you actually hold"
         sub="Across bank and cash on hand. The only figure on this page you enter yourself — everything else is worked out from money already recorded."

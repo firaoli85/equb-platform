@@ -10,11 +10,14 @@ export function Card({
   children,
   className = "",
   tone = "default",
+  id,
 }: {
   children: ReactNode;
   className?: string;
   /** hero = the one emphasized card on a page (2.1: the cash position). */
   tone?: "default" | "hero" | "danger";
+  /** For linking straight to this card from a page that shows its figure. */
+  id?: string;
 }) {
   const toneCls =
     tone === "hero"
@@ -22,7 +25,11 @@ export function Card({
       : tone === "danger"
         ? "border-2 border-red-500 bg-red-50 dark:border-red-800 dark:bg-red-950/30"
         : "border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#141414]";
-  return <section className={`rounded-2xl shadow-sm ${toneCls} ${className}`}>{children}</section>;
+  return (
+    <section id={id} className={`rounded-2xl shadow-sm ${toneCls} ${className}`}>
+      {children}
+    </section>
+  );
 }
 
 export function CardHeader({

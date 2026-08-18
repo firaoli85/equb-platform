@@ -1,6 +1,7 @@
 import type { EndOfCycle } from "@/lib/end-of-cycle";
 import { formatMoney } from "@/lib/format";
 import { Card, CardHeader } from "@/components/ui/primitives";
+import Link from "next/link";
 import { RefundInProjectionToggle } from "./refund-in-projection-toggle";
 
 // WHERE THE CYCLE FINISHES — the second question, on the page that already
@@ -63,11 +64,15 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 export function EndOfCyclePanel({
   projection: p,
   sentence,
-  hasReading,
+  reading,
 }: {
   projection: EndOfCycle;
   sentence: string;
-  hasReading: boolean;
+  /**
+   * The latest counted reading, shown BESIDE the figure as the audit fact it
+   * is. It is not an input to anything on this panel.
+   */
+  reading: { totalAmount: number; readAt: Date } | null;
 }) {
   const short = p.endOfCycle < 0;
 
@@ -122,28 +127,58 @@ export function EndOfCyclePanel({
           </div>
         </Group>
 
+        {/* IN HAND IS DERIVED, NOT DECLARED.
+            This said "What you counted" and used the last reading he typed in.
+            That number is stale the moment the next payment lands — on the
+            live cycle it was eight payments and $9,000 behind — so every
+            figure below it was wrong by that much and nothing said so.
+            It is `collected − handedOut` now: recording a payment moves it,
+            here and on every other screen, with nothing to re-enter. */}
         <Group title="In hand">
           <Line
-            label="What you counted"
+            label="What the books say you hold"
             cents={p.inHand}
-            hint={hasReading ? undefined : "You have not entered a reading yet"}
-            muted={!hasReading}
+            hint="Everything collected, less everything handed over. It moves the moment you record a payment."
           />
+          {/* The reading, beside it, doing the one job it is for: telling him
+              whether the tin agrees with the books. Its DATE is always shown,
+              because a cash figure without one invites trust it has not
+              earned. */}
+          <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-gray-100 pt-2 dark:border-gray-800/60">
+            <p className="text-[11px] text-gray-600 dark:text-gray-400">
+              {reading ? (
+                <>
+                  You last counted{" "}
+                  <span className="font-semibold tabular-nums text-gray-800 dark:text-gray-200">
+                    {formatMoney(reading.totalAmount)}
+                  </span>{" "}
+                  on{" "}
+                  {reading.readAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}.
+                  That count is not used in the sum above.
+                </>
+              ) : (
+                <>You have never counted your cash. The sum above does not need it.</>
+              )}
+            </p>
+            <Link
+              href="/admin/cycle/position#cash-reading"
+              className="text-[11px] font-semibold text-indigo-700 hover:underline dark:text-indigo-300"
+            >
+              {reading ? "Record a new count" : "Record your first count"}
+            </Link>
+          </div>
         </Group>
 
-        {/* THE ANSWER. The one loud thing on the panel. */}
+        {/* THE ANSWER. The one loud thing on the panel, and it is always here
+            now — it used to be blank until he had typed in a cash count. */}
         <div
           className={`rounded-2xl px-4 py-3 ${
-            !hasReading
-              ? "bg-gray-100 dark:bg-white/5"
-              : short
-                ? "bg-red-50 dark:bg-red-950/30"
-                : "bg-emerald-50 dark:bg-emerald-950/30"
+            short ? "bg-red-50 dark:bg-red-950/30" : "bg-emerald-50 dark:bg-emerald-950/30"
           }`}
         >
           <div className="flex items-baseline justify-between gap-4">
             <p className="text-sm font-bold text-gray-900 dark:text-white">Where it finishes</p>
-            {hasReading && (
+            {(
               <p
                 className={`text-xl font-black tabular-nums ${
                   short

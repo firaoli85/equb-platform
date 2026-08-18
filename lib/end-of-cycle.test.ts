@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { endOfCycle, endOfCycleSentence, type RefundOwed } from "./end-of-cycle";
+import { bucketOutstanding, endOfCycle, endOfCycleSentence, type RefundOwed } from "./end-of-cycle";
 import { formatMoney } from "./format";
 
 // THE LIVE CYCLE, as reconciled on 18 Aug 2026. These are the real figures,
@@ -19,8 +19,12 @@ import { formatMoney } from "./format";
 // missed was Tsion: she is not awaiting a turn, so she appeared nowhere in
 // his sum, and $4,200 still has to leave his hands.
 const LIVE = {
-  futureContributions: 11_325_000,
-  arrears: 2_012_500,
+  outstanding: {
+    overdue: 2_012_500,
+    currentWeekOutstanding: 0,
+    notYetDue: 11_325_000,
+    total: 13_337_500,
+  },
   payoutsStillToGoOut: 15_190_000,
   feeStillToEarn: 310_000,
   inHand: 1_765_000,
@@ -122,7 +126,7 @@ describe("several refunds, each with its own answer", () => {
 
 describe("the sentence", () => {
   it("names the shortfall and what it means", () => {
-    const s = endOfCycleSentence(endOfCycle({ ...LIVE, refunds: [TSION] }), formatMoney, true);
+    const s = endOfCycleSentence(endOfCycle({ ...LIVE, refunds: [TSION] }), formatMoney);
     expect(s).toContain("finishes $5,075 short");
     expect(s).toContain("find yourself");
   });
@@ -130,22 +134,25 @@ describe("the sentence", () => {
   it("ALWAYS states the assumption", () => {
     // A projection read as settled fact is worse than no projection.
     for (const refunds of [[TSION], [{ ...TSION, counted: false }], []]) {
-      const s = endOfCycleSentence(endOfCycle({ ...LIVE, refunds }), formatMoney, true);
+      const s = endOfCycleSentence(endOfCycle({ ...LIVE, refunds }), formatMoney);
       expect(s).toContain("assumes every remaining contribution arrives");
     }
   });
 
   it("a surplus is not called his", () => {
     const p = endOfCycle({ ...LIVE, inHand: 5_000_000, refunds: [] });
-    const s = endOfCycleSentence(p, formatMoney, true);
+    const s = endOfCycleSentence(p, formatMoney);
     expect(s).toContain("left over");
     expect(s).toContain("not yours to spend");
   });
 
-  it("says what is missing when he has never counted his cash", () => {
-    const s = endOfCycleSentence(endOfCycle({ ...LIVE, refunds: [TSION] }), formatMoney, false);
-    expect(s).toContain("Enter what you are holding");
-    expect(s).not.toContain("finishes");
+  it("always answers, with or without a counted reading", () => {
+    // It used to refuse until he had typed one in, because the sum rested on
+    // one. It rests on the derived position now, which exists from the first
+    // payment onward.
+    const s = endOfCycleSentence(endOfCycle({ ...LIVE, refunds: [TSION] }), formatMoney);
+    expect(s).toContain("finishes");
+    expect(s).not.toContain("Enter what you are holding");
   });
 
   it("plain English only — the banned register never appears", () => {
@@ -154,13 +161,111 @@ describe("the sentence", () => {
     const banned = /\b(uncommitted|committed|owed forward|claimed|free|net|reconcil\w*)\b/i;
     for (const inHand of [0, 1_765_000, 5_000_000, 20_000_000]) {
       for (const refunds of [[TSION], [{ ...TSION, counted: false }], []]) {
-        for (const hasReading of [true, false]) {
-          const s = endOfCycleSentence(endOfCycle({ ...LIVE, inHand, refunds }), formatMoney, hasReading);
-          expect(s, s).not.toMatch(banned);
-          expect(s).not.toContain("NaN");
-          expect(s).not.toContain("$-");
-        }
+        const s = endOfCycleSentence(endOfCycle({ ...LIVE, inHand, refunds }), formatMoney);
+        expect(s, s).not.toMatch(banned);
+        expect(s).not.toContain("NaN");
+        expect(s).not.toContain("$-");
       }
     }
+  });
+});
+
+// ————————————————— THE PARTITION —————————————————
+//
+// The bug this is the guard for: the buckets were two INDEPENDENT filters
+// reading two different clocks, so the week the cycle was in matched neither
+// and $12,125 fell out of the sum. The projection said the cycle would finish
+// $12,750 short when the truth was $625.
+//
+// The property is the point. Not "week 14 is handled" — that fixes one week.
+// EVERY week's uncollected money is in exactly one bucket, whatever the two
+// clocks happen to be doing relative to each other.
+describe("every week lands in exactly one bucket", () => {
+  const week = (weekNumber: number, expected: number, received: number, elapsed: boolean) => ({
+    weekNumber,
+    expected,
+    received,
+    elapsed,
+  });
+
+  it("THE LIVE SHAPE: the current week is not lost", () => {
+    // Weeks 1-13 elapsed, week 14 arrived with its window still open, 15+ not
+    // arrived. This is exactly the shape that broke.
+    const series = [
+      week(13, 1_862_500, 1_312_500, true),
+      week(14, 1_962_500, 750_000, false),
+      week(15, 1_962_500, 275_000, false),
+    ];
+    const b = bucketOutstanding({ series, currentWeek: 14 });
+    expect(b.overdue).toBe(550_000);
+    expect(b.currentWeekOutstanding).toBe(1_212_500);
+    expect(b.notYetDue).toBe(1_687_500);
+    expect(b.total).toBe(550_000 + 1_212_500 + 1_687_500);
+  });
+
+  it("the three buckets sum to the total uncollected across ALL weeks", () => {
+    const series = [
+      week(1, 100, 100, true),
+      week(2, 500, 200, true),
+      week(3, 700, 0, true),
+      week(4, 900, 400, false),
+      week(5, 300, 300, false),
+      week(6, 1000, 0, false),
+    ];
+    for (let currentWeek = 0; currentWeek <= 7; currentWeek++) {
+      const b = bucketOutstanding({ series, currentWeek });
+      const totalUncollected = series.reduce((s, w) => s + Math.max(0, w.expected - w.received), 0);
+      expect(
+        b.overdue + b.currentWeekOutstanding + b.notYetDue,
+        `currentWeek ${currentWeek} lost money`,
+      ).toBe(totalUncollected);
+      expect(b.total).toBe(totalUncollected);
+    }
+  });
+
+  it("holds when the two clocks disagree by any distance", () => {
+    // elapsed lags currentWeek by 0, 1, 2 ... weeks. The gap between them is
+    // exactly where the money used to vanish.
+    for (let lag = 0; lag <= 5; lag++) {
+      const series = Array.from({ length: 12 }, (_, i) =>
+        week(i + 1, 1000, i % 3 === 0 ? 250 : 0, i + 1 <= 8 - lag),
+      );
+      const b = bucketOutstanding({ series, currentWeek: 8 });
+      const total = series.reduce((s, w) => s + Math.max(0, w.expected - w.received), 0);
+      expect(b.overdue + b.currentWeekOutstanding + b.notYetDue, `lag ${lag}`).toBe(total);
+    }
+  });
+
+  it("a week paid in full contributes to nothing", () => {
+    const b = bucketOutstanding({ series: [week(1, 500, 500, true)], currentWeek: 1 });
+    expect(b.total).toBe(0);
+  });
+
+  it("overpayment on one week never offsets a shortfall on another", () => {
+    // max(0, ...) per week. A member paying double in week 2 does not make
+    // week 1's missing money disappear.
+    const b = bucketOutstanding({
+      series: [week(1, 500, 0, true), week(2, 500, 1500, true)],
+      currentWeek: 2,
+    });
+    expect(b.overdue).toBe(500);
+  });
+
+  it("no weeks at all is zero, not NaN", () => {
+    const b = bucketOutstanding({ series: [], currentWeek: 3 });
+    expect(b.total).toBe(0);
+    expect(Number.isFinite(b.total)).toBe(true);
+  });
+
+  it("the projection's comingIn IS the total — no bucket can be forgotten", () => {
+    // `comingIn` reads outstanding.total rather than adding named fields, so
+    // adding a fourth bucket later cannot silently drop it from the sum.
+    const outstanding = bucketOutstanding({
+      series: [week(1, 1000, 0, true), week(2, 1000, 0, false), week(3, 1000, 0, false)],
+      currentWeek: 2,
+    });
+    const p = endOfCycle({ ...LIVE, outstanding, refunds: [] });
+    expect(p.comingIn).toBe(outstanding.total);
+    expect(p.arrears + p.currentWeekOutstanding + p.futureContributions).toBe(p.comingIn);
   });
 });

@@ -283,6 +283,29 @@ export type FeeEstimate = {
 };
 
 /**
+ * THE LIVE CASH POSITION — the ONE derivation of "what is in his hands now".
+ *
+ * `collected − handedOut`, and it is the only place that subtraction is
+ * written. `cashPosition().currentlyHeld` in lib/dashboard.ts is the same fact
+ * under a second name; it calls this, so the two cannot drift into disagreeing
+ * about the most-looked-at figure in the platform.
+ *
+ * IT MOVES BY ITSELF, and that is the whole point. Recording a payment or
+ * marking a payout raises or lowers it instantly on every screen that reads it.
+ * Nothing has to be re-entered, because nothing about it is entered.
+ *
+ * NEVER CONFUSE IT WITH A COUNTED READING. A reading is what the organizer says
+ * he physically counted at a moment. It is a declaration, it is an audit event,
+ * and it is stale the instant the next payment lands — on the live cycle it was
+ * eight payments and $9,000 behind. Its ONLY job is to be compared against this
+ * figure. Any forward calculation that anchors to it inherits its staleness,
+ * which is the defect `lib/cash-source.test.ts` now exists to prevent.
+ */
+export function livePosition(input: { collected: number; handedOut: number }): number {
+  return input.collected - input.handedOut;
+}
+
+/**
  * WHAT HE SHOULD BE HOLDING — three facts, and nothing else.
  *
  * Money in, money out, what is left. That is a cash position, and every part of
@@ -320,7 +343,7 @@ export function cashOnHand(input: {
   return {
     collected: input.collected,
     handedOut: input.handedOut,
-    shouldBeHolding: input.collected - input.handedOut,
+    shouldBeHolding: livePosition(input),
     paidEarly: input.paidEarly,
     drawnNotHandedOut: input.drawnNotHandedOut,
     owedToStopped: input.owedToStopped ?? 0,

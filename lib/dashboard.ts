@@ -11,6 +11,9 @@ import {
   weeksCredited,
   type PaymentStatusValue,
 } from "./derived";
+// ONE derivation of "what is in his hands now". cycle-position.ts imports
+// only a TYPE from this file, so there is no runtime cycle here.
+import { livePosition } from "./cycle-position";
 import { calculateFinishWeek } from "./money";
 import { inWindow as inMemberWindow, type WindowBreak } from "./participation-close";
 // The WELCOME half of the gate, asked rather than re-implemented: the
@@ -64,7 +67,11 @@ export function cashPosition(input: {
       pendingPayoutCount++;
     }
   }
-  const currentlyHeld = totalReceived - totalPaidOut;
+  // THE SAME FACT AS cashOnHand().shouldBeHolding, through the one function
+  // that owns the subtraction. Two names for one truth is survivable; two
+  // derivations of it is how the most-looked-at figure in the platform starts
+  // disagreeing with itself.
+  const currentlyHeld = livePosition({ collected: totalReceived, handedOut: totalPaidOut });
   return {
     totalReceived,
     totalPaidOut,

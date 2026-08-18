@@ -149,7 +149,7 @@ export default async function CashPage({
           <EndOfCyclePanel
             projection={position.data.projection}
             sentence={position.data.projectionSentence}
-            hasReading={position.data.latestReading !== null}
+            reading={position.data.latestReading}
           />
         </div>
       )}
