@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { getCyclePosition } from "@/app/actions/cycle-position";
 import { getDashboard } from "@/app/actions/dashboard";
+import { EndOfCyclePanel } from "@/components/admin/end-of-cycle-panel";
 import { CashPositionChart } from "@/components/charts/cash-position-chart";
 import { PresentationHidden } from "@/components/presentation-hidden";
 import {
@@ -48,7 +50,9 @@ export default async function CashPage({
   const raw = Array.isArray(params.view) ? params.view[0] : params.view;
   const view: View = VIEWS.some((v) => v.key === raw) ? (raw as View) : "held";
 
-  const result = await getDashboard();
+  // BOTH QUESTIONS, ONE PAGE. The projection comes from getCyclePosition so
+  // there is exactly one derivation of it; this page does not build a second.
+  const [result, position] = await Promise.all([getDashboard(), getCyclePosition()]);
   if (!result.ok) {
     return (
       <main>
@@ -139,6 +143,16 @@ export default async function CashPage({
           ))}
         </ul>
       </nav>
+
+      {position.ok && (
+        <div className="animate-fade-in-up-3">
+          <EndOfCyclePanel
+            projection={position.data.projection}
+            sentence={position.data.projectionSentence}
+            hasReading={position.data.latestReading !== null}
+          />
+        </div>
+      )}
 
       <div className="animate-fade-in-up-3">
         {view === "held" && <HeldView d={d} />}
@@ -247,6 +261,14 @@ function ReceivedView({
   expectedTotal: number;
   shortfall: number;
 }) {
+  // The same split the footer states: a gap on a week that has passed is
+  // overdue, a gap on a week still to come is not due yet. Summed from the
+  // SAME per-row expression the table renders, so the total and the column can
+  // never disagree.
+  const gapOf = (w: { expected: number; received: number }) => Math.max(0, w.expected - w.received);
+  const overdueTotal = d.series.filter((w) => w.elapsed).reduce((s, w) => s + gapOf(w), 0);
+  const notDueTotal = d.series.filter((w) => !w.elapsed).reduce((s, w) => s + gapOf(w), 0);
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -308,8 +330,58 @@ function ReceivedView({
                   );
                 })}
               </tbody>
+              {/* THE COLUMN HAD NO TOTAL, so the one figure the table exists to
+                  produce was left for the organizer to add up by eye.
+
+                  TWO TOTALS, NOT ONE, because the column mixes two different
+                  facts. A gap on a week that has passed is money that should
+                  have arrived and has not. A gap on a week that has not
+                  happened yet is nobody being late — it is simply not due. One
+                  combined figure under a heading that says "short" would tell
+                  him people owe him thousands more than they do. */}
+              <tfoot className="border-t-2 border-gray-200 dark:border-gray-800">
+                <tr>
+                  <Td className="!font-semibold">Still owed</Td>
+                  <Td align="right" className="!text-gray-500 dark:!text-gray-400">
+                    —
+                  </Td>
+                  <Td align="right" className="!text-gray-500 dark:!text-gray-400">
+                    —
+                  </Td>
+                  <Td
+                    numeric
+                    align="right"
+                    className={
+                      overdueTotal > 0
+                        ? "!text-red-700 !font-bold dark:!text-red-400"
+                        : "!text-gray-500 dark:!text-gray-400"
+                    }
+                  >
+                    {overdueTotal > 0 ? formatMoney(overdueTotal) : "—"}
+                  </Td>
+                </tr>
+                <tr>
+                  <Td className="!text-gray-600 dark:!text-gray-400">Not due yet</Td>
+                  <Td align="right" className="!text-gray-500 dark:!text-gray-400">
+                    —
+                  </Td>
+                  <Td align="right" className="!text-gray-500 dark:!text-gray-400">
+                    —
+                  </Td>
+                  <Td numeric align="right" className="!text-gray-600 dark:!text-gray-400">
+                    {notDueTotal > 0 ? formatMoney(notDueTotal) : "—"}
+                  </Td>
+                </tr>
+              </tfoot>
             </Table>
           )}
+          <p className="px-5 pb-4 text-[11px] leading-relaxed text-gray-600 dark:text-gray-400">
+            {overdueTotal > 0
+              ? `${formatMoney(overdueTotal)} is still owed to the cycle across weeks that have already passed.`
+              : `Nothing is owed on weeks that have already passed.`}{" "}
+            {notDueTotal > 0 &&
+              `${formatMoney(notDueTotal)} more is still to come for weeks that have not happened yet, and nobody is late for those.`}
+          </p>
         </Card>
 
         <Card>

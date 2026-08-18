@@ -228,6 +228,24 @@ model Participation {
   /** The balance at the moment of the choice. The live balance may differ,
    *  and the LIVE one is what may be offered. Kept for the record only. */
   carryIntentAmount Int?
+  // DOES THE MONEY HE OWES THIS PERSON BELONG IN THE PROJECTION?
+  //
+  // Only ever asked of a member the organizer OWES: someone who stopped
+  // without ever being drawn, and is owed their paid-in less the fee (§2.30).
+  // The other direction — a member who took the pot and stopped — is not a
+  // choice and is not touched by this.
+  //
+  // TRUE (the default) puts the refund in the end-of-cycle projection, because
+  // that is the honest starting position: he owes it, so it should be in the
+  // arithmetic unless he says otherwise. FALSE means he is settling it his own
+  // way, outside the cycle's money.
+  //
+  // IT NEVER HIDES THE DEBT. What he owes stays on the member's record, on the
+  // cash screen and in her portal whichever way this is set — the flag decides
+  // one thing only, whether the figure enters one sum. A setting that could
+  // make an obligation disappear from view would be a worse bug than the one
+  // this exists to fix.
+  refundCountedInProjection Boolean @default(true)
   createdAt      DateTime @default(now())
   cycle          Cycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
   person         Person   @relation(fields: [personId], references: [id])

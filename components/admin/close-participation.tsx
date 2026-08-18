@@ -45,6 +45,8 @@ type Preview = {
   currentWeek: number;
   finishWeek: number;
   confirmPhrase: string;
+  /** > 0 only when HE will owe THEM. Drives the one question below. */
+  refundOwed: number;
 };
 
 export function CloseParticipation({
@@ -74,6 +76,10 @@ export function CloseParticipation({
   const [reason, setReason] = useState<CloseReason | "">("");
   const [note, setNote] = useState("");
   const [typed, setTyped] = useState("");
+  // HIS ANSWER TO THE ONE MONEY QUESTION THIS SCREEN ASKS, and only when the
+  // money runs toward the member. Counting it is the default, because a debt
+  // he has belongs in his own forecast unless he says otherwise.
+  const [countRefund, setCountRefund] = useState(true);
   /**
    * ONE STATE FOR BOTH WRITES — the close and the way back (UI_STANDARDS
    * rule 6).
@@ -126,6 +132,7 @@ export function CloseParticipation({
     });
   }, [open, closed, participationId, weekValid, weekNum]);
 
+  const refundOwed = preview?.refundOwed ?? 0;
   const nameOk = typed.trim().toLowerCase() === personName.trim().toLowerCase();
   const noteNeeded = reason === "OTHER" && note.trim() === "";
   const canClose = Boolean(preview) && reason !== "" && !noteNeeded && nameOk && weekValid;
@@ -196,6 +203,7 @@ export function CloseParticipation({
           reason,
           note: note.trim() || undefined,
           typedName: typed,
+          ...(refundOwed > 0 ? { countRefundInProjection: countRefund } : {}),
         });
         if (!result.ok) {
           // THE PANEL STAYS OPEN holding the reason, with the week, the
@@ -436,6 +444,63 @@ export function CloseParticipation({
             className={inputCls}
           />
         </label>
+      )}
+
+      {/* THE ONE MONEY QUESTION, and only in the direction where a choice
+          exists.
+
+          A member who paid in and was never drawn is owed their money back
+          (§2.30), and that is money leaving his hands — so by default it goes
+          into the cash projection. But he may be settling it another way: cash
+          outside the cycle, an arrangement, a carry into the next one. Asking
+          here, while he is already deciding about this person, is the moment
+          he actually knows the answer.
+
+          THE OTHER DIRECTION GETS NO QUESTION. A member who took the pot and
+          stopped owes HIM, and that hole has to be covered whatever he would
+          prefer. Offering a choice there would imply one exists. */}
+      {refundOwed > 0 && (
+        <fieldset className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+          <legend className="px-1 text-xs font-bold text-amber-900 dark:text-amber-200">
+            You will owe {personName} {formatMoney(refundOwed)} back
+          </legend>
+          <p className="mt-1 text-xs text-gray-800 dark:text-gray-200">
+            They paid in and were never drawn, so that money is theirs, less the fee on what they
+            signed up for. Should it go into your cash projection, or are you handling it yourself?
+          </p>
+          <div className="mt-2.5 space-y-2">
+            {[
+              {
+                value: true,
+                label: "Count it in my projection",
+                hint: "It shows as money going out on the cash screen.",
+              },
+              {
+                value: false,
+                label: "I will handle it myself",
+                hint: "Still owed and still on their record, just outside the sum.",
+              },
+            ].map((opt) => (
+              <label key={String(opt.value)} className="flex cursor-pointer items-start gap-2.5">
+                <input
+                  type="radio"
+                  name="count-refund"
+                  checked={countRefund === opt.value}
+                  onChange={() => setCountRefund(opt.value)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-amber-600"
+                />
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold text-gray-900 dark:text-white">
+                    {opt.label}
+                  </span>
+                  <span className="block text-[11px] text-gray-700 dark:text-gray-300">
+                    {opt.hint}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
       )}
 
       {reason !== "" && !noteNeeded && (

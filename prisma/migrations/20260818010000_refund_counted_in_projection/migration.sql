@@ -1,0 +1,22 @@
+-- DOES THE MONEY HE OWES A STOPPED MEMBER BELONG IN THE PROJECTION?
+--
+-- The end-of-cycle projection asks "if everyone pays what they owe and I pay
+-- what I owe, where does this finish". A member who stopped without ever being
+-- drawn is owed their paid-in less the fee (2.30), and that is money leaving
+-- his hands — so by default it is in the arithmetic.
+--
+-- But the organizer may be settling it another way: cash outside the cycle, an
+-- arrangement, a carry into the next one. This records that choice per person,
+-- because it IS per person: he can count one and handle another himself.
+--
+-- DEFAULT TRUE, deliberately. The honest starting position is that a debt he
+-- has is in his own forecast. Opting out is the deliberate act, not opting in,
+-- and it means every member already on the books starts counted.
+--
+-- IT NEVER HIDES THE DEBT. What he owes stays on the member's record, on the
+-- cash screen and in her portal whichever way this is set. This decides one
+-- thing: whether the figure enters one sum.
+--
+-- Additive, one column, no backfill needed beyond the default.
+ALTER TABLE "participations"
+  ADD COLUMN "refundCountedInProjection" BOOLEAN NOT NULL DEFAULT true;

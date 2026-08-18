@@ -20,6 +20,7 @@ import { errorMessage } from "@/lib/action-result";
 import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { currentWeekFromRows, elapsedThroughWeek } from "@/lib/commitment";
+import { frozenCycleRefusal } from "@/lib/cycle-close";
 import {
   collectionPosition,
   collectionSentence,
@@ -31,6 +32,7 @@ import {
   type StoppedMember,
 } from "@/lib/cycle-position";
 import { cashPosition, receiptsByWeek } from "@/lib/dashboard";
+import { endOfCycle, endOfCycleSentence } from "@/lib/end-of-cycle";
 import { formatMoney } from "@/lib/format";
 import { calculateFinishWeek, MAX_MONEY_CENTS } from "@/lib/money";
 import { PAGE_SIZES, pageInfo } from "@/lib/paging";
@@ -45,6 +47,7 @@ import { PRESENTATION_HIDDEN } from "@/lib/presentation";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/settings";
 import { computeStanding, pinnedMapFromEvents } from "@/lib/standing";
+import { calculatePayout } from "@/lib/wheel";
 
 /**
  * The whole-cycle money picture, plus the comparison against the most recent
@@ -75,6 +78,12 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
             payments: { include: { week: true } },
             paymentEvents: {
               select: { amount: true, pinnedWeekId: true, pinnedWeek: { select: { weekNumber: true } } },
+            },
+            // Their numbers and whether each has been drawn — the end-of-cycle
+            // projection needs what is still to go OUT, and that is one payout
+            // per number that has none yet.
+            luckyNumbers: {
+              select: { id: true, amount: true, payouts: { select: { id: true } } },
             },
           },
         },
@@ -331,6 +340,66 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         .reduce((s, p) => s + p.feeAmount, 0),
     });
 
+    // ————————————— WHERE THE CYCLE FINISHES (lib/end-of-cycle.ts) —————————————
+    //
+    // A DIFFERENT QUESTION FROM THE ONE ABOVE, and the reason this exists: the
+    // organizer worked it out on paper every week, got about $875 short, and
+    // the screen said $6,325. Both were right. The cash position looks
+    // backward at money that has already moved; this looks forward over money
+    // that has not. Nothing on the page said they were different questions.
+    //
+    // Every figure below is READ from a derivation that already exists. This
+    // adds and subtracts; it decides nothing.
+    const futureWeeks = series.filter((w) => w.weekNumber > currentWeek);
+    const futureContributions = futureWeeks.reduce(
+      // Less what is already in: money paid early for a future week is not
+      // still to come, and counting it again would flatter the projection.
+      (s, w) => s + Math.max(0, w.expected - w.received),
+      0,
+    );
+    const arrears = series
+      .filter((w) => w.elapsed)
+      .reduce((s, w) => s + Math.max(0, w.expected - w.received), 0);
+
+    // WHAT IS STILL TO GO OUT, through `calculatePayout` — the same arithmetic
+    // the draw, the portal and the archive use. The pot is the NUMBER's amount
+    // times that member's OWN weeks, never a fixed twenty: Henok is a ten-week
+    // member and Alex a fifteen-week one.
+    //
+    // A CLOSED member's undrawn number is NOT awaiting a turn. It has left the
+    // wheel (2.27) and what they get is a refund, counted separately below.
+    // Including it here would both overstate what goes out and double-count
+    // the same person.
+    let payoutsStillToGoOut = 0;
+    let feeStillToEarn = 0;
+    for (const p of active) {
+      for (const n of p.luckyNumbers) {
+        if (n.payouts.length > 0) continue;
+        const due = calculatePayout({
+          luckyNumber: { id: n.id, amount: n.amount },
+          participation: { weeksCommitted: p.weeksCommitted },
+          cycle: { feePercent: cycle.feePercent },
+        });
+        payoutsStillToGoOut += due.net;
+        feeStillToEarn += due.fee;
+      }
+    }
+
+    // WHO HE OWES, each carrying his own answer about whether it belongs in
+    // the sum. `owedBack` is already `paid in − fee` through the shared §2.30
+    // rule, so this reads it rather than recomputing it.
+    const refunds = stoppedBy
+      .filter((s) => s.owedBack > 0)
+      .map((s) => {
+        const p = stopped.find((x) => x.id === s.participationId);
+        return {
+          participationId: s.participationId,
+          name: s.name,
+          amount: s.owedBack,
+          counted: p?.refundCountedInProjection ?? true,
+        };
+      });
+
     // A SILENT `take: 24` WAS A LIE WAITING TO HAPPEN.
     //
     // The history exists so drift across the cycle is visible. Cutting it at
@@ -352,6 +421,16 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         ? (readings[0] ?? null)
         : await prisma.cashReading.findFirst({ orderBy: { readAt: "desc" } });
 
+    const projection = endOfCycle({
+      futureContributions,
+      arrears,
+      payoutsStillToGoOut,
+      feeStillToEarn,
+      refunds,
+      inHand: latest?.totalAmount ?? 0,
+    });
+
+
     return {
       ok: true as const,
       data: {
@@ -363,6 +442,10 @@ export async function getCyclePosition(input?: { readingsPage?: number; readings
         holding,
         fee,
         cash,
+        // WHERE THE CYCLE FINISHES — the other question, answered beside the
+        // first one so he stops working it out on paper.
+        projection,
+        projectionSentence: endOfCycleSentence(projection, formatMoney, latest !== null),
         // The verdict only exists once he has told the system what he holds.
         verdict: latest
           ? positionVerdict({
@@ -509,5 +592,105 @@ export async function deleteCashReading(input: { id: string }) {
   } catch (e) {
     console.error("deleteCashReading failed:", e);
     return { ok: false as const, error: `Could not delete the reading. ${errorMessage(e)}` };
+  }
+}
+
+/**
+ * COUNT WHAT HE OWES THIS PERSON IN THE PROJECTION, OR NOT.
+ *
+ * The only choice on this page, and it is deliberately narrow: it moves one
+ * figure in one sum. It cannot forgive a debt, change what is owed, or take a
+ * name off a list.
+ *
+ * REFUSED FOR THE OTHER DIRECTION. A member who took the pot and then stopped
+ * owes HIM, and that is not a choice — it is a hole he has to cover whatever
+ * he would prefer. Only a member he owes can be toggled, and this checks it
+ * against the receipts rather than trusting the caller.
+ */
+export async function setRefundCountedInProjection(input: {
+  participationId: string;
+  counted: boolean;
+}) {
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const p = await prisma.participation.findUnique({
+      where: { id: input.participationId },
+      include: {
+        person: true,
+        cycle: true,
+        payments: true,
+        luckyNumbers: { select: { payouts: { select: { netAmount: true, status: true } } } },
+      },
+    });
+    if (!p) return { ok: false as const, error: "That member is not in this cycle." };
+
+    // THE SHARED FREEZE CHECK (rule 14). A closed cycle's books are final: its
+    // carried balances are already written from these very receipts, and a
+    // projection of where it "finishes" is a question about a cycle that has
+    // finished. The guard in lib/cycle-lock.test.ts caught this missing.
+    const frozen = frozenCycleRefusal(p.cycle);
+    if (frozen) return { ok: false as const, error: frozen };
+
+    if (p.status !== "CLOSED") {
+      return {
+        ok: false as const,
+        error: `${p.person.nameEnglishFirst} is still in the cycle, so nothing is owed back yet.`,
+      };
+    }
+    // THE DIRECTION IS A FACT, NOT AN INPUT. Drawn means they owe him.
+    const paidOut = p.luckyNumbers
+      .flatMap((n) => n.payouts)
+      .filter((po) => po.status === "COLLECTED")
+      .reduce((s, po) => s + po.netAmount, 0);
+    if (paidOut > 0) {
+      return {
+        ok: false as const,
+        error:
+          `${p.person.nameEnglishFirst} was already paid out, so this is money owed TO the cycle, ` +
+          `not back to them. That has to be covered either way and cannot be set aside here.`,
+      };
+    }
+
+    const paidIn = p.payments.reduce((s, pm) => s + pm.amountPaid, 0);
+    const { amount } = recoverableForUndrawn({
+      paidIn,
+      weeklyAmount: p.weeklyAmount,
+      weeksCommitted: p.weeksCommitted,
+      unitAmount: p.cycle.unitAmount,
+      feePercent: p.cycle.feePercent,
+    });
+    if (amount <= 0) {
+      return {
+        ok: false as const,
+        error: `Nothing is owed back to ${p.person.nameEnglishFirst}.`,
+      };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.participation.update({
+        where: { id: p.id },
+        data: { refundCountedInProjection: input.counted },
+      });
+      await logAudit(tx, {
+        entity: "Participation",
+        entityId: p.id,
+        action: "update",
+        summary: input.counted
+          ? `${formatMoney(amount)} owed to ${p.person.nameEnglishFirst} is counted in the cash projection.`
+          : `${formatMoney(amount)} owed to ${p.person.nameEnglishFirst} is handled by hand and left out of ` +
+            `the cash projection. It is still owed and still on their record.`,
+        before: { refundCountedInProjection: p.refundCountedInProjection },
+        after: { refundCountedInProjection: input.counted, amount },
+      });
+    });
+
+    revalidatePath("/admin/cash");
+    revalidatePath("/admin/cycle/position");
+    revalidatePath(`/admin/people/${p.personId}`);
+    return { ok: true as const, data: { counted: input.counted, amount } };
+  } catch (e) {
+    console.error("setRefundCountedInProjection failed:", e);
+    return { ok: false as const, error: `Could not save that choice. ${errorMessage(e)}` };
   }
 }

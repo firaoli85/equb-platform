@@ -31,6 +31,7 @@ import { logAudit } from "@/lib/audit";
 import { requireAdmin } from "@/lib/auth";
 import { currentWeekFromRows } from "@/lib/commitment";
 import { frozenCycleRefusal } from "@/lib/cycle-close";
+import { recoverableForUndrawn } from "@/lib/final-position";
 import { formatMoney } from "@/lib/format";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { calculateFinishWeek, MAX_WEEKS } from "@/lib/money";
@@ -224,6 +225,26 @@ export async function previewParticipationClose(input: {
     if (refusal) return { ok: false as const, error: refusal };
 
     const { plan } = describe(p, closingAtWeek);
+    // WHICH DIRECTION THE MONEY RUNS, decided from the receipts rather than
+    // asked of the caller.
+    //
+    // ONLY THE "YOU OWE THEM" CASE GETS A QUESTION. A member who took the pot
+    // and stopped owes HIM, and that is a hole he has to cover whatever he
+    // would prefer — no choice exists there and none is offered. A member who
+    // paid in and was never drawn is owed money back (§2.30), and THAT he may
+    // be settling his own way, outside this cycle's arithmetic.
+    const paidIn = p.payments.reduce((s, pm) => s + pm.amountPaid, 0);
+    const refundOwed =
+      plan.alreadyPaidOut > 0
+        ? 0
+        : recoverableForUndrawn({
+            paidIn,
+            weeklyAmount: p.weeklyAmount,
+            weeksCommitted: p.weeksCommitted,
+            unitAmount: p.cycle.unitAmount,
+            feePercent: p.cycle.feePercent,
+          }).amount;
+
     return {
       ok: true as const,
       data: {
@@ -232,6 +253,8 @@ export async function previewParticipationClose(input: {
         currentWeek,
         finishWeek: calculateFinishWeek(p.startWeek, p.weeksCommitted),
         confirmPhrase: p.person.nameEnglishFirst,
+        /** > 0 only when he will owe THEM. The close screen asks about it. */
+        refundOwed,
       },
     };
   } catch (e) {
@@ -248,6 +271,13 @@ export async function closeParticipation(input: {
   note?: string;
   /** The member's name, typed. */
   typedName: string;
+  /**
+   * Only meaningful when he will OWE them (never drawn, paid in). His answer
+   * to "count this in your cash projection, or handle it yourself". Defaults
+   * to counting it: a debt he has belongs in his own forecast unless he says
+   * otherwise, and opting out is the deliberate act.
+   */
+  countRefundInProjection?: boolean;
 }) {
   const gate = await requireAdmin();
   if (!gate.ok) return gate;
@@ -328,6 +358,14 @@ export async function closeParticipation(input: {
       // The denormalised current state, for the ACTIVE filters that already
       // exist across the platform (the wheel pool, messaging, the portal).
       // Kept in step with the open break, never a second source of truth.
+      // HIS ANSWER TO THE ONE QUESTION THE CLOSE SCREEN ASKS, when the money
+      // runs toward the member. Written here rather than left for a second
+      // trip, so the decision and the close are one act.
+      //
+      // Only meaningful when he owes THEM. For a member who took the pot and
+      // stopped this is untouched at its default, because there is no choice
+      // to record: that hole is his to cover either way.
+      const owesThem = plan.alreadyPaidOut === 0;
       await tx.participation.update({
         where: { id: p.id },
         data: {
@@ -336,6 +374,9 @@ export async function closeParticipation(input: {
           closeReason: reason,
           closeNote: note,
           closedAt: new Date(),
+          ...(owesThem && input.countRefundInProjection !== undefined
+            ? { refundCountedInProjection: input.countRefundInProjection }
+            : {}),
         },
       });
 
