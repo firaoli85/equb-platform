@@ -733,16 +733,23 @@ currently held up by nothing but the code being correct today.
 |---|---|---|---|
 | ~~D-1~~ | ~~Never auto-deduct a carried balance~~ | **CLOSED** — `lib/carry-balance.ts`, 20 unit tests + a source guard | The guard was proven non-vacuous: a planted `payoutNet - ledgerBalance` was caught with file and line |
 | ~~D-2~~ | ~~The deduct intention is offered at payout time~~ | **CLOSED** — persisted on `Participation`, surfaced by `components/admin/carry-deduction-offer.tsx` | — |
-| **D-3** | **`recordSignIn` writes a correct session row** | `lib/session-record.ts`; verified once by `scripts/verify-sessions.mts` against the live DB | The verification script is manual. Nothing runs in CI |
-| **D-4** | **Empty wheel slots are legitimate and must not be reported as missing members** | Implicit in the slot code | The position-23 empty slot has already caused one false alarm |
-| **D-5** | **A cycle running long (2.7) keeps generating weeks correctly past its planned end** | `ensureWeeksThrough` in `lib/participation-rules.ts` | Tested for date continuity, **not** for the planned-vs-actual length distinction the rule is about |
-| **D-6** | **Fee percent is configuration read at calculation time** | Passed in everywhere | Nothing prevents a future caller hardcoding `2` |
-| **D-7** | **The three contribution figures stay unconflated in the ADMIN surfaces** | Tested in `lib/contribution.ts`; the admin pages compose them by hand | The member portal is pinned; the admin composition is not |
-| **D-8** | **Messages never state a figure the derivation disagrees with** | `renderMessage` is tested for placeholders | No test asserts a rendered message's numbers equal the standing they came from |
+| **D-3** | **`recordSignIn` writes a correct session row** | `lib/session-record.ts`; verified once by `scripts/verify-sessions.mts` against the live DB | The verification script is manual. Nothing runs in CI. **The conservation suite deliberately excludes it** — it is not money and it needs the database fixture, so half-covering it there would hide the gap rather than close it |
+| ~~D-4~~ | ~~Empty wheel slots are legitimate and must not be reported as missing members~~ | **CLOSED** — `lib/conservation.test.ts` C15 | The position-23 empty slot has already caused one false alarm |
+| ~~D-5~~ | ~~A cycle running long (2.7) keeps generating weeks correctly past its planned end~~ | **CLOSED** — `lib/conservation.test.ts` C16, on the live shape (23 rows against 20 planned, at week 21) | Tested for date continuity, **not** for the planned-vs-actual length distinction the rule is about |
+| ~~D-6~~ | ~~Fee percent is configuration read at calculation time~~ | **CLOSED** — `lib/conservation.test.ts` C4, a scan of calculation sites plus a non-2% scenario | Nothing prevents a future caller hardcoding `2` |
+| ~~D-7~~ | ~~The three contribution figures stay unconflated in the ADMIN surfaces~~ | **CLOSED** — `lib/conservation.test.ts` C17 | The member portal is pinned; the admin composition is not |
+| ~~D-8~~ | ~~Messages never state a figure the derivation disagrees with~~ | **CLOSED** — `lib/conservation.test.ts` C18 | No test asserts a rendered message's numbers equal the standing they came from |
 
-**D-1 and D-2 are closed.** Remaining order: **D-5** next (correctness under a condition
-this cycle will actually hit), then D-3 and D-8. D-4, D-6 and D-7 are regression guards
-rather than live risks.
+**Only D-3 remains.** D-1 and D-2 closed earlier. D-4, D-5, D-6, D-7 and D-8 were closed
+together by the **conservation suite** (`lib/conservation.test.ts`), which invents whole
+cycles and checks the conservation laws across every reader rather than one rule at a time.
+
+Each of its invariants was proven RED by a planted violation before it counted —
+`node scripts/prove-conservation-red.mjs` re-runs that proof and restores every plant. Six
+of them did not notice their own violation on the first pass; the tests, not the code, were
+what needed fixing, which is the whole argument for running the proof at all.
+
+D-3 stays open on purpose. It is not money, and it needs the database fixture.
 
 ### What closing D-1 taught
 

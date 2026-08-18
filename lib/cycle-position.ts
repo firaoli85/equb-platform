@@ -206,7 +206,24 @@ export function collectionPosition(input: {
       a.name.localeCompare(b.name),
   );
   const willNotArrive = stoppedBy.reduce((s, m) => s + m.balanceRecorded, 0);
-  const gap = Math.max(0, shouldHaveCollected - collected);
+  // ONE MEMBER'S SURPLUS MUST NEVER PAY DOWN ANOTHER MEMBER'S DEBT.
+  //
+  // This was `shouldHaveCollected − collected` — one aggregate subtraction
+  // across every elapsed week. That is §1(a) of ONE_TRUTH_ENGINE at cycle
+  // scale: "Short $0 while two members owed $750". A week that takes in MORE
+  // than it asked for produces a negative term, and the subtraction lets it
+  // cancel a real shortfall on a different week.
+  //
+  // The conservation suite found it on a synthetic cycle where a member whose
+  // week was DEFERRED paid it anyway: that week ran $1,750 over, and $5,250 of
+  // genuine arrears was reported as $3,500.
+  //
+  // Each week's own `shortfall` is already the per-member rule
+  // (`weekShortfallOf` — every term a member's own remainder, capped at their
+  // own due, never a group subtraction). Summing those is the honest figure,
+  // and it is what /admin/cash already switched to when the same defect was
+  // found there. This is the reader that was missed.
+  const gap = elapsed.reduce((s, w) => s + w.shortfall, 0);
 
   return {
     shouldHaveCollected,
